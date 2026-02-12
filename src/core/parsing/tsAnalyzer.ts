@@ -354,9 +354,25 @@ export class TsAnalyzer {
       };
       nodes.push(fnNode);
       symbolByName.set(name, fnNode.id);
+
+      /* Find enclosing function/component node to use as parent instead of file */
+      let parentNodeId = fileNode.id;
+      for (const existing of nodes) {
+        if (
+          existing.id !== fnNode.id &&
+          existing.kind !== "File" &&
+          existing.kind !== "Branch" &&
+          existing.filePath === fnNode.filePath &&
+          (existing.startLine ?? 0) <= startLine &&
+          (existing.endLine ?? 0) >= endLine
+        ) {
+          parentNodeId = existing.id;
+        }
+      }
+
       edges.push({
-        id: stableHash(`${snapshotId}:declares:${fileNode.id}:${fnNode.id}`),
-        source: fileNode.id,
+        id: stableHash(`${snapshotId}:declares:${parentNodeId}:${fnNode.id}`),
+        source: parentNodeId,
         target: fnNode.id,
         kind: "DECLARES",
         filePath: sourceFile.getFilePath(),
@@ -377,14 +393,53 @@ export class TsAnalyzer {
   ): void {
     const branchCounter = new Map<string, number>();
 
+    const buildSnippet = (node: Node, branchKind: string): string => {
+      const trim = (s: string, max: number): string => s.length > max ? `${s.slice(0, max - 3)}...` : s;
+
+      if (branchKind === "return" && Node.isReturnStatement(node)) {
+        const expr = node.getExpression();
+        if (!expr) return "return (void)";
+        const exprText = expr.getText();
+        if (exprText.startsWith("(")) return trim(`return JSX`, 60);
+        if (exprText.includes("=>")) return trim(`return ${exprText.split("\n")[0]}`, 60);
+        return trim(`return ${exprText.split("\n")[0]}`, 60);
+      }
+
+      if (branchKind === "if" && Node.isIfStatement(node)) {
+        const condition = node.getExpression().getText();
+        return trim(`if (${condition})`, 70);
+      }
+
+      if (branchKind === "for") {
+        const firstLine = node.getText().split("\n")[0] ?? "";
+        return trim(firstLine.replace(/\s*\{?\s*$/, ""), 70);
+      }
+
+      if (branchKind === "while") {
+        const firstLine = node.getText().split("\n")[0] ?? "";
+        return trim(firstLine.replace(/\s*\{?\s*$/, ""), 70);
+      }
+
+      if (branchKind === "switch" && Node.isSwitchStatement(node)) {
+        const expr = node.getExpression().getText();
+        return trim(`switch (${expr})`, 60);
+      }
+
+      if (branchKind === "ternary" && Node.isConditionalExpression(node)) {
+        const condition = node.getCondition().getText();
+        return trim(`${condition} ? ... : ...`, 60);
+      }
+
+      const firstLine = node.getText().split("\n")[0] ?? "";
+      return trim(firstLine, 60);
+    };
+
     const makeBranchNode = (node: Node): GraphNode => {
       const branchKind = buildBranchName(node) ?? "unknown";
       const idx = branchCounter.get(branchKind) ?? 0;
       branchCounter.set(branchKind, idx + 1);
       const line = node.getStartLineNumber();
-      const rawText = node.getText();
-      const firstLine = rawText.split("\n")[0] ?? "";
-      const snippet = firstLine.length > 60 ? `${firstLine.slice(0, 57)}...` : firstLine;
+      const snippet = buildSnippet(node, branchKind);
       const stableQualifiedName = `${ownerNode.qualifiedName}::${branchKind}#${idx}`;
       return {
         id: stableHash(`${snapshotId}:branch:${stableQualifiedName}`),

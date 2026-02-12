@@ -71,13 +71,13 @@ const logicNodeTypes: NodeTypes = {
   scope: GroupNode,
 };
 
-const LEAF_W = 200;
-const LEAF_H = 56;
-const DIAMOND_W = 150;
-const DIAMOND_H = 150;
-const PAD_X = 30;
-const PAD_TOP = 44;
-const PAD_BOTTOM = 24;
+const LEAF_W = 220;
+const LEAF_H = 64;
+const DIAMOND_W = 220;
+const DIAMOND_H = 220;
+const PAD_X = 35;
+const PAD_TOP = 48;
+const PAD_BOTTOM = 35;
 const NODE_W = 220;
 const NODE_H = 56;
 
@@ -159,7 +159,7 @@ const computeLogicLayout = (
 
     const dg = new dagre.graphlib.Graph();
     dg.setDefaultEdgeLabel(() => ({}));
-    dg.setGraph({ rankdir: "TB", nodesep: 40, ranksep: 50, marginx: 15, marginy: 15 });
+    dg.setGraph({ rankdir: "TB", nodesep: 80, ranksep: 90, marginx: 30, marginy: 30 });
 
     for (const kid of kids) {
       const isDiamond = kid.kind === "Branch" && decisionKinds.has(kid.branchType ?? "");
