@@ -7,6 +7,7 @@ export interface ViewGraphNode {
   diffStatus: DiffStatus;
   filePath: string;
   startLine?: number;
+  endLine?: number;
   parentId?: string;
   branchType?: string;
 }

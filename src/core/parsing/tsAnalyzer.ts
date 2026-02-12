@@ -375,13 +375,10 @@ export class TsAnalyzer {
     nodes: GraphNode[],
     edges: GraphEdge[],
   ): void {
-    const branchNodes: GraphNode[] = [];
     const branchCounter = new Map<string, number>();
-    root.forEachDescendant((node) => {
-      const branchKind = buildBranchName(node);
-      if (!branchKind) {
-        return;
-      }
+
+    const makeBranchNode = (node: Node): GraphNode => {
+      const branchKind = buildBranchName(node) ?? "unknown";
       const idx = branchCounter.get(branchKind) ?? 0;
       branchCounter.set(branchKind, idx + 1);
       const line = node.getStartLineNumber();
@@ -389,7 +386,7 @@ export class TsAnalyzer {
       const firstLine = rawText.split("\n")[0] ?? "";
       const snippet = firstLine.length > 60 ? `${firstLine.slice(0, 57)}...` : firstLine;
       const stableQualifiedName = `${ownerNode.qualifiedName}::${branchKind}#${idx}`;
-      const branchNode: GraphNode = {
+      return {
         id: stableHash(`${snapshotId}:branch:${stableQualifiedName}`),
         kind: "Branch",
         name: `${branchKind}@${line}`,
@@ -403,46 +400,123 @@ export class TsAnalyzer {
         snapshotId,
         ref,
       };
-      branchNodes.push(branchNode);
-      edges.push({
-        id: stableHash(`${snapshotId}:declares:${ownerNode.id}:${branchNode.id}`),
-        source: ownerNode.id,
-        target: branchNode.id,
-        kind: "DECLARES",
-        filePath: ownerNode.filePath,
-        snapshotId,
-        ref,
-      });
-    });
+    };
 
-    const sortedBranches = [...branchNodes].sort((a, b) => (a.startLine ?? 0) - (b.startLine ?? 0));
-    for (let index = 0; index < sortedBranches.length; index += 1) {
-      const currentNode = sortedBranches[index];
-      const previousNode = sortedBranches[index - 1];
-      if (!previousNode) {
-        edges.push({
-          id: stableHash(`${snapshotId}:flow-start:${ownerNode.id}:${currentNode.id}`),
-          source: ownerNode.id,
-          target: currentNode.id,
-          kind: "CALLS",
-          filePath: ownerNode.filePath,
-          snapshotId,
-          ref,
-        });
-      } else {
-        edges.push({
-          id: stableHash(`${snapshotId}:flow-step:${previousNode.id}:${currentNode.id}`),
-          source: previousNode.id,
-          target: currentNode.id,
-          kind: "CALLS",
-          filePath: ownerNode.filePath,
-          snapshotId,
-          ref,
-        });
+    /** Get direct statements from a block-like node */
+    const getStatements = (node: Node): Node[] => {
+      if (Node.isBlock(node)) {
+        return [...node.getStatements()];
       }
-    }
+      if (Node.isSourceFile(node)) {
+        return [...node.getStatements()];
+      }
+      /* For function declarations/expressions/arrows, get the body */
+      if (Node.isFunctionDeclaration(node) || Node.isFunctionExpression(node) || Node.isArrowFunction(node)) {
+        const body = node.getBody();
+        if (body && Node.isBlock(body)) {
+          return [...body.getStatements()];
+        }
+        return [];
+      }
+      if (Node.isMethodDeclaration(node) || Node.isGetAccessorDeclaration(node) || Node.isSetAccessorDeclaration(node)) {
+        const body = node.getBody();
+        if (body && Node.isBlock(body)) {
+          return [...body.getStatements()];
+        }
+        return [];
+      }
+      /* Single statement (e.g. if body without braces) */
+      return [node];
+    };
 
-    nodes.push(...sortedBranches);
+    /** Recursively collect control flow from a block of statements */
+    const walkBlock = (block: Node, parentGraphNode: GraphNode): void => {
+      const statements = getStatements(block);
+      let prevBranch: GraphNode | null = null;
+      let prevIsTerminal = false;
+
+      for (const stmt of statements) {
+        const branchKind = buildBranchName(stmt);
+        if (!branchKind) {
+          continue;
+        }
+
+        const branchNode = makeBranchNode(stmt);
+        nodes.push(branchNode);
+
+        /* DECLARES edge: parent owns this branch */
+        edges.push({
+          id: stableHash(`${snapshotId}:declares:${parentGraphNode.id}:${branchNode.id}`),
+          source: parentGraphNode.id,
+          target: branchNode.id,
+          kind: "DECLARES",
+          filePath: ownerNode.filePath,
+          snapshotId,
+          ref,
+        });
+
+        /* Flow edge: connect to previous sibling (unless previous was a return/terminal) */
+        if (prevBranch && !prevIsTerminal) {
+          edges.push({
+            id: stableHash(`${snapshotId}:flow-step:${prevBranch.id}:${branchNode.id}`),
+            source: prevBranch.id,
+            target: branchNode.id,
+            kind: "CALLS",
+            filePath: ownerNode.filePath,
+            snapshotId,
+            ref,
+          });
+        } else if (!prevBranch) {
+          edges.push({
+            id: stableHash(`${snapshotId}:flow-start:${parentGraphNode.id}:${branchNode.id}`),
+            source: parentGraphNode.id,
+            target: branchNode.id,
+            kind: "CALLS",
+            filePath: ownerNode.filePath,
+            snapshotId,
+            ref,
+          });
+        }
+
+        prevBranch = branchNode;
+        prevIsTerminal = branchKind === "return";
+
+        /* Recurse into sub-blocks for if/for/while/switch */
+        if (Node.isIfStatement(stmt)) {
+          walkBlock(stmt.getThenStatement(), branchNode);
+          const elseStmt = stmt.getElseStatement();
+          if (elseStmt) {
+            walkBlock(elseStmt, branchNode);
+          }
+        } else if (Node.isForStatement(stmt) || Node.isForOfStatement(stmt) || Node.isForInStatement(stmt) || Node.isWhileStatement(stmt) || Node.isDoStatement(stmt)) {
+          const body = stmt.getStatement();
+          if (body) {
+            walkBlock(body, branchNode);
+          }
+        } else if (Node.isSwitchStatement(stmt)) {
+          for (const clause of stmt.getClauses()) {
+            for (const clauseStmt of clause.getStatements()) {
+              const innerKind = buildBranchName(clauseStmt);
+              if (innerKind) {
+                const innerNode = makeBranchNode(clauseStmt);
+                nodes.push(innerNode);
+                edges.push({
+                  id: stableHash(`${snapshotId}:declares:${branchNode.id}:${innerNode.id}`),
+                  source: branchNode.id,
+                  target: innerNode.id,
+                  kind: "DECLARES",
+                  filePath: ownerNode.filePath,
+                  snapshotId,
+                  ref,
+                });
+              }
+            }
+          }
+        }
+      }
+    };
+
+    walkBlock(root, ownerNode);
   }
 
   private collectCallsAndRenders(

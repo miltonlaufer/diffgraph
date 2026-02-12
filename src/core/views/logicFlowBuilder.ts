@@ -56,6 +56,7 @@ const buildViewGraph = (
       diffStatus: (nodeStatus.get(node.id) ?? "unchanged") as ViewGraphNode["diffStatus"],
       filePath: node.filePath,
       startLine: node.startLine,
+      endLine: node.endLine,
       parentId: hasParentGroup ? parentFn.id : undefined,
     });
   }
@@ -79,6 +80,7 @@ const buildViewGraph = (
       diffStatus: (nodeStatus.get(node.id) ?? "unchanged") as ViewGraphNode["diffStatus"],
       filePath: node.filePath,
       startLine: node.startLine,
+      endLine: node.endLine,
       parentId,
       branchType: branchKind,
     });

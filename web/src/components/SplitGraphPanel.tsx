@@ -13,7 +13,7 @@ import {
   Position,
 } from "@xyflow/react";
 import dagre from "@dagrejs/dagre";
-import type { ViewGraph, ViewGraphNode, ViewportState } from "../types/graph";
+import type { FileDiffEntry, ViewGraph, ViewGraphNode, ViewportState } from "../types/graph";
 import DiamondNode from "./nodes/DiamondNode";
 import PillNode from "./nodes/PillNode";
 import ProcessNode from "./nodes/ProcessNode";
@@ -37,6 +37,7 @@ interface SplitGraphPanelProps {
   selectedNodeId: string;
   focusFilePath: string;
   diffStats?: DiffStats;
+  fileDiffs?: FileDiffEntry[];
 }
 
 const statusColor: Record<string, string> = {
@@ -82,9 +83,25 @@ const NODE_H = 56;
 
 /* ========== LOGIC: two-pass nested layout ========== */
 
+const extractCodeContext = (
+  fileContent: string,
+  startLine: number | undefined,
+  endLine: number | undefined,
+): string => {
+  if (!startLine || !fileContent) return "";
+  const lines = fileContent.split("\n");
+  const from = Math.max(0, startLine - 6);
+  const to = Math.min(lines.length, (endLine ?? startLine) + 5);
+  return lines
+    .slice(from, to)
+    .map((line, i) => `${from + i + 1} | ${line}`)
+    .join("\n");
+};
+
 const computeLogicLayout = (
   graph: ViewGraph,
   selectedNodeId: string,
+  fileContentMap: Map<string, string>,
 ): { nodes: Node[]; edges: Edge[] } => {
   const groupNodes = graph.nodes.filter((n) => n.kind === "group");
   const leafNodes = graph.nodes.filter((n) => n.kind !== "group");
@@ -235,9 +252,12 @@ const computeLogicLayout = (
     } else {
       const shape = leafNodeShape(node.branchType ?? "");
       const pos = parentOk ? (childPos.get(node.id) ?? { x: 0, y: 0 }) : (topPos.get(node.id) ?? { x: 0, y: 0 });
+      const normalizedFilePath = normPath(node.filePath);
+      const fileContent = fileContentMap.get(normalizedFilePath) ?? "";
+      const codeContext = extractCodeContext(fileContent, node.startLine, node.endLine);
       flowNodes.push({
         id: node.id, type: shape,
-        data: { label: node.label, bgColor: bg, textColor: txt, selected: sel },
+        data: { label: node.label, bgColor: bg, textColor: txt, selected: sel, codeContext },
         position: pos, sourcePosition: Position.Bottom, targetPosition: Position.Top,
         ...(parentOk ? { parentId: node.parentId, extent: "parent" as const } : {}),
       });
@@ -306,7 +326,7 @@ const normPath = (v: string): string =>
   v.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
 
 export const SplitGraphPanel = ({
-  title, side, graph, viewType, onNodeSelect, viewport, onViewportChange, selectedNodeId, focusFilePath, diffStats,
+  title, side, graph, viewType, onNodeSelect, viewport, onViewportChange, selectedNodeId, focusFilePath, diffStats, fileDiffs,
 }: SplitGraphPanelProps) => {
   /******************* STORE ***********************/
   const noStore = null;
@@ -316,9 +336,19 @@ export const SplitGraphPanel = ({
   const isLogic = useMemo(() => viewType === "logic", [viewType]);
   const isOld = useMemo(() => side === "old", [side]);
 
+  const fileContentMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!fileDiffs) return map;
+    for (const f of fileDiffs) {
+      const content = isOld ? f.oldContent : f.newContent;
+      map.set(normPath(f.path), content);
+    }
+    return map;
+  }, [fileDiffs, isOld]);
+
   const flowElements = useMemo(
-    () => isLogic ? computeLogicLayout(graph, selectedNodeId) : computeFlatLayout(graph, selectedNodeId),
-    [graph, isLogic, selectedNodeId],
+    () => isLogic ? computeLogicLayout(graph, selectedNodeId, fileContentMap) : computeFlatLayout(graph, selectedNodeId),
+    [graph, isLogic, selectedNodeId, fileContentMap],
   );
 
   const flowStyle = useMemo(() => ({ width: "100%", height: "100%" }), []);

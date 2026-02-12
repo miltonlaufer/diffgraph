@@ -224,6 +224,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
           onViewportChange={handleViewportChange}
           selectedNodeId={selectedNodeId}
           focusFilePath={selectedFilePath}
+          fileDiffs={fileDiffs}
         />
         <SplitGraphPanel
           title="New"
@@ -236,6 +237,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
           selectedNodeId={selectedNodeId}
           focusFilePath={selectedFilePath}
           diffStats={diffStats}
+          fileDiffs={fileDiffs}
         />
       </div>
 

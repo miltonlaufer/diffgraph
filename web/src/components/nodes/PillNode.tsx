@@ -1,5 +1,6 @@
 import { Handle, Position } from "@xyflow/react";
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState, useCallback } from "react";
+import CodeTooltip from "./CodeTooltip";
 
 const splitLabel = (label: string): { title: string; code: string } => {
   const idx = label.indexOf("\n");
@@ -12,9 +13,13 @@ interface PillNodeData {
   bgColor: string;
   textColor: string;
   selected: boolean;
+  codeContext?: string;
 }
 
 const PillNode = ({ data }: { data: PillNodeData }) => {
+  /******************* STORE ***********************/
+  const [hovered, setHovered] = useState(false);
+
   /******************* COMPUTED ***********************/
   const parts = useMemo(() => splitLabel(data.label), [data.label]);
   const style = useMemo(
@@ -31,8 +36,12 @@ const PillNode = ({ data }: { data: PillNodeData }) => {
     [data.bgColor, data.selected],
   );
 
+  /******************* FUNCTIONS ***********************/
+  const onEnter = useCallback(() => setHovered(true), []);
+  const onLeave = useCallback(() => setHovered(false), []);
+
   return (
-    <div style={style}>
+    <div style={style} onMouseEnter={onEnter} onMouseLeave={onLeave}>
       <div style={{ fontSize: 11, color: data.textColor }}>{parts.title}</div>
       {parts.code && (
         <div style={{ fontSize: 9, fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace", color: data.textColor, opacity: 0.85, marginTop: 2, lineHeight: 1.3 }}>
@@ -41,6 +50,7 @@ const PillNode = ({ data }: { data: PillNodeData }) => {
       )}
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
+      <CodeTooltip visible={hovered} codeContext={data.codeContext ?? ""} />
     </div>
   );
 };
