@@ -1,6 +1,12 @@
 import { spawn } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { GraphEdge, GraphNode, SnapshotGraph } from "../graph/schema.js";
 import { stableHash } from "../utils/hash.js";
+
+const currentFilePath = fileURLToPath(import.meta.url);
+const packageRoot = path.resolve(path.dirname(currentFilePath), "../../../..");
+const analyzerScript = path.join(packageRoot, "scripts", "analyze_python.py");
 
 interface PyResult {
   functions: Array<{ name: string; qualifiedName: string; start: number; end: number }>;
@@ -129,7 +135,7 @@ export class PyAnalyzer {
 
   private async runAnalyzer(content: string): Promise<PyResult> {
     return new Promise<PyResult>((resolve, reject) => {
-      const child = spawn("python3", ["scripts/analyze_python.py"], { cwd: process.cwd() });
+      const child = spawn("python3", [analyzerScript]);
       let stdout = "";
       let stderr = "";
       child.stdout.on("data", (chunk: Uint8Array) => {
