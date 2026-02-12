@@ -54,19 +54,31 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
 
   const visibleOldGraph = useMemo(() => {
     if (!showChangesOnly) return filteredOldGraph;
-    const ids = new Set(filteredOldGraph.nodes.filter((n) => n.diffStatus !== "unchanged").map((n) => n.id));
+    /* Start with changed nodes */
+    const changedIds = new Set(filteredOldGraph.nodes.filter((n) => n.diffStatus !== "unchanged").map((n) => n.id));
+    /* Also include children of kept groups, and parents of kept children */
+    const keepIds = new Set(changedIds);
+    for (const node of filteredOldGraph.nodes) {
+      if (node.parentId && changedIds.has(node.parentId)) keepIds.add(node.id);
+      if (node.parentId && changedIds.has(node.id)) keepIds.add(node.parentId);
+    }
     return {
-      nodes: filteredOldGraph.nodes.filter((n) => ids.has(n.id)),
-      edges: filteredOldGraph.edges.filter((e) => e.diffStatus !== "unchanged" && ids.has(e.source) && ids.has(e.target)),
+      nodes: filteredOldGraph.nodes.filter((n) => keepIds.has(n.id)),
+      edges: filteredOldGraph.edges.filter((e) => keepIds.has(e.source) && keepIds.has(e.target)),
     };
   }, [filteredOldGraph, showChangesOnly]);
 
   const visibleNewGraph = useMemo(() => {
     if (!showChangesOnly) return filteredNewGraph;
-    const ids = new Set(filteredNewGraph.nodes.filter((n) => n.diffStatus !== "unchanged").map((n) => n.id));
+    const changedIds = new Set(filteredNewGraph.nodes.filter((n) => n.diffStatus !== "unchanged").map((n) => n.id));
+    const keepIds = new Set(changedIds);
+    for (const node of filteredNewGraph.nodes) {
+      if (node.parentId && changedIds.has(node.parentId)) keepIds.add(node.id);
+      if (node.parentId && changedIds.has(node.id)) keepIds.add(node.parentId);
+    }
     return {
-      nodes: filteredNewGraph.nodes.filter((n) => ids.has(n.id)),
-      edges: filteredNewGraph.edges.filter((e) => e.diffStatus !== "unchanged" && ids.has(e.source) && ids.has(e.target)),
+      nodes: filteredNewGraph.nodes.filter((n) => keepIds.has(n.id)),
+      edges: filteredNewGraph.edges.filter((e) => keepIds.has(e.source) && keepIds.has(e.target)),
     };
   }, [filteredNewGraph, showChangesOnly]);
 
