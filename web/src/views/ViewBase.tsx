@@ -3,7 +3,8 @@ import { fetchDiffFiles, fetchView } from "../api";
 import { CodeDiffDrawer } from "../components/CodeDiffDrawer";
 import { FileListPanel } from "../components/FileListPanel";
 import { SplitGraphPanel } from "../components/SplitGraphPanel";
-import type { FileDiffEntry, ViewGraph, ViewportState } from "../types/graph";
+import { SymbolListPanel } from "../components/SymbolListPanel";
+import type { FileDiffEntry, FileSymbol, ViewGraph, ViewportState } from "../types/graph";
 
 interface ViewBaseProps {
   diffId: string;
@@ -131,6 +132,11 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     [fileDiffs, selectedFilePath],
   );
 
+  const selectedSymbols = useMemo<FileSymbol[]>(
+    () => selectedFile?.symbols ?? [],
+    [selectedFile],
+  );
+
   /******************* FUNCTIONS ***********************/
   const handleNodeSelect = useCallback(
     (nodeId: string) => {
@@ -150,6 +156,11 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
 
   const handleFileSelect = useCallback((filePath: string) => {
     setSelectedFilePath(filePath);
+  }, []);
+
+  const handleSymbolClick = useCallback((startLine: number) => {
+    setTargetLine(startLine);
+    setScrollTick((prev) => prev + 1);
   }, []);
 
   const handleViewportChange = useCallback((vp: ViewportState) => {
@@ -254,6 +265,10 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
         selectedFilePath={selectedFilePath}
         onFileSelect={handleFileSelect}
       />
+
+      {selectedSymbols.length > 0 && (
+        <SymbolListPanel symbols={selectedSymbols} onSymbolClick={handleSymbolClick} />
+      )}
 
       <CodeDiffDrawer file={selectedFile} targetLine={targetLine} scrollTick={scrollTick} />
     </section>

@@ -81,6 +81,7 @@ export const createApp = (context: AppContext): express.Express => {
       return;
     }
 
+    const symbolKinds = new Set(["Function", "Method", "Class", "ReactComponent", "Hook"]);
     const entries = Array.from(result.hunksByPath.entries()).map(([filePath, hunks]) => {
       const normalizedFilePath = normalizePath(filePath);
       const oldNode = result.oldGraph.nodes.find(
@@ -89,11 +90,39 @@ export const createApp = (context: AppContext): express.Express => {
       const newNode = result.newGraph.nodes.find(
         (node) => node.kind === "File" && normalizePath(node.filePath) === normalizedFilePath,
       );
+
+      /* Collect symbols (functions, methods, classes) for this file */
+      const oldSymbols = result.oldGraph.nodes.filter(
+        (n) => symbolKinds.has(n.kind) && normalizePath(n.filePath) === normalizedFilePath,
+      );
+      const newSymbols = result.newGraph.nodes.filter(
+        (n) => symbolKinds.has(n.kind) && normalizePath(n.filePath) === normalizedFilePath,
+      );
+      const oldByKey = new Map(oldSymbols.map((n) => [`${n.kind}:${n.name}`, n]));
+      const newByKey = new Map(newSymbols.map((n) => [`${n.kind}:${n.name}`, n]));
+      const allKeys = new Set([...oldByKey.keys(), ...newByKey.keys()]);
+      const symbols = [...allKeys].map((key) => {
+        const oldSym = oldByKey.get(key);
+        const newSym = newByKey.get(key);
+        const sym = newSym ?? oldSym;
+        let diffStatus = "unchanged";
+        if (!oldSym) diffStatus = "added";
+        else if (!newSym) diffStatus = "removed";
+        else if (oldSym.signatureHash !== newSym.signatureHash) diffStatus = "modified";
+        return {
+          name: sym?.name ?? "",
+          kind: sym?.kind ?? "",
+          startLine: (newSym ?? oldSym)?.startLine ?? 0,
+          diffStatus,
+        };
+      }).sort((a, b) => a.startLine - b.startLine);
+
       return {
         path: filePath,
         hunks,
         oldContent: oldNode ? (result.oldFileContents?.get(normalizedFilePath) ?? "") : "",
         newContent: newNode ? (result.newFileContents?.get(normalizedFilePath) ?? "") : "",
+        symbols,
       };
     });
     res.json(entries);

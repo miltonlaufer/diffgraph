@@ -42,11 +42,19 @@ export interface SymbolDetail {
   hunks: string[];
 }
 
+export interface FileSymbol {
+  name: string;
+  kind: string;
+  startLine: number;
+  diffStatus: DiffStatus;
+}
+
 export interface FileDiffEntry {
   path: string;
   hunks: string[];
   oldContent: string;
   newContent: string;
+  symbols: FileSymbol[];
 }
 
 export interface ViewportState {

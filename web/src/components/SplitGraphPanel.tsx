@@ -262,9 +262,18 @@ const computeLogicLayout = (
       const normalizedFilePath = normPath(node.filePath);
       const fileContent = fileContentMap.get(normalizedFilePath) ?? "";
       const codeContext = extractCodeContext(fileContent, node.startLine, node.endLine);
+
+      /* Return nodes get a distinct purple color */
+      let nodeBg = bg;
+      let nodeTxt = txt;
+      if ((node.branchType ?? "") === "return") {
+        if (node.diffStatus === "unchanged") { nodeBg = "#6d28d9"; nodeTxt = "#f5f3ff"; }
+        else if (node.diffStatus === "modified") { nodeBg = "#a78bfa"; nodeTxt = "#1e1b4b"; }
+      }
+
       flowNodes.push({
         id: node.id, type: shape,
-        data: { label: node.label, bgColor: bg, textColor: txt, selected: sel, codeContext },
+        data: { label: node.label, bgColor: nodeBg, textColor: nodeTxt, selected: sel, codeContext },
         position: pos, sourcePosition: Position.Bottom, targetPosition: Position.Top,
         ...(parentOk ? { parentId: node.parentId, extent: "parent" as const } : {}),
       });

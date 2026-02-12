@@ -43,7 +43,8 @@ const buildViewGraph = (
       continue;
     }
     const badge = kindBadge[node.kind] ?? node.kind;
-    const label = `[${badge}] ${node.name}`;
+    const params = (node.metadata?.params as string) ?? "";
+    const label = `[${badge}] ${node.name}${params}`;
 
     /* Check if this function itself has a parent function (e.g. useEffect inside Component) */
     const parentFn = parentMap.get(node.id);

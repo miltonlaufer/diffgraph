@@ -68,6 +68,21 @@ const createFileNode = (
   ref,
 });
 
+const extractParams = (node: Node): string => {
+  if (Node.isFunctionDeclaration(node) || Node.isFunctionExpression(node) || Node.isArrowFunction(node) || Node.isMethodDeclaration(node) || Node.isGetAccessorDeclaration(node) || Node.isSetAccessorDeclaration(node)) {
+    const params = node.getParameters();
+    if (params.length === 0) return "()";
+    const parts = params.map((p) => {
+      const name = p.getName();
+      const typeNode = p.getTypeNode();
+      return typeNode ? `${name}: ${typeNode.getText()}` : name;
+    });
+    const result = `(${parts.join(", ")})`;
+    return result.length > 80 ? `(${parts.map((p) => p.split(":")[0]).join(", ")})` : result;
+  }
+  return "";
+};
+
 const buildSymbolNode = (
   kind: GraphNode["kind"],
   filePath: string,
@@ -78,6 +93,7 @@ const buildSymbolNode = (
   startLine: number,
   endLine: number,
   sourceText?: string,
+  extraMetadata?: Record<string, string | number | boolean>,
 ): GraphNode => ({
   id: stableHash(`${snapshotId}:${kind}:${qualifiedName}:${startLine}:${endLine}`),
   kind,
@@ -88,6 +104,7 @@ const buildSymbolNode = (
   startLine,
   endLine,
   signatureHash: stableHash(sourceText ?? `${qualifiedName}:${startLine}:${endLine}`),
+  metadata: extraMetadata,
   snapshotId,
   ref,
 });
@@ -187,6 +204,7 @@ export class TsAnalyzer {
       ];
       for (const member of allClassMembers) {
         const memberName = member.getName();
+        const params = extractParams(member);
         const memberNode = buildSymbolNode(
           "Method",
           sourceFile.getFilePath(),
@@ -197,6 +215,7 @@ export class TsAnalyzer {
           member.getStartLineNumber(),
           member.getEndLineNumber(),
           member.getText(),
+          { params },
         );
         nodes.push(memberNode);
         symbolByName.set(memberName, memberNode.id);
@@ -216,6 +235,7 @@ export class TsAnalyzer {
     for (const fn of sourceFile.getFunctions()) {
       const name = fn.getName() ?? "anonymous";
       const kind = detectReactComponent(fn) ? "ReactComponent" : name.startsWith("use") ? "Hook" : "Function";
+      const params = extractParams(fn);
       const fnNode = buildSymbolNode(
         kind,
         sourceFile.getFilePath(),
@@ -226,6 +246,7 @@ export class TsAnalyzer {
         fn.getStartLineNumber(),
         fn.getEndLineNumber(),
         fn.getText(),
+        { params },
       );
       nodes.push(fnNode);
       symbolByName.set(name, fnNode.id);
@@ -257,6 +278,7 @@ export class TsAnalyzer {
       const kind: GraphNode["kind"] = looksReact ? "ReactComponent" : isHook ? "Hook" : "Function";
       const startLine = declaration.getStartLineNumber();
       const endLine = declaration.getEndLineNumber();
+      const params = extractParams(initializer);
       const varNode = buildSymbolNode(
         kind,
         sourceFile.getFilePath(),
@@ -267,6 +289,7 @@ export class TsAnalyzer {
         startLine,
         endLine,
         declaration.getText(),
+        { params },
       );
       nodes.push(varNode);
       symbolByName.set(name, varNode.id);
@@ -337,6 +360,7 @@ export class TsAnalyzer {
 
       coveredRanges.add(rangeKey);
 
+      const params = extractParams(node);
       const qualifiedName = `${sourceFile.getBaseNameWithoutExtension()}.deep.${name}@${startLine}`;
       const stableQName = `${sourceFile.getBaseNameWithoutExtension()}.deep.${name}`;
       const fnNode: GraphNode = {
@@ -349,6 +373,7 @@ export class TsAnalyzer {
         startLine,
         endLine,
         signatureHash: stableHash(node.getText()),
+        metadata: { params },
         snapshotId,
         ref,
       };

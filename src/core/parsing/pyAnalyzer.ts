@@ -18,7 +18,7 @@ interface PyBranch {
 }
 
 interface PyResult {
-  functions: Array<{ name: string; qualifiedName: string; start: number; end: number }>;
+  functions: Array<{ name: string; qualifiedName: string; start: number; end: number; params?: string }>;
   classes: Array<{ name: string; start: number; end: number }>;
   imports: string[];
   calls: Array<{ caller: string; callee: string; line: number }>;
@@ -88,6 +88,7 @@ export class PyAnalyzer {
           startLine: fn.start,
           endLine: fn.end,
           signatureHash: stableHash(`${fn.qualifiedName}:${fn.start}:${fn.end}`),
+          metadata: { params: fn.params ?? "()" },
           snapshotId,
           ref,
         };

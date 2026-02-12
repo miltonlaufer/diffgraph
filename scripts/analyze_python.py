@@ -50,12 +50,26 @@ class Collector(ast.NodeVisitor):
             if self.current_scope != "module"
             else node.name
         )
+        # Extract parameters
+        args = node.args
+        param_names: list[str] = []
+        for arg in args.args:
+            annotation = ""
+            if arg.annotation:
+                try:
+                    annotation = f": {ast.unparse(arg.annotation)}"
+                except Exception:
+                    pass
+            param_names.append(f"{arg.arg}{annotation}")
+        params = f"({', '.join(param_names)})" if param_names else "()"
+
         self.functions.append(
             {
                 "name": node.name,
                 "qualifiedName": qualified_name,
                 "start": node.lineno,
                 "end": getattr(node, "end_lineno", node.lineno),
+                "params": params,
             }
         )
         previous = self.current_scope
