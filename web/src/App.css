@@ -1,0 +1,308 @@
+.appContainer {
+  width: 100%;
+  min-height: 100vh;
+  background: #020617;
+  color: #e2e8f0;
+  box-sizing: border-box;
+  padding: 12px;
+}
+
+.appHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.tabBar {
+  display: flex;
+  gap: 8px;
+}
+
+.tabBar button {
+  background: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+}
+
+.tabBar button.active {
+  border-color: #38bdf8;
+  background: #0c4a6e;
+}
+
+/* ---------- view layout ---------- */
+
+.viewContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.splitLayout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  min-height: 55vh;
+}
+
+.panel {
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.legendRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.legendItem {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #334155;
+}
+
+.addedLegend { color: #86efac; }
+.removedLegend { color: #fca5a5; }
+.modifiedLegend { color: #fde047; }
+
+.flowContainer {
+  width: 100%;
+  height: 52vh;
+}
+
+/* ---------- file list panel (always visible at bottom) ---------- */
+
+.fileListPanel {
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #0f172a;
+}
+
+.fileListTitle {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #94a3b8;
+}
+
+.fileListToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+.fileListToggle:hover {
+  color: #e2e8f0;
+}
+
+.toggleArrow {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.toggleArrow.collapsed {
+  transform: rotate(-90deg);
+}
+
+.fileListGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filePill {
+  border: 1px solid #334155;
+  border-radius: 999px;
+  background: #020617;
+  color: #cbd5e1;
+  font-size: 12px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.filePill:hover {
+  border-color: #64748b;
+}
+
+.filePillActive {
+  border-color: #38bdf8;
+  background: #0c4a6e;
+  color: #e0f2fe;
+}
+
+/* ---------- code diff panel ---------- */
+
+.codeDiffPanel {
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #0f172a;
+}
+
+.codeDiffTitle {
+  margin: 0;
+  font-size: 13px;
+  color: #38bdf8;
+}
+
+.diffNavBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.diffNavControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diffCount {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-left: 8px;
+}
+
+.diffNavBtn {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  width: 26px;
+  height: 26px;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0;
+}
+
+.diffNavBtn:hover:not(:disabled) {
+  background: #334155;
+}
+
+.diffNavBtn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.diffNavPos {
+  font-size: 12px;
+  color: #cbd5e1;
+  min-width: 36px;
+  text-align: center;
+}
+
+.splitCodeLayout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.codeColumn {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.codeColumnHeader {
+  margin: 0 0 4px 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.oldHeader { color: #fca5a5; }
+.newHeader { color: #86efac; }
+
+.codeScrollArea {
+  overflow: auto;
+  height: 400px;
+  border-radius: 8px;
+  background: #020617;
+}
+
+.hunk {
+  overflow: auto;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  max-height: 300px;
+}
+
+/* ---------- diff table ---------- */
+
+.diffTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.lineNum {
+  width: 40px;
+  min-width: 40px;
+  text-align: right;
+  padding: 0 8px 0 4px;
+  color: #475569;
+  user-select: none;
+  vertical-align: top;
+}
+
+.lineCode {
+  padding: 0 4px;
+  white-space: pre;
+}
+
+.lineText {
+  margin: 0;
+  font: inherit;
+  white-space: pre;
+}
+
+.dimText {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.errorText {
+  color: #fda4af;
+}
+
+/* ---------- loading ---------- */
+
+.loadingContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 40vh;
+  gap: 16px;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #334155;
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

@@ -1,0 +1,48 @@
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  min-width: 320px;
+}
+
+/* Scope button styles to app buttons only -- exclude ReactFlow internals */
+.tabBar > button,
+.fileListGrid > button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+
+/* ReactFlow MiniMap: visible background */
+.react-flow__minimap {
+  background: #0f172a !important;
+  border: 1px solid #334155;
+  border-radius: 6px;
+}
+
+/* ReactFlow Controls: ensure icons are visible on dark bg */
+.react-flow__controls {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 6px;
+}
+
+.react-flow__controls button {
+  background: #1e293b !important;
+  border: none !important;
+  border-bottom: 1px solid #334155 !important;
+  fill: #e2e8f0 !important;
+  color: #e2e8f0 !important;
+}
+
+.react-flow__controls button:hover {
+  background: #334155 !important;
+}
+
+.react-flow__controls button svg {
+  fill: #e2e8f0 !important;
+}

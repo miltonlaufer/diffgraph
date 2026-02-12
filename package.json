@@ -1,0 +1,50 @@
+{
+  "name": "diffgraph",
+  "version": "0.1.0",
+  "description": "Graph-aware diff explorer for repositories",
+  "type": "module",
+  "main": "dist/src/cli/index.js",
+  "bin": {
+    "diffgraph": "dist/src/cli/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli/index.ts staged --no-open",
+    "build": "tsc -p tsconfig.json && npm --prefix web run build",
+    "lint": "eslint src --ext .ts",
+    "type-check": "tsc --noEmit --project tsconfig.json && npm --prefix web run type-check",
+    "test": "vitest run && npm --prefix web run test",
+    "lint-staged": "eslint src --ext .ts && npm --prefix web run lint"
+  },
+  "workspaces": [
+    "web"
+  ],
+  "keywords": [
+    "diff",
+    "graph",
+    "neo4j",
+    "code-analysis"
+  ],
+  "author": "",
+  "license": "ISC",
+  "private": true,
+  "dependencies": {
+    "commander": "^14.0.3",
+    "express": "^5.1.0",
+    "neo4j-driver": "^6.0.1",
+    "open": "^11.0.0",
+    "parse-git-diff": "^0.0.19",
+    "ts-morph": "^27.0.2",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.7.2",
+    "@typescript-eslint/eslint-plugin": "^8.46.1",
+    "@typescript-eslint/parser": "^8.46.1",
+    "eslint": "^9.37.0",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
