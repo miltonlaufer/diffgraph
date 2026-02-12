@@ -8,11 +8,21 @@ const currentFilePath = fileURLToPath(import.meta.url);
 const packageRoot = path.resolve(path.dirname(currentFilePath), "../../../..");
 const analyzerScript = path.join(packageRoot, "scripts", "analyze_python.py");
 
+interface PyBranch {
+  kind: string;
+  owner: string;
+  idx: number;
+  start: number;
+  end: number;
+  snippet: string;
+}
+
 interface PyResult {
   functions: Array<{ name: string; qualifiedName: string; start: number; end: number }>;
   classes: Array<{ name: string; start: number; end: number }>;
   imports: string[];
   calls: Array<{ caller: string; callee: string; line: number }>;
+  branches: PyBranch[];
 }
 
 export class PyAnalyzer {
@@ -121,6 +131,84 @@ export class PyAnalyzer {
           snapshotId,
           ref,
         });
+      }
+
+      /* Branch nodes */
+      const branchNodesByOwner = new Map<string, GraphNode[]>();
+
+      for (const branch of parsed.branches ?? []) {
+        const stableQName = `${file.path}:${branch.owner}::${branch.kind}#${branch.idx}`;
+        const branchNode: GraphNode = {
+          id: stableHash(`${snapshotId}:branch:${stableQName}`),
+          kind: "Branch",
+          name: `${branch.kind}@${branch.start}`,
+          qualifiedName: stableQName,
+          filePath: file.path,
+          language: "py",
+          startLine: branch.start,
+          endLine: branch.end,
+          signatureHash: stableHash(branch.snippet),
+          metadata: { branchType: branch.kind, codeSnippet: branch.snippet },
+          snapshotId,
+          ref,
+        };
+        nodes.push(branchNode);
+
+        /* Find owner function node */
+        const ownerName = branch.owner.split(".").at(-1) ?? "";
+        const ownerId = symbolByName.get(ownerName);
+        const parentId = ownerId ?? fileNode.id;
+        edges.push({
+          id: stableHash(`${snapshotId}:declares:${parentId}:${branchNode.id}`),
+          source: parentId,
+          target: branchNode.id,
+          kind: "DECLARES",
+          filePath: file.path,
+          snapshotId,
+          ref,
+        });
+
+        /* Group by owner for flow edges */
+        const ownerKey = ownerId ?? fileNode.id;
+        if (!branchNodesByOwner.has(ownerKey)) {
+          branchNodesByOwner.set(ownerKey, []);
+        }
+        branchNodesByOwner.get(ownerKey)!.push(branchNode);
+      }
+
+      /* Create flow edges between sibling branches within each function */
+      for (const [ownerId, siblings] of branchNodesByOwner.entries()) {
+        const sorted = [...siblings].sort((a, b) => (a.startLine ?? 0) - (b.startLine ?? 0));
+        let prevNode: GraphNode | null = null;
+        let prevIsReturn = false;
+
+        for (const current of sorted) {
+          if (!prevNode) {
+            /* First branch: connect from owner */
+            edges.push({
+              id: stableHash(`${snapshotId}:flow-start:${ownerId}:${current.id}`),
+              source: ownerId,
+              target: current.id,
+              kind: "CALLS",
+              filePath: file.path,
+              snapshotId,
+              ref,
+            });
+          } else if (!prevIsReturn) {
+            /* Connect from previous sibling (unless it was a return) */
+            edges.push({
+              id: stableHash(`${snapshotId}:flow-step:${prevNode.id}:${current.id}`),
+              source: prevNode.id,
+              target: current.id,
+              kind: "CALLS",
+              filePath: file.path,
+              snapshotId,
+              ref,
+            });
+          }
+          prevNode = current;
+          prevIsReturn = (current.metadata?.branchType as string) === "return";
+        }
       }
     }
 

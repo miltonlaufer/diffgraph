@@ -83,19 +83,26 @@ const NODE_H = 56;
 
 /* ========== LOGIC: two-pass nested layout ========== */
 
+interface CodeContextData {
+  lines: Array<{ num: number; text: string; highlight: boolean }>;
+}
+
 const extractCodeContext = (
   fileContent: string,
   startLine: number | undefined,
   endLine: number | undefined,
-): string => {
-  if (!startLine || !fileContent) return "";
-  const lines = fileContent.split("\n");
+): CodeContextData => {
+  if (!startLine || !fileContent) return { lines: [] };
+  const allLines = fileContent.split("\n");
   const from = Math.max(0, startLine - 6);
-  const to = Math.min(lines.length, (endLine ?? startLine) + 5);
-  return lines
-    .slice(from, to)
-    .map((line, i) => `${from + i + 1} | ${line}`)
-    .join("\n");
+  const to = Math.min(allLines.length, (endLine ?? startLine) + 5);
+  const end = endLine ?? startLine;
+  return {
+    lines: allLines.slice(from, to).map((text, i) => {
+      const num = from + i + 1;
+      return { num, text, highlight: num >= startLine && num <= end };
+    }),
+  };
 };
 
 const computeLogicLayout = (
@@ -346,10 +353,25 @@ export const SplitGraphPanel = ({
     return map;
   }, [fileDiffs, isOld]);
 
-  const flowElements = useMemo(
-    () => isLogic ? computeLogicLayout(graph, selectedNodeId, fileContentMap) : computeFlatLayout(graph, selectedNodeId),
-    [graph, isLogic, selectedNodeId, fileContentMap],
+  /* Heavy layout: only recomputes when graph structure changes, NOT on selection */
+  const layoutResult = useMemo(
+    () => isLogic ? computeLogicLayout(graph, "", fileContentMap) : computeFlatLayout(graph, ""),
+    [graph, isLogic, fileContentMap],
   );
+
+  /* Light selection pass: just updates node styles */
+  const flowElements = useMemo(() => {
+    if (!selectedNodeId) return layoutResult;
+    const nodes = layoutResult.nodes.map((node) => {
+      const isSelected = node.id === selectedNodeId;
+      if (!isSelected) return node;
+      if (node.type === "scope" || node.type === "diamond" || node.type === "pill" || node.type === "process") {
+        return { ...node, data: { ...node.data, selected: true } };
+      }
+      return { ...node, style: { ...(node.style ?? {}), border: "3px solid #38bdf8", boxShadow: "0 0 12px #38bdf8" } };
+    });
+    return { nodes, edges: layoutResult.edges };
+  }, [layoutResult, selectedNodeId]);
 
   const flowStyle = useMemo(() => ({ width: "100%", height: "100%" }), []);
   const stats = useMemo(() => {
@@ -399,7 +421,7 @@ export const SplitGraphPanel = ({
         <ReactFlow
           nodes={flowElements.nodes} edges={flowElements.edges} nodeTypes={nodeTypesForFlow}
           onNodeClick={handleNodeClick} viewport={viewport} onMove={handleMove}
-          style={flowStyle} onlyRenderVisibleElements fitView fitViewOptions={{ padding: 0.1 }}
+          style={flowStyle} onlyRenderVisibleElements
         >
           <Background />
           {!isOld && <Controls />}
