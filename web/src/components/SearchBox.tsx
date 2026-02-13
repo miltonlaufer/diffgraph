@@ -64,9 +64,13 @@ export const SearchBox = ({ placeholder, onSearch, onNext, onPrev, resultCount, 
             <input type="checkbox" checked={exclude} onChange={handleExcludeToggle} className="excludeCheckbox" />
             exclude
           </label>
-          {resultCount > 0 ? `${currentIndex + 1}/${resultCount}` : "0"}
-          <button type="button" className="searchNavBtn" onClick={onPrev} disabled={resultCount === 0}>&#9650;</button>
-          <button type="button" className="searchNavBtn" onClick={onNext} disabled={resultCount === 0}>&#9660;</button>
+          {!exclude && (
+            <>
+              {resultCount > 0 ? `${currentIndex + 1}/${resultCount}` : "0"}
+              <button type="button" className="searchNavBtn" onClick={onPrev} disabled={resultCount === 0}>&#9650;</button>
+              <button type="button" className="searchNavBtn" onClick={onNext} disabled={resultCount === 0}>&#9660;</button>
+            </>
+          )}
         </span>
       )}
     </div>

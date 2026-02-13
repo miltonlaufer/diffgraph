@@ -1,5 +1,5 @@
 import { useMemo, useCallback, useRef, useEffect, useState, memo, type ChangeEvent, type KeyboardEvent } from "react";
-import { diffLines } from "diff";
+/* No external diff lib -- patience/LCS line diff */
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import type { FileDiffEntry } from "../types/graph";
@@ -16,73 +16,191 @@ interface DiffLine {
   lineNumber: number | null;
 }
 
+interface DiffMatrixRow {
+  old: DiffLine;
+  new: DiffLine;
+}
+
 const computeSideBySide = (
   oldContent: string,
   newContent: string,
 ): { oldLines: DiffLine[]; newLines: DiffLine[] } => {
-  const changes = diffLines(oldContent, newContent);
+  const oldArr = oldContent.split("\n");
+  const newArr = newContent.split("\n");
+  const oldNorm = oldArr.map((line) => line.trimEnd());
+  const newNorm = newArr.map((line) => line.trimEnd());
+
+  const lcsWindow = (aStart: number, aEnd: number, bStart: number, bEnd: number): Array<[number, number]> => {
+    const aLen = aEnd - aStart;
+    const bLen = bEnd - bStart;
+    if (aLen <= 0 || bLen <= 0) return [];
+    const cellCount = aLen * bLen;
+    /* Prevent pathological memory spikes on giant changed windows. */
+    if (cellCount > 8_000_000) {
+      const result: Array<[number, number]> = [];
+      let j = bStart;
+      for (let i = aStart; i < aEnd; i++) {
+        while (j < bEnd && newNorm[j] !== oldNorm[i]) {
+          j++;
+        }
+        if (j < bEnd) {
+          result.push([i, j]);
+          j++;
+        }
+      }
+      return result;
+    }
+    const dp: number[][] = Array.from({ length: aLen + 1 }, () => Array(bLen + 1).fill(0) as number[]);
+    for (let i = 1; i <= aLen; i++) {
+      for (let j = 1; j <= bLen; j++) {
+        if (oldNorm[aStart + i - 1] === newNorm[bStart + j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1] + 1;
+        } else {
+          dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+        }
+      }
+    }
+    let i = aLen;
+    let j = bLen;
+    const pairs: Array<[number, number]> = [];
+    while (i > 0 && j > 0) {
+      if (oldNorm[aStart + i - 1] === newNorm[bStart + j - 1]) {
+        pairs.push([aStart + i - 1, bStart + j - 1]);
+        i--;
+        j--;
+      } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+        i--;
+      } else {
+        j--;
+      }
+    }
+    pairs.reverse();
+    return pairs;
+  };
+
+  const lisPairs = (pairs: Array<[number, number]>): Array<[number, number]> => {
+    if (pairs.length === 0) return [];
+    const n = pairs.length;
+    const predecessors = new Array<number>(n).fill(-1);
+    const tails: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const jVal = pairs[i][1];
+      let lo = 0;
+      let hi = tails.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (pairs[tails[mid]][1] < jVal) {
+          lo = mid + 1;
+        } else {
+          hi = mid;
+        }
+      }
+      if (lo > 0) predecessors[i] = tails[lo - 1];
+      if (lo === tails.length) tails.push(i);
+      else tails[lo] = i;
+    }
+    let k = tails[tails.length - 1] ?? -1;
+    const seq: Array<[number, number]> = [];
+    while (k !== -1) {
+      seq.push(pairs[k]);
+      k = predecessors[k];
+    }
+    seq.reverse();
+    return seq;
+  };
+
+  const patienceDiff = (aStart: number, aEnd: number, bStart: number, bEnd: number): Array<[number, number]> => {
+    if (aStart >= aEnd || bStart >= bEnd) return [];
+    const oldCounts = new Map<string, number>();
+    const newCounts = new Map<string, number>();
+    const oldPos = new Map<string, number>();
+    const newPos = new Map<string, number>();
+    for (let i = aStart; i < aEnd; i++) {
+      const key = oldNorm[i];
+      oldCounts.set(key, (oldCounts.get(key) ?? 0) + 1);
+      oldPos.set(key, i);
+    }
+    for (let j = bStart; j < bEnd; j++) {
+      const key = newNorm[j];
+      newCounts.set(key, (newCounts.get(key) ?? 0) + 1);
+      newPos.set(key, j);
+    }
+    const uniquePairs: Array<[number, number]> = [];
+    for (let i = aStart; i < aEnd; i++) {
+      const key = oldNorm[i];
+      if ((oldCounts.get(key) ?? 0) === 1 && (newCounts.get(key) ?? 0) === 1) {
+        const j = newPos.get(key);
+        if (j !== undefined) uniquePairs.push([i, j]);
+      }
+    }
+    uniquePairs.sort((a, b) => a[0] - b[0]);
+    const anchors = lisPairs(uniquePairs);
+    if (anchors.length === 0) {
+      return lcsWindow(aStart, aEnd, bStart, bEnd);
+    }
+
+    const result: Array<[number, number]> = [];
+    let prevA = aStart;
+    let prevB = bStart;
+    for (const [aIdx, bIdx] of anchors) {
+      result.push(...patienceDiff(prevA, aIdx, prevB, bIdx));
+      result.push([aIdx, bIdx]);
+      prevA = aIdx + 1;
+      prevB = bIdx + 1;
+    }
+    result.push(...patienceDiff(prevA, aEnd, prevB, bEnd));
+    return result;
+  };
+
+  const lcsIndices = patienceDiff(0, oldArr.length, 0, newArr.length);
+
+  /* Build side-by-side from LCS matches */
   const oldLines: DiffLine[] = [];
   const newLines: DiffLine[] = [];
-  let oldLineNum = 1;
-  let newLineNum = 1;
+  let oi = 0;
+  let ni = 0;
 
-  let i = 0;
-  while (i < changes.length) {
-    const change = changes[i];
-    const lines = change.value.replace(/\n$/, "").split("\n");
-
-    if (!change.added && !change.removed) {
-      /* Unchanged: same row on both sides */
-      for (const line of lines) {
-        oldLines.push({ text: line, type: "same", lineNumber: oldLineNum++ });
-        newLines.push({ text: line, type: "same", lineNumber: newLineNum++ });
-      }
-      i++;
-    } else if (change.removed && i + 1 < changes.length && changes[i + 1].added) {
-      /* Removed + Added pair: show side by side, pad the shorter side */
-      const removedLines = lines;
-      const addedLines = changes[i + 1].value.replace(/\n$/, "").split("\n");
-      const maxLen = Math.max(removedLines.length, addedLines.length);
-      for (let j = 0; j < maxLen; j++) {
-        if (j < removedLines.length) {
-          oldLines.push({ text: removedLines[j], type: "removed", lineNumber: oldLineNum++ });
-        } else {
-          oldLines.push({ text: "", type: "empty", lineNumber: null });
-        }
-        if (j < addedLines.length) {
-          newLines.push({ text: addedLines[j], type: "added", lineNumber: newLineNum++ });
-        } else {
-          newLines.push({ text: "", type: "empty", lineNumber: null });
-        }
-      }
-      i += 2;
-    } else if (change.removed) {
-      /* Removed only: old side shows lines, new side gets empty placeholders */
-      for (const line of lines) {
-        oldLines.push({ text: line, type: "removed", lineNumber: oldLineNum++ });
-        newLines.push({ text: "", type: "empty", lineNumber: null });
-      }
-      i++;
-    } else if (change.added) {
-      /* Added only: new side shows lines, old side gets empty placeholders */
-      for (const line of lines) {
-        oldLines.push({ text: "", type: "empty", lineNumber: null });
-        newLines.push({ text: line, type: "added", lineNumber: newLineNum++ });
-      }
-      i++;
-    } else {
-      i++;
+  for (const [matchOld, matchNew] of lcsIndices) {
+    /* Emit removed lines before this match */
+    while (oi < matchOld) {
+      oldLines.push({ text: oldArr[oi], type: "removed", lineNumber: oi + 1 });
+      newLines.push({ text: "", type: "empty", lineNumber: null });
+      oi++;
     }
+    /* Emit added lines before this match */
+    while (ni < matchNew) {
+      oldLines.push({ text: "", type: "empty", lineNumber: null });
+      newLines.push({ text: newArr[ni], type: "added", lineNumber: ni + 1 });
+      ni++;
+    }
+    /* Emit the matched line */
+    oldLines.push({ text: oldArr[oi], type: "same", lineNumber: oi + 1 });
+    newLines.push({ text: newArr[ni], type: "same", lineNumber: ni + 1 });
+    oi++;
+    ni++;
+  }
+
+  /* Remaining removed */
+  while (oi < oldArr.length) {
+    oldLines.push({ text: oldArr[oi], type: "removed", lineNumber: oi + 1 });
+    newLines.push({ text: "", type: "empty", lineNumber: null });
+    oi++;
+  }
+  /* Remaining added */
+  while (ni < newArr.length) {
+    oldLines.push({ text: "", type: "empty", lineNumber: null });
+    newLines.push({ text: newArr[ni], type: "added", lineNumber: ni + 1 });
+    ni++;
   }
   return { oldLines, newLines };
 };
 
-/** Find row indices where diff hunks start (groups of consecutive changed lines) */
-const findDiffHunkStarts = (lines: DiffLine[]): number[] => {
+/** Find row indices where diff hunks start (groups of consecutive changed rows). */
+const findDiffHunkStarts = (rows: DiffMatrixRow[]): number[] => {
   const starts: number[] = [];
   let inHunk = false;
-  for (let i = 0; i < lines.length; i++) {
-    const isChanged = lines[i].type !== "same";
+  for (let i = 0; i < rows.length; i++) {
+    const isChanged = rows[i].old.type !== "same" || rows[i].new.type !== "same";
     if (isChanged && !inHunk) {
       starts.push(i);
       inHunk = true;
@@ -140,17 +258,19 @@ const HighlightedCode = memo(({ code, language }: { code: string; language: stri
   </SyntaxHighlighter>
 ));
 
-interface DiffRowProps {
-  side: string;
-  index: number;
-  line: DiffLine;
-  language: string;
-}
-
-const DiffRow = memo(({ side, line, language }: Omit<DiffRowProps, "index">) => (
-  <tr data-line={line.lineNumber ? `${side}-${line.lineNumber}` : undefined} style={lineStyle(line.type)}>
-    <td className="lineNum">{line.lineNumber ?? ""}</td>
-    <td className="lineCode">{line.type === "empty" ? <span /> : <HighlightedCode code={line.text} language={language} />}</td>
+const MatrixRow = memo(({ row, language }: { row: DiffMatrixRow; language: string }) => (
+  <tr
+    data-old-line={row.old.lineNumber ?? undefined}
+    data-new-line={row.new.lineNumber ?? undefined}
+  >
+    <td className="lineNum" style={lineStyle(row.old.type)}>{row.old.lineNumber ?? ""}</td>
+    <td className="lineCode" style={lineStyle(row.old.type)}>
+      {row.old.type === "empty" ? <span /> : <HighlightedCode code={row.old.text} language={language} />}
+    </td>
+    <td className="lineNum" style={lineStyle(row.new.type)}>{row.new.lineNumber ?? ""}</td>
+    <td className="lineCode" style={lineStyle(row.new.type)}>
+      {row.new.type === "empty" ? <span /> : <HighlightedCode code={row.new.text} language={language} />}
+    </td>
   </tr>
 ));
 
@@ -189,9 +309,7 @@ const scrollToRowIndex = (container: HTMLDivElement | null, rowIndex: number): v
 
 export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerProps) => {
   /******************* STORE ***********************/
-  const oldScrollRef = useRef<HTMLDivElement>(null);
-  const newScrollRef = useRef<HTMLDivElement>(null);
-  const syncing = useRef(false);
+  const codeScrollRef = useRef<HTMLDivElement>(null);
   const [currentHunkIdx, setCurrentHunkIdx] = useState(0);
   const [textSearch, setTextSearch] = useState("");
   const [textSearchIdx, setTextSearchIdx] = useState(0);
@@ -205,45 +323,30 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
     return computeSideBySide(file.oldContent ?? "", file.newContent ?? "");
   }, [file, hasOld, hasNew]);
 
-  const oldHunks = useMemo(() => (diff ? findDiffHunkStarts(diff.oldLines) : []), [diff]);
-  const newHunks = useMemo(() => (diff ? findDiffHunkStarts(diff.newLines) : []), [diff]);
-  const hunkCount = useMemo(() => Math.max(oldHunks.length, newHunks.length), [oldHunks.length, newHunks.length]);
+  const matrixRows = useMemo<DiffMatrixRow[]>(
+    () =>
+      diff
+        ? diff.oldLines.map((oldLine, idx) => ({
+            old: oldLine,
+            new: diff.newLines[idx] ?? { text: "", type: "empty", lineNumber: null },
+          }))
+        : [],
+    [diff],
+  );
+
+  const hunkRows = useMemo(() => findDiffHunkStarts(matrixRows), [matrixRows]);
+  const hunkCount = useMemo(() => hunkRows.length, [hunkRows.length]);
 
   /******************* FUNCTIONS ***********************/
-  const handleOldScroll = useCallback(() => {
-    if (syncing.current) return;
-    syncing.current = true;
-    if (oldScrollRef.current && newScrollRef.current) {
-      newScrollRef.current.scrollTop = oldScrollRef.current.scrollTop;
-      newScrollRef.current.scrollLeft = oldScrollRef.current.scrollLeft;
-    }
-    syncing.current = false;
-  }, []);
-
-  const handleNewScroll = useCallback(() => {
-    if (syncing.current) return;
-    syncing.current = true;
-    if (oldScrollRef.current && newScrollRef.current) {
-      oldScrollRef.current.scrollTop = newScrollRef.current.scrollTop;
-      oldScrollRef.current.scrollLeft = newScrollRef.current.scrollLeft;
-    }
-    syncing.current = false;
-  }, []);
-
   const goToHunk = useCallback(
     (idx: number) => {
       const clamped = Math.max(0, Math.min(idx, hunkCount - 1));
       setCurrentHunkIdx(clamped);
-      syncing.current = true;
-      if (oldHunks[clamped] !== undefined) {
-        scrollToRowIndex(oldScrollRef.current, oldHunks[clamped]);
+      if (hunkRows[clamped] !== undefined) {
+        scrollToRowIndex(codeScrollRef.current, hunkRows[clamped]);
       }
-      if (newHunks[clamped] !== undefined) {
-        scrollToRowIndex(newScrollRef.current, newHunks[clamped]);
-      }
-      syncing.current = false;
     },
-    [hunkCount, oldHunks, newHunks],
+    [hunkCount, hunkRows],
   );
 
   const goToPrevHunk = useCallback(() => {
@@ -267,11 +370,11 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
     if (!textSearch || textSearch.length < 2 || !diff) return [];
     const q = textSearch.toLowerCase();
     const matches: number[] = [];
-    diff.newLines.forEach((line, i) => {
-      if (line.text.toLowerCase().includes(q)) matches.push(i);
+    matrixRows.forEach((row, i) => {
+      if (row.new.text.toLowerCase().includes(q)) matches.push(i);
     });
     return matches;
-  }, [textSearch, diff]);
+  }, [textSearch, diff, matrixRows]);
 
   const handleTextSearch = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     setTextSearch(e.target.value);
@@ -282,10 +385,7 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
     if (textSearchMatches.length === 0) return;
     const clamped = ((idx % textSearchMatches.length) + textSearchMatches.length) % textSearchMatches.length;
     setTextSearchIdx(clamped);
-    scrollToRowIndex(newScrollRef.current, textSearchMatches[clamped]);
-    syncing.current = true;
-    scrollToRowIndex(oldScrollRef.current, textSearchMatches[clamped]);
-    syncing.current = false;
+    scrollToRowIndex(codeScrollRef.current, textSearchMatches[clamped]);
   }, [textSearchMatches]);
 
   const handleTextSearchKey = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
@@ -306,9 +406,11 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
 
   useEffect(() => {
     if (targetLine <= 0) return;
-    const scrollContainerToRow = (container: HTMLDivElement | null, prefix: string): void => {
+    const scrollContainerToRow = (container: HTMLDivElement | null): void => {
       if (!container) return;
-      const row = container.querySelector(`tr[data-line="${prefix}-${targetLine}"]`) as HTMLElement | null;
+      const row =
+        (container.querySelector(`tr[data-new-line="${targetLine}"]`) as HTMLElement | null) ??
+        (container.querySelector(`tr[data-old-line="${targetLine}"]`) as HTMLElement | null);
       if (!row) return;
       const containerRect = container.getBoundingClientRect();
       const rowRect = row.getBoundingClientRect();
@@ -323,10 +425,7 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
       }, 1500);
     };
     const timerId = setTimeout(() => {
-      syncing.current = true;
-      scrollContainerToRow(newScrollRef.current, "new");
-      scrollContainerToRow(oldScrollRef.current, "old");
-      syncing.current = false;
+      scrollContainerToRow(codeScrollRef.current);
     }, 100);
     return () => clearTimeout(timerId);
   }, [targetLine, scrollTick]);
@@ -440,31 +539,18 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
           </button>
         </div>
       </div>
-      <div className="splitCodeLayout">
-        <div className="codeColumn">
-          <h5 className="codeColumnHeader oldHeader">Old</h5>
-          <div className="codeScrollArea" ref={oldScrollRef} onScroll={handleOldScroll}>
-            <table className="diffTable">
-              <tbody>
-                {diff.oldLines.map((line, i) => (
-                  <DiffRow key={`old-${i}`} side="old" line={line} language={lang} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div className="codeColumn">
-          <h5 className="codeColumnHeader newHeader">New</h5>
-          <div className="codeScrollArea" ref={newScrollRef} onScroll={handleNewScroll}>
-            <table className="diffTable">
-              <tbody>
-                {diff.newLines.map((line, i) => (
-                  <DiffRow key={`new-${i}`} side="new" line={line} language={lang} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      <div className="codeMatrixHeaders">
+        <h5 className="codeColumnHeader oldHeader">Old</h5>
+        <h5 className="codeColumnHeader newHeader">New</h5>
+      </div>
+      <div className="codeScrollArea" ref={codeScrollRef}>
+        <table className="diffTable diffTableMatrix">
+          <tbody>
+            {matrixRows.map((row, i) => (
+              <MatrixRow key={`row-${i}`} row={row} language={lang} />
+            ))}
+          </tbody>
+        </table>
       </div>
     </section>
   );
