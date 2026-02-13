@@ -513,7 +513,7 @@ export const SplitGraphPanel = ({
         <ReactFlow
           nodes={searchResultNodes.nodes} edges={searchResultNodes.edges} nodeTypes={nodeTypesForFlow}
           onNodeClick={handleNodeClick} viewport={viewport} onMove={handleMove}
-          style={flowStyle} onlyRenderVisibleElements
+          style={flowStyle} onlyRenderVisibleElements minZoom={0.05} maxZoom={2}
         >
           <Background />
           {!isOld && <Controls />}
