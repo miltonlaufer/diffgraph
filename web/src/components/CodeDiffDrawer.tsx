@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useRef, useEffect, useState, memo, type ChangeEvent, type KeyboardEvent } from "react";
+import { useMemo, useCallback, useRef, useEffect, useState, memo, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 /* No external diff lib -- patience/LCS line diff */
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -296,6 +296,7 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
   const oldCodeScrollRef = useRef<HTMLDivElement>(null);
   const newCodeScrollRef = useRef<HTMLDivElement>(null);
   const syncingScrollRef = useRef(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [currentHunkIdx, setCurrentHunkIdx] = useState(0);
   const [textSearch, setTextSearch] = useState("");
   const [textSearchIdx, setTextSearchIdx] = useState(0);
@@ -374,7 +375,7 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
     scrollToRowIndex(oldCodeScrollRef.current, textSearchMatches[clamped]);
   }, [textSearchMatches]);
 
-  const handleTextSearchKey = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
+  const handleTextSearchKey = useCallback((e: ReactKeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       goToTextMatch(e.shiftKey ? textSearchIdx - 1 : textSearchIdx + 1);
       e.preventDefault();
@@ -435,9 +436,37 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
     syncVerticalScroll(newCodeScrollRef.current, oldCodeScrollRef.current);
   }, [syncVerticalScroll]);
 
+  const toggleFullscreen = useCallback(() => {
+    setIsFullscreen((prev) => !prev);
+  }, []);
+
+  /******************* USEEFFECTS ***********************/
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isFullscreen]);
+
+  const panelClassName = isFullscreen ? "codeDiffPanel codeDiffPanelFullscreen" : "codeDiffPanel";
+  const fullscreenTitle = isFullscreen ? "Exit full screen" : "Full screen";
+  const fullscreenIcon = isFullscreen ? "\u2921" : "\u2922";
+
   if (!file) {
     return (
-      <section className="codeDiffPanel">
+      <section className={panelClassName}>
+        <button type="button" className="codeDiffFullscreenBtn" onClick={toggleFullscreen} title={fullscreenTitle}>
+          {fullscreenIcon}
+        </button>
         <p className="dimText">Select a file to see its diff.</p>
       </section>
     );
@@ -445,7 +474,10 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
 
   if (!diff) {
     return (
-      <section className="codeDiffPanel">
+      <section className={panelClassName}>
+        <button type="button" className="codeDiffFullscreenBtn" onClick={toggleFullscreen} title={fullscreenTitle}>
+          {fullscreenIcon}
+        </button>
         <h4 className="codeDiffTitle">{file.path}</h4>
         <p className="dimText">No textual diff available for this file.</p>
       </section>
@@ -456,7 +488,10 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
   if (!hasOld && hasNew) {
     const lineCount = file.newContent.split("\n").length;
     return (
-      <section className="codeDiffPanel">
+      <section className={panelClassName}>
+        <button type="button" className="codeDiffFullscreenBtn" onClick={toggleFullscreen} title={fullscreenTitle}>
+          {fullscreenIcon}
+        </button>
         <h4 className="codeDiffTitle">{file.path} <span className="diffCount">{lineCount} lines added</span></h4>
         <div className="splitCodeLayout">
           <div className="codeColumn">
@@ -486,7 +521,10 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
   if (hasOld && !hasNew) {
     const lineCount = file.oldContent.split("\n").length;
     return (
-      <section className="codeDiffPanel">
+      <section className={panelClassName}>
+        <button type="button" className="codeDiffFullscreenBtn" onClick={toggleFullscreen} title={fullscreenTitle}>
+          {fullscreenIcon}
+        </button>
         <h4 className="codeDiffTitle">{file.path} <span className="diffCount">{lineCount} lines removed</span></h4>
         <div className="splitCodeLayout">
           <div className="codeColumn">
@@ -513,7 +551,10 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
   }
 
   return (
-    <section className="codeDiffPanel">
+    <section className={panelClassName}>
+      <button type="button" className="codeDiffFullscreenBtn" onClick={toggleFullscreen} title={fullscreenTitle}>
+        {fullscreenIcon}
+      </button>
       <div className="diffNavBar">
         <h4 className="codeDiffTitle">{file.path}</h4>
         <div className="diffNavControls">

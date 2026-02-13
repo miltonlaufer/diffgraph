@@ -63,6 +63,8 @@ export interface ViewGraphNode {
   kind: GraphNodeKind | "group";
   diffStatus: DiffStatus;
   filePath: string;
+  fileName?: string;
+  className?: string;
   startLine?: number;
   endLine?: number;
   parentId?: string;

@@ -12,6 +12,12 @@ const kindBadge: Record<string, string> = {
   Method: "Method",
 };
 
+const fileNameFromPath = (filePath: string): string => {
+  const normalized = filePath.replaceAll("\\", "/");
+  const parts = normalized.split("/");
+  return parts[parts.length - 1] ?? normalized;
+};
+
 /** Build child -> parent map from DECLARES edges */
 const buildParentMap = (graph: SnapshotGraph): Map<string, GraphNode> => {
   const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
@@ -37,6 +43,16 @@ const buildViewGraph = (
   const logicNodeIds = new Set(allLogicNodes.map((n) => n.id));
   const functionNodeIds = new Set(allLogicNodes.filter((n) => functionKinds.has(n.kind)).map((n) => n.id));
   const viewNodes: ViewGraphNode[] = [];
+  const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+
+  const findOwningClassName = (nodeId: string): string | undefined => {
+    let current = parentMap.get(nodeId);
+    while (current) {
+      if (current.kind === "Class") return current.name;
+      current = parentMap.get(current.id);
+    }
+    return undefined;
+  };
 
   /* Emit function/method/hook/component nodes as group containers */
   for (const node of allLogicNodes) {
@@ -57,6 +73,8 @@ const buildViewGraph = (
       kind: "group",
       diffStatus: (nodeStatus.get(node.id) ?? "unchanged") as ViewGraphNode["diffStatus"],
       filePath: node.filePath,
+      fileName: fileNameFromPath(node.filePath),
+      className: node.kind === "Method" ? findOwningClassName(node.id) : undefined,
       startLine: node.startLine,
       endLine: node.endLine,
       parentId: hasParentGroup ? parentFn.id : undefined,
@@ -93,7 +111,6 @@ const buildViewGraph = (
 
   /* Edges: only between logic nodes */
   const viewNodeIds = new Set(viewNodes.map((n) => n.id));
-  const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
   const normalizeSymbolName = (value: string): string =>
     value
       .replace(/\(\)$/g, "")

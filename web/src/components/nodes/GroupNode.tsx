@@ -8,6 +8,8 @@ interface GroupNodeData {
   selected: boolean;
   width: number;
   height: number;
+  fileName?: string;
+  className?: string;
   functionParams?: string;
   returnType?: string;
   documentation?: string;
@@ -38,14 +40,41 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
     () => ({
       background: data.bgColor,
       color: data.textColor,
-      padding: "4px 10px",
+      padding: "8px 12px 7px",
       borderRadius: "8px 8px 0 0",
-      fontSize: 11,
-      fontWeight: 600,
-      letterSpacing: 0.3,
+      lineHeight: 1.25,
     }),
     [data.bgColor, data.textColor],
   );
+  const titleStyle = useMemo(
+    () => ({
+      fontSize: 15,
+      fontWeight: 700,
+      letterSpacing: 0.2,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap" as const,
+    }),
+    [],
+  );
+  const metaStyle = useMemo(
+    () => ({
+      marginTop: 2,
+      fontSize: 11,
+      opacity: 0.88,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap" as const,
+      fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace",
+    }),
+    [],
+  );
+  const headerMeta = useMemo(() => {
+    const parts: string[] = [];
+    if (data.className) parts.push(`Class: ${data.className}`);
+    if (data.fileName) parts.push(`File: ${data.fileName}`);
+    return parts.join("  |  ");
+  }, [data.className, data.fileName]);
   const tooltipStyle = useMemo(
     () => ({
       background: "#0f172a",
@@ -72,7 +101,10 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
     <div style={style} onMouseLeave={onNodeLeave}>
       <Handle type="target" position={Position.Top} style={{ opacity: 0, pointerEvents: "none" }} />
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0, pointerEvents: "none" }} />
-      <div style={headerStyle} onMouseEnter={onHeaderEnter}>{data.label}</div>
+      <div style={headerStyle} onMouseEnter={onHeaderEnter}>
+        <div style={titleStyle}>{data.label}</div>
+        {headerMeta && <div style={metaStyle}>{headerMeta}</div>}
+      </div>
       <NodeToolbar isVisible={hovered && hasFunctionDetails} position={Position.Top} offset={8}>
         <div style={tooltipStyle}>
           {data.functionParams && (

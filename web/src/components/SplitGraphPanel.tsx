@@ -83,7 +83,7 @@ const LEAF_H = 64;
 const DIAMOND_W = 220;
 const DIAMOND_H = 220;
 const PAD_X = 45;
-const PAD_TOP = 52;
+const PAD_TOP = 72;
 const PAD_BOTTOM = 45;
 const NODE_W = 220;
 const NODE_H = 56;
@@ -266,6 +266,8 @@ const computeLogicLayout = (
           selected: sel,
           width: sz.w,
           height: sz.h,
+          fileName: node.fileName,
+          className: node.className,
           functionParams: node.functionParams,
           returnType: node.returnType,
           documentation: node.documentation,
@@ -425,6 +427,7 @@ export const SplitGraphPanel = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchExclude, setSearchExclude] = useState(false);
   const [searchIdx, setSearchIdx] = useState(0);
+  const lastAutoFocusSearchRef = useRef<string>("");
 
   /******************* COMPUTED ***********************/
   const isLogic = useMemo(() => viewType === "logic", [viewType]);
@@ -491,6 +494,22 @@ export const SplitGraphPanel = ({
     return { nodes, edges: flowElements.edges };
   }, [flowElements, searchMatches, searchQuery, searchExclude]);
 
+  const flowNodeById = useMemo(() => new Map(flowElements.nodes.map((n) => [n.id, n])), [flowElements.nodes]);
+
+  const nodeAbsolutePosition = useCallback((node: Node): { x: number; y: number } => {
+    let x = node.position.x;
+    let y = node.position.y;
+    let parentId = node.parentId;
+    while (parentId) {
+      const parent = flowNodeById.get(parentId);
+      if (!parent) break;
+      x += parent.position.x;
+      y += parent.position.y;
+      parentId = parent.parentId;
+    }
+    return { x, y };
+  }, [flowNodeById]);
+
   const flowStyle = useMemo(() => ({ width: "100%", height: "100%" }), []);
   const stats = useMemo(() => {
     if (diffStats) return diffStats;
@@ -504,13 +523,13 @@ export const SplitGraphPanel = ({
     const pts: Array<{ x: number; y: number }> = [];
     for (const n of flowElements.nodes) {
       const gn = graph.nodes.find((g) => g.id === n.id);
-      if (gn && normPath(gn.filePath) === nf) pts.push(n.position);
+      if (gn && normPath(gn.filePath) === nf) pts.push(nodeAbsolutePosition(n));
     }
     if (pts.length === 0) return null;
     const ax = pts.reduce((s, p) => s + p.x, 0) / pts.length;
     const ay = pts.reduce((s, p) => s + p.y, 0) / pts.length;
     return { x: -ax + 200, y: -ay + 150, zoom: 0.9 };
-  }, [focusFilePath, flowElements.nodes, graph.nodes]);
+  }, [focusFilePath, flowElements.nodes, graph.nodes, nodeAbsolutePosition]);
 
   /******************* FUNCTIONS ***********************/
   const handleSearch = useCallback((q: string, exclude: boolean) => { setSearchQuery(q); setSearchExclude(exclude); setSearchIdx(0); }, []);
@@ -519,20 +538,38 @@ export const SplitGraphPanel = ({
     const next = (searchIdx + 1) % searchMatches.length;
     setSearchIdx(next);
     const target = searchMatches[next];
-    if (target) onViewportChange({ x: -target.position.x + 200, y: -target.position.y + 150, zoom: 0.9 });
-  }, [searchMatches, searchIdx, onViewportChange]);
+    if (target) {
+      const abs = nodeAbsolutePosition(target);
+      onViewportChange({ x: -abs.x + 200, y: -abs.y + 150, zoom: 0.9 });
+    }
+  }, [searchMatches, searchIdx, onViewportChange, nodeAbsolutePosition]);
   const handleSearchPrev = useCallback(() => {
     if (searchMatches.length === 0) return;
     const prev = (searchIdx - 1 + searchMatches.length) % searchMatches.length;
     setSearchIdx(prev);
     const target = searchMatches[prev];
-    if (target) onViewportChange({ x: -target.position.x + 200, y: -target.position.y + 150, zoom: 0.9 });
-  }, [searchMatches, searchIdx, onViewportChange]);
+    if (target) {
+      const abs = nodeAbsolutePosition(target);
+      onViewportChange({ x: -abs.x + 200, y: -abs.y + 150, zoom: 0.9 });
+    }
+  }, [searchMatches, searchIdx, onViewportChange, nodeAbsolutePosition]);
   const handleNodeClick = useCallback<NodeMouseHandler>((_e, n) => { onNodeSelect(n.id); }, [onNodeSelect]);
   const handleMove = useCallback((_e: MouseEvent | TouchEvent | null, v: Viewport) => { onViewportChange({ x: v.x, y: v.y, zoom: v.zoom }); }, [onViewportChange]);
 
   /******************* USEEFFECTS ***********************/
   const prevFocusRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!searchQuery || searchQuery.length < 2 || searchMatches.length === 0) return;
+    const searchKey = `${searchExclude ? "exclude" : "include"}:${searchQuery.toLowerCase()}`;
+    if (lastAutoFocusSearchRef.current === searchKey) return;
+    lastAutoFocusSearchRef.current = searchKey;
+    setSearchIdx(0);
+    const first = searchMatches[0];
+    const abs = nodeAbsolutePosition(first);
+    onViewportChange({ x: -abs.x + 200, y: -abs.y + 150, zoom: 0.9 });
+  }, [searchQuery, searchExclude, searchMatches, nodeAbsolutePosition, onViewportChange]);
+
   useEffect(() => {
     if (focusFilePath && focusFilePath !== prevFocusRef.current && focusedViewport) {
       prevFocusRef.current = focusFilePath;

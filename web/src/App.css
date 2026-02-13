@@ -359,6 +359,55 @@
   border-radius: 10px;
   padding: 10px 12px;
   background: #0f172a;
+  position: relative;
+}
+
+.codeDiffPanelFullscreen {
+  position: fixed;
+  inset: 12px;
+  z-index: 1200;
+  box-shadow: 0 16px 48px rgba(2, 6, 23, 0.75);
+  display: flex;
+  flex-direction: column;
+}
+
+.codeDiffPanelFullscreen .splitCodeLayout {
+  flex: 1;
+  min-height: 0;
+}
+
+.codeDiffPanelFullscreen .codeColumn {
+  min-height: 0;
+}
+
+.codeDiffPanelFullscreen .codeScrollArea {
+  height: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.codeDiffFullscreenBtn {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #cbd5e1;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.codeDiffFullscreenBtn:hover {
+  background: #334155;
+  color: #f8fafc;
 }
 
 .codeDiffTitle {
@@ -372,6 +421,7 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+  padding-right: 36px;
 }
 
 .diffNavControls {
