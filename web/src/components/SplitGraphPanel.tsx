@@ -50,6 +50,8 @@ interface SplitGraphPanelProps {
   onViewportChange: (viewport: ViewportState) => void;
   selectedNodeId: string;
   highlightedNodeId?: string;
+  focusNodeId?: string;
+  focusNodeTick?: number;
   focusFilePath: string;
   diffStats?: DiffStats;
   fileContentMap: Map<string, string>;
@@ -434,7 +436,7 @@ const shortenPath = (filePath: string): string => {
 };
 
 export const SplitGraphPanel = ({
-  title, side, graph, viewType, showCalls = true, onNodeSelect, viewport, onViewportChange, selectedNodeId, highlightedNodeId, focusFilePath, diffStats, fileContentMap, onDiffTargetsChange,
+  title, side, graph, viewType, showCalls = true, onNodeSelect, viewport, onViewportChange, selectedNodeId, highlightedNodeId, focusNodeId, focusNodeTick, focusFilePath, diffStats, fileContentMap, onDiffTargetsChange,
 }: SplitGraphPanelProps) => {
   /******************* STORE ***********************/
   const [searchQuery, setSearchQuery] = useState("");
@@ -679,6 +681,13 @@ export const SplitGraphPanel = ({
       onViewportChange(focusedViewport);
     }
   }, [focusFilePath, focusedViewport, onViewportChange]);
+
+  useEffect(() => {
+    if (!focusNodeId) return;
+    const target = flowElements.nodes.find((node) => node.id === focusNodeId);
+    if (!target) return;
+    onViewportChange(viewportForNode(target));
+  }, [focusNodeId, focusNodeTick, flowElements.nodes, onViewportChange, viewportForNode]);
 
   return (
     <section className="panel">

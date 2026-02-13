@@ -100,9 +100,9 @@
   align-items: center;
   justify-content: flex-end;
   gap: 16px;
-  margin-top: -58px;
+  margin-top: 0;
   margin-bottom: 12px;
-  padding-right: 260px;
+  padding-right: 0;
 }
 
 .graphDiffNav {

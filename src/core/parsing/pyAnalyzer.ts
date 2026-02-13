@@ -35,6 +35,15 @@ interface PyResult {
   branches: PyBranch[];
 }
 
+const normalizeSignatureText = (value: string): string =>
+  value
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0)
+    .join("\n");
+
+const hashSignatureText = (value: string): string => stableHash(normalizeSignatureText(value) || "__empty__");
+
 export class PyAnalyzer {
   public async analyze(
     repoId: string,
@@ -163,7 +172,7 @@ export class PyAnalyzer {
           language: "py",
           startLine: branch.start,
           endLine: branch.end,
-          signatureHash: stableHash(branch.snippet),
+          signatureHash: hashSignatureText(branch.snippet),
           metadata: {
             branchType: branch.kind,
             codeSnippet: branch.snippet,

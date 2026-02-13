@@ -10,10 +10,17 @@ export interface GraphDelta {
 const branchOwnerFromQualifiedName = (qualifiedName: string): string =>
   qualifiedName.replace(/::[^:]+#\d+$/, "");
 
+const normalizeSignatureText = (value: string): string =>
+  value
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0)
+    .join("\n");
+
 const nodeKey = (node: GraphNode): string => {
   if (node.kind === "Branch") {
     const branchType = (node.metadata?.branchType as string | undefined) ?? "";
-    const snippet = (node.metadata?.codeSnippet as string | undefined) ?? "";
+    const snippet = normalizeSignatureText((node.metadata?.codeSnippet as string | undefined) ?? "");
     const owner = branchOwnerFromQualifiedName(node.qualifiedName);
     return `Branch:${owner}:${branchType}:${snippet}`;
   }

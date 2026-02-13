@@ -15,24 +15,15 @@ interface ViewBaseProps {
 const normalizePath = (value: string): string =>
   value.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
 
-const includeHierarchyNeighbors = (graph: ViewGraph, seedIds: Set<string>): Set<string> => {
+const includeHierarchyAncestors = (graph: ViewGraph, seedIds: Set<string>): Set<string> => {
   const keepIds = new Set(seedIds);
   const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const id of [...keepIds]) {
-      const node = nodeById.get(id);
-      if (node?.parentId && !keepIds.has(node.parentId)) {
-        keepIds.add(node.parentId);
-        changed = true;
-      }
-    }
-    for (const node of graph.nodes) {
-      if (node.parentId && keepIds.has(node.parentId) && !keepIds.has(node.id)) {
-        keepIds.add(node.id);
-        changed = true;
-      }
+  for (const id of [...seedIds]) {
+    let current = nodeById.get(id);
+    while (current?.parentId) {
+      if (keepIds.has(current.parentId)) break;
+      keepIds.add(current.parentId);
+      current = nodeById.get(current.parentId);
     }
   }
   return keepIds;
@@ -67,6 +58,8 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const [newDiffTargets, setNewDiffTargets] = useState<GraphDiffTarget[]>([]);
   const [graphDiffIdx, setGraphDiffIdx] = useState(0);
   const [highlightedNodeId, setHighlightedNodeId] = useState<string>("");
+  const [focusNodeId, setFocusNodeId] = useState<string>("");
+  const [focusNodeTick, setFocusNodeTick] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const codeDiffSectionRef = useRef<HTMLDivElement>(null);
@@ -94,10 +87,10 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const visibleOldGraph = useMemo(() => {
     if (!showChangesOnly) return filteredOldGraph;
     const changedIds = new Set(filteredOldGraph.nodes.filter((n) => n.diffStatus !== "unchanged").map((n) => n.id));
-    let keepIds = includeHierarchyNeighbors(filteredOldGraph, changedIds);
+    let keepIds = includeHierarchyAncestors(filteredOldGraph, changedIds);
     if (viewType === "logic") {
       keepIds = includeInvokeNeighbors(filteredOldGraph, keepIds);
-      keepIds = includeHierarchyNeighbors(filteredOldGraph, keepIds);
+      keepIds = includeHierarchyAncestors(filteredOldGraph, keepIds);
     }
     return {
       nodes: filteredOldGraph.nodes.filter((n) => keepIds.has(n.id)),
@@ -108,10 +101,10 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const visibleNewGraph = useMemo(() => {
     if (!showChangesOnly) return filteredNewGraph;
     const changedIds = new Set(filteredNewGraph.nodes.filter((n) => n.diffStatus !== "unchanged").map((n) => n.id));
-    let keepIds = includeHierarchyNeighbors(filteredNewGraph, changedIds);
+    let keepIds = includeHierarchyAncestors(filteredNewGraph, changedIds);
     if (viewType === "logic") {
       keepIds = includeInvokeNeighbors(filteredNewGraph, keepIds);
-      keepIds = includeHierarchyNeighbors(filteredNewGraph, keepIds);
+      keepIds = includeHierarchyAncestors(filteredNewGraph, keepIds);
     }
     return {
       nodes: filteredNewGraph.nodes.filter((n) => keepIds.has(n.id)),
@@ -145,7 +138,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     );
     if (viewType === "logic") {
       nodeIds = includeInvokeNeighbors(visibleOldGraph, nodeIds);
-      nodeIds = includeHierarchyNeighbors(visibleOldGraph, nodeIds);
+      nodeIds = includeHierarchyAncestors(visibleOldGraph, nodeIds);
     }
     const nodes = visibleOldGraph.nodes.filter((n) => nodeIds.has(n.id));
     return {
@@ -164,7 +157,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     );
     if (viewType === "logic") {
       nodeIds = includeInvokeNeighbors(visibleNewGraph, nodeIds);
-      nodeIds = includeHierarchyNeighbors(visibleNewGraph, nodeIds);
+      nodeIds = includeHierarchyAncestors(visibleNewGraph, nodeIds);
     }
     const nodes = visibleNewGraph.nodes.filter((n) => nodeIds.has(n.id));
     return {
@@ -255,6 +248,42 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     }
     setNewDiffTargets(targets);
   }, []);
+
+  const handleCodeLineClick = useCallback((line: number, side: "old" | "new") => {
+    const filePath = normalizePath(selectedFile?.path ?? selectedFilePath);
+    if (!filePath) return;
+    const sideGraph = side === "old" ? displayOldGraph : displayNewGraph;
+    const inFile = sideGraph.nodes.filter((n) => normalizePath(n.filePath) === filePath);
+    if (inFile.length === 0) return;
+
+    const withRange = inFile.filter((n) => (n.startLine ?? 0) > 0 && (n.endLine ?? n.startLine ?? 0) >= (n.startLine ?? 0));
+    const containing = withRange.filter((n) => {
+      const start = n.startLine ?? 0;
+      const end = n.endLine ?? start;
+      return line >= start && line <= end;
+    });
+
+    const candidates = containing.length > 0 ? containing : withRange;
+    if (candidates.length === 0) return;
+
+    candidates.sort((a, b) => {
+      const aStart = a.startLine ?? 0;
+      const aEnd = a.endLine ?? aStart;
+      const bStart = b.startLine ?? 0;
+      const bEnd = b.endLine ?? bStart;
+      const aSpan = Math.max(1, aEnd - aStart + 1);
+      const bSpan = Math.max(1, bEnd - bStart + 1);
+      if (aSpan !== bSpan) return aSpan - bSpan;
+      if (a.kind === "Branch" && b.kind !== "Branch") return -1;
+      if (b.kind === "Branch" && a.kind !== "Branch") return 1;
+      return Math.abs(aStart - line) - Math.abs(bStart - line);
+    });
+
+    const target = candidates[0];
+    setSelectedNodeId(target.id);
+    setFocusNodeId(target.id);
+    setFocusNodeTick((prev) => prev + 1);
+  }, [selectedFile, selectedFilePath, displayOldGraph, displayNewGraph]);
 
   const goToGraphDiff = useCallback((idx: number) => {
     if (graphDiffTargets.length === 0) return;
@@ -387,6 +416,8 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
           onViewportChange={handleViewportChange}
           selectedNodeId={selectedNodeId}
           highlightedNodeId={highlightedNodeId}
+          focusNodeId={focusNodeId}
+          focusNodeTick={focusNodeTick}
           focusFilePath={selectedFilePath}
           fileContentMap={oldFileContentMap}
           onDiffTargetsChange={handleDiffTargetsChange}
@@ -402,6 +433,8 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
           onViewportChange={handleViewportChange}
           selectedNodeId={selectedNodeId}
           highlightedNodeId={highlightedNodeId}
+          focusNodeId={focusNodeId}
+          focusNodeTick={focusNodeTick}
           focusFilePath={selectedFilePath}
           diffStats={diffStats}
           fileContentMap={newFileContentMap}
@@ -428,7 +461,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
       )}
 
       <div ref={codeDiffSectionRef}>
-        <CodeDiffDrawer file={selectedFile} targetLine={targetLine} targetSide={targetSide} scrollTick={scrollTick} />
+        <CodeDiffDrawer file={selectedFile} targetLine={targetLine} targetSide={targetSide} scrollTick={scrollTick} onLineClick={handleCodeLineClick} />
       </div>
     </section>
   );

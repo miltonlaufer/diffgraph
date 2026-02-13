@@ -105,7 +105,7 @@ const createFileNode = (
   qualifiedName: filePath,
   filePath,
   language: languageFor(filePath),
-  signatureHash: stableHash(content),
+  signatureHash: hashSignatureText(content),
   snapshotId,
   ref,
 });
@@ -122,6 +122,13 @@ interface JsDocLike {
 }
 
 const normalizeInline = (value: string): string => value.replace(/\s+/g, " ").trim();
+const normalizeSignatureText = (value: string): string =>
+  value
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0)
+    .join("\n");
+const hashSignatureText = (value: string): string => stableHash(normalizeSignatureText(value) || "__empty__");
 
 const extractParams = (
   node: Node,
@@ -236,7 +243,9 @@ const buildSymbolNode = (
   language: languageFor(filePath),
   startLine,
   endLine,
-  signatureHash: stableHash(sourceText ?? `${qualifiedName}:${startLine}:${endLine}`),
+  signatureHash: sourceText
+    ? hashSignatureText(sourceText)
+    : stableHash(`${qualifiedName}:${startLine}:${endLine}`),
   metadata: extraMetadata,
   snapshotId,
   ref,
@@ -517,7 +526,7 @@ export class TsAnalyzer {
         language: languageFor(sourceFile.getFilePath()),
         startLine,
         endLine,
-        signatureHash: stableHash(node.getText()),
+        signatureHash: hashSignatureText(node.getText()),
         metadata: { params, paramsFull, returnType, documentation },
         snapshotId,
         ref,
@@ -636,7 +645,7 @@ export class TsAnalyzer {
         language: ownerNode.language,
         startLine: line,
         endLine: node.getEndLineNumber(),
-        signatureHash: stableHash(snippet),
+        signatureHash: hashSignatureText(snippet),
         metadata: {
           branchType: branchKind,
           codeSnippet: snippet,

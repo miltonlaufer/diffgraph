@@ -9,6 +9,7 @@ interface CodeDiffDrawerProps {
   targetLine: number;
   targetSide: "old" | "new";
   scrollTick: number;
+  onLineClick?: (line: number, side: "old" | "new") => void;
 }
 
 interface DiffLine {
@@ -169,12 +170,20 @@ const computeSideBySide = (
   for (const [matchOld, matchNew] of lcsIndices) {
     /* Emit removed lines before this match */
     while (oi < matchOld) {
+      if (oldNorm[oi] === "") {
+        oi++;
+        continue;
+      }
       oldLines.push({ text: oldArr[oi], type: "removed", lineNumber: oi + 1 });
       newLines.push({ text: "", type: "empty", lineNumber: null });
       oi++;
     }
     /* Emit added lines before this match */
     while (ni < matchNew) {
+      if (newNorm[ni] === "") {
+        ni++;
+        continue;
+      }
       oldLines.push({ text: "", type: "empty", lineNumber: null });
       newLines.push({ text: newArr[ni], type: "added", lineNumber: ni + 1 });
       ni++;
@@ -188,12 +197,20 @@ const computeSideBySide = (
 
   /* Remaining removed */
   while (oi < oldArr.length) {
+    if (oldNorm[oi] === "") {
+      oi++;
+      continue;
+    }
     oldLines.push({ text: oldArr[oi], type: "removed", lineNumber: oi + 1 });
     newLines.push({ text: "", type: "empty", lineNumber: null });
     oi++;
   }
   /* Remaining added */
   while (ni < newArr.length) {
+    if (newNorm[ni] === "") {
+      ni++;
+      continue;
+    }
     oldLines.push({ text: "", type: "empty", lineNumber: null });
     newLines.push({ text: newArr[ni], type: "added", lineNumber: ni + 1 });
     ni++;
@@ -278,10 +295,15 @@ interface SimpleRowProps {
   lineNum: number;
   type: DiffLine["type"];
   language: string;
+  onLineClick?: (line: number, side: "old" | "new") => void;
 }
 
-const SimpleRow = memo(({ side, text, lineNum, type, language }: Omit<SimpleRowProps, "index">) => (
-  <tr data-line={`${side}-${lineNum}`} style={lineStyle(type)}>
+const SimpleRow = memo(({ side, text, lineNum, type, language, onLineClick }: Omit<SimpleRowProps, "index">) => (
+  <tr
+    data-line={`${side}-${lineNum}`}
+    style={{ ...lineStyle(type), cursor: onLineClick ? "pointer" : "default" }}
+    onClick={() => onLineClick?.(lineNum, side === "old" ? "old" : "new")}
+  >
     <td className="lineNum">{lineNum}</td>
     <td className="lineCode"><HighlightedCode code={text} language={language} /></td>
   </tr>
@@ -304,7 +326,7 @@ const scrollToRowIndex = (container: HTMLDivElement | null, rowIndex: number): v
   }, 1200);
 };
 
-export const CodeDiffDrawer = ({ file, targetLine, targetSide, scrollTick }: CodeDiffDrawerProps) => {
+export const CodeDiffDrawer = ({ file, targetLine, targetSide, scrollTick, onLineClick }: CodeDiffDrawerProps) => {
   /******************* STORE ***********************/
   const oldCodeScrollRef = useRef<HTMLDivElement>(null);
   const newCodeScrollRef = useRef<HTMLDivElement>(null);
@@ -521,7 +543,7 @@ export const CodeDiffDrawer = ({ file, targetLine, targetSide, scrollTick }: Cod
               <table className="diffTable">
                 <tbody>
                   {file.newContent.split("\n").map((line, i) => (
-                    <SimpleRow key={`new-${i}`} side="new" text={line} lineNum={i + 1} type="added" language={lang} />
+                    <SimpleRow key={`new-${i}`} side="new" text={line} lineNum={i + 1} type="added" language={lang} onLineClick={onLineClick} />
                   ))}
                 </tbody>
               </table>
@@ -548,7 +570,7 @@ export const CodeDiffDrawer = ({ file, targetLine, targetSide, scrollTick }: Cod
               <table className="diffTable">
                 <tbody>
                   {file.oldContent.split("\n").map((line, i) => (
-                    <SimpleRow key={`old-${i}`} side="old" text={line} lineNum={i + 1} type="removed" language={lang} />
+                    <SimpleRow key={`old-${i}`} side="old" text={line} lineNum={i + 1} type="removed" language={lang} onLineClick={onLineClick} />
                   ))}
                 </tbody>
               </table>
@@ -611,6 +633,10 @@ export const CodeDiffDrawer = ({ file, targetLine, targetSide, scrollTick }: Cod
                     key={`old-row-${i}`}
                     data-old-line={row.old.lineNumber ?? undefined}
                     data-new-line={row.new.lineNumber ?? undefined}
+                    style={{ cursor: row.old.lineNumber ? "pointer" : "default" }}
+                    onClick={() => {
+                      if (row.old.lineNumber) onLineClick?.(row.old.lineNumber, "old");
+                    }}
                   >
                     <td className="lineNum" style={lineStyle(row.old.type)}>{row.old.lineNumber ?? ""}</td>
                     <td className="lineCode" style={lineStyle(row.old.type)}>
@@ -632,6 +658,10 @@ export const CodeDiffDrawer = ({ file, targetLine, targetSide, scrollTick }: Cod
                     key={`new-row-${i}`}
                     data-old-line={row.old.lineNumber ?? undefined}
                     data-new-line={row.new.lineNumber ?? undefined}
+                    style={{ cursor: row.new.lineNumber ? "pointer" : "default" }}
+                    onClick={() => {
+                      if (row.new.lineNumber) onLineClick?.(row.new.lineNumber, "new");
+                    }}
                   >
                     <td className="lineNum" style={lineStyle(row.new.type)}>{row.new.lineNumber ?? ""}</td>
                     <td className="lineCode" style={lineStyle(row.new.type)}>
