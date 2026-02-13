@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchDiffFiles, fetchView } from "../api";
 import { CodeDiffDrawer } from "../components/CodeDiffDrawer";
 import { FileListPanel } from "../components/FileListPanel";
@@ -64,6 +64,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const [showCalls, setShowCalls] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
+  const codeDiffSectionRef = useRef<HTMLDivElement>(null);
 
   /******************* COMPUTED ***********************/
   const title = useMemo(() => {
@@ -259,6 +260,13 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     };
   }, [diffId, viewType]);
 
+  useEffect(() => {
+    if (scrollTick <= 0 || !selectedFile) return;
+    requestAnimationFrame(() => {
+      codeDiffSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [scrollTick, selectedFile]);
+
   if (error) {
     return <p className="errorText">{error}</p>;
   }
@@ -336,7 +344,9 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
         <SymbolListPanel symbols={selectedSymbols} onSymbolClick={handleSymbolClick} />
       )}
 
-      <CodeDiffDrawer file={selectedFile} targetLine={targetLine} scrollTick={scrollTick} />
+      <div ref={codeDiffSectionRef}>
+        <CodeDiffDrawer file={selectedFile} targetLine={targetLine} scrollTick={scrollTick} />
+      </div>
     </section>
   );
 };
