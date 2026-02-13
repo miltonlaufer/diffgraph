@@ -27,8 +27,13 @@ const computeSideBySide = (
 ): { oldLines: DiffLine[]; newLines: DiffLine[] } => {
   const oldArr = oldContent.split("\n");
   const newArr = newContent.split("\n");
-  const oldNorm = oldArr.map((line) => line.trimEnd());
-  const newNorm = newArr.map((line) => line.trimEnd());
+  const normalizeForCompare = (line: string): string => {
+    const fullyTrimmed = line.trim();
+    if (fullyTrimmed.length === 0) return "";
+    return line.trimEnd();
+  };
+  const oldNorm = oldArr.map((line) => normalizeForCompare(line));
+  const newNorm = newArr.map((line) => normalizeForCompare(line));
 
   const lcsWindow = (aStart: number, aEnd: number, bStart: number, bEnd: number): Array<[number, number]> => {
     const aLen = aEnd - aStart;
@@ -599,7 +604,11 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
             <table className="diffTable">
               <tbody>
                 {matrixRows.map((row, i) => (
-                  <tr key={`old-row-${i}`} data-old-line={row.old.lineNumber ?? undefined}>
+                  <tr
+                    key={`old-row-${i}`}
+                    data-old-line={row.old.lineNumber ?? undefined}
+                    data-new-line={row.new.lineNumber ?? undefined}
+                  >
                     <td className="lineNum" style={lineStyle(row.old.type)}>{row.old.lineNumber ?? ""}</td>
                     <td className="lineCode" style={lineStyle(row.old.type)}>
                       {row.old.type === "empty" ? <span style={emptyLineStyle}>&nbsp;</span> : <HighlightedCode code={row.old.text} language={lang} />}
@@ -616,7 +625,11 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
             <table className="diffTable">
               <tbody>
                 {matrixRows.map((row, i) => (
-                  <tr key={`new-row-${i}`} data-new-line={row.new.lineNumber ?? undefined}>
+                  <tr
+                    key={`new-row-${i}`}
+                    data-old-line={row.old.lineNumber ?? undefined}
+                    data-new-line={row.new.lineNumber ?? undefined}
+                  >
                     <td className="lineNum" style={lineStyle(row.new.type)}>{row.new.lineNumber ?? ""}</td>
                     <td className="lineCode" style={lineStyle(row.new.type)}>
                       {row.new.type === "empty" ? <span style={emptyLineStyle}>&nbsp;</span> : <HighlightedCode code={row.new.text} language={lang} />}
