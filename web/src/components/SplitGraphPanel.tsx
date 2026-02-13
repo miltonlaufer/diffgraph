@@ -166,7 +166,7 @@ const computeLogicLayout = (
 
     const dg = new dagre.graphlib.Graph();
     dg.setDefaultEdgeLabel(() => ({}));
-    dg.setGraph({ rankdir: "TB", nodesep: 80, ranksep: 90, marginx: 30, marginy: 30 });
+    dg.setGraph({ rankdir: "TB", nodesep: 120, ranksep: 130, marginx: 40, marginy: 40 });
 
     for (const kid of kids) {
       const isDiamond = kid.kind === "Branch" && decisionKinds.has(kid.branchType ?? "");
@@ -301,7 +301,7 @@ const computeLogicLayout = (
     })
     .map((edge) => ({
       id: edge.id, source: edge.source, target: edge.target,
-      label: edge.kind === "CALLS" ? "" : edge.kind,
+      label: "",
       animated: edge.diffStatus === "added" || edge.diffStatus === "removed",
       style: { stroke: edge.diffStatus === "added" ? "#4ade80" : edge.diffStatus === "removed" ? "#f87171" : "#64748b", strokeWidth: 1.5 },
       markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#94a3b8" },
