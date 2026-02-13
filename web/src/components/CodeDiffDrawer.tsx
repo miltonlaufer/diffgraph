@@ -1,5 +1,7 @@
-import { useMemo, useCallback, useRef, useEffect, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { useMemo, useCallback, useRef, useEffect, useState, memo, type ChangeEvent, type KeyboardEvent } from "react";
 import { diffLines } from "diff";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import type { FileDiffEntry } from "../types/graph";
 
 interface CodeDiffDrawerProps {
@@ -24,27 +26,52 @@ const computeSideBySide = (
   let oldLineNum = 1;
   let newLineNum = 1;
 
-  for (const change of changes) {
+  let i = 0;
+  while (i < changes.length) {
+    const change = changes[i];
     const lines = change.value.replace(/\n$/, "").split("\n");
 
     if (!change.added && !change.removed) {
-      /* Unchanged */
+      /* Unchanged: same row on both sides */
       for (const line of lines) {
         oldLines.push({ text: line, type: "same", lineNumber: oldLineNum++ });
         newLines.push({ text: line, type: "same", lineNumber: newLineNum++ });
       }
+      i++;
+    } else if (change.removed && i + 1 < changes.length && changes[i + 1].added) {
+      /* Removed + Added pair: show side by side, pad the shorter side */
+      const removedLines = lines;
+      const addedLines = changes[i + 1].value.replace(/\n$/, "").split("\n");
+      const maxLen = Math.max(removedLines.length, addedLines.length);
+      for (let j = 0; j < maxLen; j++) {
+        if (j < removedLines.length) {
+          oldLines.push({ text: removedLines[j], type: "removed", lineNumber: oldLineNum++ });
+        } else {
+          oldLines.push({ text: "", type: "empty", lineNumber: null });
+        }
+        if (j < addedLines.length) {
+          newLines.push({ text: addedLines[j], type: "added", lineNumber: newLineNum++ });
+        } else {
+          newLines.push({ text: "", type: "empty", lineNumber: null });
+        }
+      }
+      i += 2;
     } else if (change.removed) {
-      /* Removed from old */
+      /* Removed only: old side shows lines, new side gets empty placeholders */
       for (const line of lines) {
         oldLines.push({ text: line, type: "removed", lineNumber: oldLineNum++ });
         newLines.push({ text: "", type: "empty", lineNumber: null });
       }
+      i++;
     } else if (change.added) {
-      /* Added in new */
+      /* Added only: new side shows lines, old side gets empty placeholders */
       for (const line of lines) {
         oldLines.push({ text: "", type: "empty", lineNumber: null });
         newLines.push({ text: line, type: "added", lineNumber: newLineNum++ });
       }
+      i++;
+    } else {
+      i++;
     }
   }
   return { oldLines, newLines };
@@ -69,15 +96,79 @@ const findDiffHunkStarts = (lines: DiffLine[]): number[] => {
 const lineStyle = (type: DiffLine["type"]): React.CSSProperties => {
   switch (type) {
     case "added":
-      return { background: "rgba(34, 197, 94, 0.15)" };
+      return { background: "rgba(34, 197, 94, 0.25)" };
     case "removed":
-      return { background: "rgba(239, 68, 68, 0.15)" };
+      return { background: "rgba(239, 68, 68, 0.4)" };
     case "empty":
-      return { background: "#0f172a" };
+      return { background: "rgba(15, 23, 42, 0.1)" };
     default:
-      return {};
+      return { background: "transparent" };
   }
 };
+
+const langFromPath = (path: string): string => {
+  if (path.endsWith(".ts") || path.endsWith(".tsx")) return "typescript";
+  if (path.endsWith(".js") || path.endsWith(".jsx")) return "javascript";
+  if (path.endsWith(".py")) return "python";
+  if (path.endsWith(".css")) return "css";
+  if (path.endsWith(".json")) return "json";
+  return "text";
+};
+
+const inlineHighlightStyle: React.CSSProperties = {
+  display: "inline",
+  padding: 0,
+  margin: 0,
+  background: "none",
+  backgroundColor: "transparent",
+  fontSize: "inherit",
+  fontFamily: "inherit",
+  lineHeight: "inherit",
+  whiteSpace: "pre",
+};
+
+const HighlightedCode = memo(({ code, language }: { code: string; language: string }) => (
+  <SyntaxHighlighter
+    language={language}
+    style={oneDark}
+    customStyle={inlineHighlightStyle}
+    PreTag="span"
+    CodeTag="span"
+    useInlineStyles
+  >
+    {code || " "}
+  </SyntaxHighlighter>
+));
+
+interface DiffRowProps {
+  side: string;
+  index: number;
+  line: DiffLine;
+  language: string;
+}
+
+const DiffRow = memo(({ side, line, language }: Omit<DiffRowProps, "index">) => (
+  <tr data-line={line.lineNumber ? `${side}-${line.lineNumber}` : undefined} style={lineStyle(line.type)}>
+    <td className="lineNum">{line.lineNumber ?? ""}</td>
+    <td className="lineCode">{line.type === "empty" ? <span /> : <HighlightedCode code={line.text} language={language} />}</td>
+  </tr>
+));
+
+interface SimpleRowProps {
+  side: string;
+  index: number;
+  text: string;
+  lineNum: number;
+  type: DiffLine["type"];
+  language: string;
+}
+
+const SimpleRow = memo(({ side, text, lineNum, type, language }: Omit<SimpleRowProps, "index">) => (
+  <tr data-line={`${side}-${lineNum}`} style={lineStyle(type)}>
+    <td className="lineNum">{lineNum}</td>
+    <td className="lineCode"><HighlightedCode code={text} language={language} /></td>
+  </tr>
+));
 
 const scrollToRowIndex = (container: HTMLDivElement | null, rowIndex: number): void => {
   if (!container) return;
@@ -106,6 +197,7 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
   const [textSearchIdx, setTextSearchIdx] = useState(0);
 
   /******************* COMPUTED ***********************/
+  const lang = useMemo(() => langFromPath(file?.path ?? ""), [file?.path]);
   const hasOld = useMemo(() => (file?.oldContent ?? "").length > 0, [file?.oldContent]);
   const hasNew = useMemo(() => (file?.newContent ?? "").length > 0, [file?.newContent]);
   const diff = useMemo(() => {
@@ -275,10 +367,7 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
               <table className="diffTable">
                 <tbody>
                   {file.newContent.split("\n").map((line, i) => (
-                    <tr key={`new-${i}`} data-line={`new-${i + 1}`} style={lineStyle("added")}>
-                      <td className="lineNum">{i + 1}</td>
-                      <td className="lineCode"><pre className="lineText">{line}</pre></td>
-                    </tr>
+                    <SimpleRow key={`new-${i}`} side="new" text={line} lineNum={i + 1} type="added" language={lang} />
                   ))}
                 </tbody>
               </table>
@@ -302,10 +391,7 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
               <table className="diffTable">
                 <tbody>
                   {file.oldContent.split("\n").map((line, i) => (
-                    <tr key={`old-${i}`} data-line={`old-${i + 1}`} style={lineStyle("removed")}>
-                      <td className="lineNum">{i + 1}</td>
-                      <td className="lineCode"><pre className="lineText">{line}</pre></td>
-                    </tr>
+                    <SimpleRow key={`old-${i}`} side="old" text={line} lineNum={i + 1} type="removed" language={lang} />
                   ))}
                 </tbody>
               </table>
@@ -361,10 +447,7 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
             <table className="diffTable">
               <tbody>
                 {diff.oldLines.map((line, i) => (
-                  <tr key={`old-${i}`} data-line={line.lineNumber ? `old-${line.lineNumber}` : undefined} style={lineStyle(line.type)}>
-                    <td className="lineNum">{line.lineNumber ?? ""}</td>
-                    <td className="lineCode"><pre className="lineText">{line.text}</pre></td>
-                  </tr>
+                  <DiffRow key={`old-${i}`} side="old" line={line} language={lang} />
                 ))}
               </tbody>
             </table>
@@ -376,10 +459,7 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
             <table className="diffTable">
               <tbody>
                 {diff.newLines.map((line, i) => (
-                  <tr key={`new-${i}`} data-line={line.lineNumber ? `new-${line.lineNumber}` : undefined} style={lineStyle(line.type)}>
-                    <td className="lineNum">{line.lineNumber ?? ""}</td>
-                    <td className="lineCode"><pre className="lineText">{line.text}</pre></td>
-                  </tr>
+                  <DiffRow key={`new-${i}`} side="new" line={line} language={lang} />
                 ))}
               </tbody>
             </table>

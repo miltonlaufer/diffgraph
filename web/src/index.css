@@ -2,6 +2,19 @@ body {
   margin: 0;
   font-family: Inter, system-ui, -apple-system, sans-serif;
   min-width: 320px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Re-enable text selection in code diff areas and search inputs */
+.codeScrollArea,
+.codeScrollArea *,
+.searchInput,
+.codeDiffPanel pre,
+.codeDiffPanel code,
+.codeDiffPanel td {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Scope button styles to app buttons only -- exclude ReactFlow internals */

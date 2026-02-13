@@ -13,7 +13,8 @@ interface ProcessNodeData {
   bgColor: string;
   textColor: string;
   selected: boolean;
-  codeContext?: string;
+  codeContext?: unknown;
+  language?: string;
 }
 
 const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
@@ -50,7 +51,7 @@ const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
       )}
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
-      <CodeTooltip visible={hovered} codeContext={data.codeContext ?? ""} />
+      <CodeTooltip visible={hovered} codeContext={data.codeContext as string | undefined} language={data.language} />
     </div>
   );
 };

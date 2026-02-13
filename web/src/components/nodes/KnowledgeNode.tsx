@@ -2,14 +2,10 @@ import { Handle, Position } from "@xyflow/react";
 import { memo, useMemo, useState, useCallback } from "react";
 import CodeTooltip from "./CodeTooltip";
 
-const splitLabel = (label: string): { title: string; code: string } => {
-  const idx = label.indexOf("\n");
-  if (idx === -1) return { title: label, code: "" };
-  return { title: label.slice(0, idx), code: label.slice(idx + 1) };
-};
-
-interface PillNodeData {
+interface KnowledgeNodeData {
   label: string;
+  shortPath: string;
+  fullPath: string;
   bgColor: string;
   textColor: string;
   selected: boolean;
@@ -17,24 +13,25 @@ interface PillNodeData {
   language?: string;
 }
 
-const PillNode = ({ data }: { data: PillNodeData }) => {
+const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
   /******************* STORE ***********************/
   const [hovered, setHovered] = useState(false);
 
   /******************* COMPUTED ***********************/
-  const parts = useMemo(() => splitLabel(data.label), [data.label]);
   const style = useMemo(
     () => ({
-      padding: "6px 16px",
-      borderRadius: 999,
+      padding: "6px 10px",
+      borderRadius: 8,
       background: data.bgColor,
       border: data.selected ? "3px solid #38bdf8" : "1px solid #475569",
-      textAlign: "center" as const,
-      minWidth: 80,
-      maxWidth: 220,
-      wordBreak: "break-word" as const,
+      color: data.textColor,
+      fontSize: 11,
+      width: 200,
+      overflow: "hidden" as const,
+      boxShadow: data.selected ? "0 0 12px #38bdf8" : "none",
+      cursor: "pointer",
     }),
-    [data.bgColor, data.selected],
+    [data.bgColor, data.textColor, data.selected],
   );
 
   /******************* FUNCTIONS ***********************/
@@ -42,13 +39,13 @@ const PillNode = ({ data }: { data: PillNodeData }) => {
   const onLeave = useCallback(() => setHovered(false), []);
 
   return (
-    <div style={style} onMouseEnter={onEnter} onMouseLeave={onLeave}>
-      <div style={{ fontSize: 11, color: data.textColor }}>{parts.title}</div>
-      {parts.code && (
-        <div style={{ fontSize: 9, fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace", color: data.textColor, opacity: 0.85, marginTop: 2, lineHeight: 1.3 }}>
-          {parts.code}
-        </div>
-      )}
+    <div style={style} title={`${data.label}\n${data.fullPath}`} onMouseEnter={onEnter} onMouseLeave={onLeave}>
+      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>
+        {data.label}
+      </div>
+      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 10, opacity: 0.7 }}>
+        {data.shortPath}
+      </div>
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
       <CodeTooltip visible={hovered} codeContext={data.codeContext as string | undefined} language={data.language} />
@@ -56,4 +53,4 @@ const PillNode = ({ data }: { data: PillNodeData }) => {
   );
 };
 
-export default memo(PillNode);
+export default memo(KnowledgeNode);

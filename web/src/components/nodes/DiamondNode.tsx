@@ -13,7 +13,8 @@ interface DiamondNodeData {
   bgColor: string;
   textColor: string;
   selected: boolean;
-  codeContext?: string;
+  codeContext?: unknown;
+  language?: string;
 }
 
 const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
@@ -56,7 +57,7 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
       <span style={{ position: "absolute", right: -6, top: "15%", transform: "rotate(-45deg)", fontSize: 9, color: "#4ade80", fontWeight: 600 }}>T</span>
       <Handle type="source" position={Position.Bottom} id="no" style={{ transform: "rotate(-45deg)" }} />
       <span style={{ position: "absolute", bottom: -6, left: "15%", transform: "rotate(-45deg)", fontSize: 9, color: "#f87171", fontWeight: 600 }}>F</span>
-      <CodeTooltip visible={hovered} codeContext={data.codeContext ?? ""} />
+      <CodeTooltip visible={hovered} codeContext={data.codeContext as string | undefined} language={data.language} />
     </div>
   );
 };

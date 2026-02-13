@@ -1,5 +1,7 @@
 import { NodeToolbar, Position } from "@xyflow/react";
 import { memo } from "react";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 interface CodeLine {
   num: number;
@@ -10,6 +12,7 @@ interface CodeLine {
 interface CodeTooltipProps {
   visible: boolean;
   codeContext: { lines: CodeLine[] } | string | undefined;
+  language?: string;
 }
 
 const tooltipStyle: React.CSSProperties = {
@@ -17,18 +20,17 @@ const tooltipStyle: React.CSSProperties = {
   border: "1px solid #334155",
   borderRadius: 8,
   padding: "6px 0",
-  maxWidth: 550,
+  maxWidth: 600,
   maxHeight: 320,
-  overflow: "auto",
+  overflowY: "auto",
+  overflowX: "hidden",
   zIndex: 1000,
 };
 
-const lineStyle = (highlight: boolean): React.CSSProperties => ({
+const lineContainerStyle = (highlight: boolean): React.CSSProperties => ({
   display: "flex",
   gap: 8,
   padding: "1px 10px",
-  fontSize: 11,
-  fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace",
   lineHeight: 1.6,
   background: highlight ? "rgba(56, 189, 248, 0.15)" : "transparent",
   borderLeft: highlight ? "3px solid #38bdf8" : "3px solid transparent",
@@ -39,25 +41,55 @@ const numStyle: React.CSSProperties = {
   minWidth: 32,
   textAlign: "right",
   userSelect: "none",
+  fontSize: 11,
+  fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace",
 };
 
-const textStyle = (highlight: boolean): React.CSSProperties => ({
-  color: highlight ? "#f0f9ff" : "#94a3b8",
+const inlineStyle: React.CSSProperties = {
+  display: "inline",
+  padding: 0,
+  margin: 0,
+  background: "none",
+  backgroundColor: "transparent",
+  fontSize: 11,
+  fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace",
+  lineHeight: "inherit",
   whiteSpace: "pre",
-});
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  maxWidth: 500,
+};
 
-const CodeTooltip = ({ visible, codeContext }: CodeTooltipProps) => {
+const HighlightedLine = memo(({ code, language }: { code: string; language: string }) => (
+  <SyntaxHighlighter
+    language={language}
+    style={oneDark}
+    customStyle={inlineStyle}
+    PreTag="span"
+    CodeTag="span"
+    useInlineStyles
+  >
+    {code || " "}
+  </SyntaxHighlighter>
+));
+
+const CodeTooltip = ({ visible, codeContext, language }: CodeTooltipProps) => {
   if (!visible || !codeContext) return null;
+  const lang = language ?? "text";
 
-  /* Support both old string format and new structured format */
   if (typeof codeContext === "string") {
     if (!codeContext) return null;
     return (
       <NodeToolbar isVisible={visible} position={Position.Bottom} offset={8}>
         <div style={tooltipStyle}>
-          <pre style={{ margin: 0, padding: "4px 10px", fontSize: 11, fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace", color: "#e2e8f0", lineHeight: 1.5, whiteSpace: "pre" }}>
+          <SyntaxHighlighter
+            language={lang}
+            style={oneDark}
+            customStyle={{ margin: 0, padding: "4px 10px", fontSize: 11, background: "transparent" }}
+            showLineNumbers={false}
+          >
             {codeContext}
-          </pre>
+          </SyntaxHighlighter>
         </div>
       </NodeToolbar>
     );
@@ -69,9 +101,9 @@ const CodeTooltip = ({ visible, codeContext }: CodeTooltipProps) => {
     <NodeToolbar isVisible={visible} position={Position.Bottom} offset={8}>
       <div style={tooltipStyle}>
         {codeContext.lines.map((line) => (
-          <div key={line.num} style={lineStyle(line.highlight)}>
+          <div key={line.num} style={lineContainerStyle(line.highlight)}>
             <span style={numStyle}>{line.num}</span>
-            <span style={textStyle(line.highlight)}>{line.text}</span>
+            <HighlightedLine code={line.text} language={lang} />
           </div>
         ))}
       </div>

@@ -18,6 +18,7 @@ import DiamondNode from "./nodes/DiamondNode";
 import PillNode from "./nodes/PillNode";
 import ProcessNode from "./nodes/ProcessNode";
 import GroupNode from "./nodes/GroupNode";
+import KnowledgeNode from "./nodes/KnowledgeNode";
 import { SearchBox } from "./SearchBox";
 /* style.css imported globally in main.tsx */
 
@@ -70,6 +71,10 @@ const logicNodeTypes: NodeTypes = {
   pill: PillNode,
   process: ProcessNode,
   scope: GroupNode,
+};
+
+const knowledgeNodeTypes: NodeTypes = {
+  knowledge: KnowledgeNode,
 };
 
 const LEAF_W = 220;
@@ -263,6 +268,7 @@ const computeLogicLayout = (
       const normalizedFilePath = normPath(node.filePath);
       const fileContent = fileContentMap.get(normalizedFilePath) ?? "";
       const codeContext = extractCodeContext(fileContent, node.startLine, node.endLine);
+      const nodeLang = langFromPath(normalizedFilePath);
 
       /* Return nodes get a distinct purple color */
       let nodeBg = bg;
@@ -274,7 +280,7 @@ const computeLogicLayout = (
 
       flowNodes.push({
         id: node.id, type: shape,
-        data: { label: node.label, bgColor: nodeBg, textColor: nodeTxt, selected: sel, codeContext },
+        data: { label: node.label, bgColor: nodeBg, textColor: nodeTxt, selected: sel, codeContext, language: nodeLang },
         position: pos, sourcePosition: Position.Bottom, targetPosition: Position.Top,
         ...(parentOk ? { parentId: node.parentId } : {}),
       });
@@ -316,6 +322,7 @@ const computeLogicLayout = (
 const computeFlatLayout = (
   graph: ViewGraph,
   selectedNodeId: string,
+  fileContentMap: Map<string, string>,
 ): { nodes: Node[]; edges: Edge[] } => {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
@@ -329,25 +336,29 @@ const computeFlatLayout = (
     const bg = statusColor[node.diffStatus] ?? "#334155";
     const txt = statusTextColor[node.diffStatus] ?? "#f8fafc";
     const sel = node.id === selectedNodeId;
-    const shortPath = shortenPath(node.filePath);
-    const fullText = `${node.label}\n${node.filePath}`;
+    const nfp = normPath(node.filePath);
+    const fileContent = fileContentMap.get(nfp) ?? "";
+    const codeContext = extractCodeContext(fileContent, node.startLine, node.endLine);
+    const lang = langFromPath(nfp);
     return {
       id: node.id,
+      type: "knowledge",
       data: {
-        label: (
-          <div title={fullText} style={{ width: NODE_W - 20, overflow: "hidden", pointerEvents: "auto" }}>
-            <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11, fontWeight: 500 }}>{node.label}</div>
-            <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 10, opacity: 0.7 }}>{shortPath}</div>
-          </div>
-        ),
+        label: node.label,
+        shortPath: shortenPath(node.filePath),
+        fullPath: node.filePath,
+        bgColor: bg,
+        textColor: txt,
+        selected: sel,
+        codeContext,
+        language: lang,
       },
       position: { x: (p?.x ?? 0) - NODE_W / 2, y: (p?.y ?? 0) - NODE_H / 2 },
       sourcePosition: Position.Right, targetPosition: Position.Left,
-      style: { border: sel ? "3px solid #38bdf8" : "1px solid #475569", borderRadius: 8, fontSize: 11, background: bg, color: txt, boxShadow: sel ? "0 0 12px #38bdf8" : "none", cursor: "pointer", width: NODE_W, overflow: "hidden" },
     };
   });
   const edges: Edge[] = graph.edges.map((edge) => ({
-    id: edge.id, source: edge.source, target: edge.target, label: edge.kind,
+    id: edge.id, source: edge.source, target: edge.target, label: "",
     animated: edge.diffStatus === "added" || edge.diffStatus === "removed",
     style: { stroke: edge.diffStatus === "added" ? "#4ade80" : edge.diffStatus === "removed" ? "#f87171" : "#64748b", strokeWidth: 1.5 },
     markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#94a3b8" },
@@ -357,6 +368,13 @@ const computeFlatLayout = (
 
 const normPath = (v: string): string =>
   v.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
+
+const langFromPath = (path: string): string => {
+  if (path.endsWith(".ts") || path.endsWith(".tsx")) return "typescript";
+  if (path.endsWith(".js") || path.endsWith(".jsx")) return "javascript";
+  if (path.endsWith(".py")) return "python";
+  return "text";
+};
 
 const shortenPath = (filePath: string): string => {
   const parts = filePath.replace(/\\/g, "/").split("/");
@@ -391,7 +409,7 @@ export const SplitGraphPanel = ({
 
   /* Heavy layout: only recomputes when graph structure changes, NOT on selection */
   const layoutResult = useMemo(
-    () => isLogic ? computeLogicLayout(graph, "", fileContentMap) : computeFlatLayout(graph, ""),
+    () => isLogic ? computeLogicLayout(graph, "", fileContentMap) : computeFlatLayout(graph, "", fileContentMap),
     [graph, isLogic, fileContentMap],
   );
 
@@ -401,7 +419,7 @@ export const SplitGraphPanel = ({
     const nodes = layoutResult.nodes.map((node) => {
       const isSelected = node.id === selectedNodeId;
       if (!isSelected) return node;
-      if (node.type === "scope" || node.type === "diamond" || node.type === "pill" || node.type === "process") {
+      if (node.type === "scope" || node.type === "diamond" || node.type === "pill" || node.type === "process" || node.type === "knowledge") {
         return { ...node, data: { ...node.data, selected: true } };
       }
       return { ...node, style: { ...(node.style ?? {}), border: "3px solid #38bdf8", boxShadow: "0 0 12px #38bdf8" } };
@@ -445,7 +463,7 @@ export const SplitGraphPanel = ({
     if (diffStats) return diffStats;
     return { added: graph.nodes.filter((n) => n.diffStatus === "added").length, removed: graph.nodes.filter((n) => n.diffStatus === "removed").length, modified: graph.nodes.filter((n) => n.diffStatus === "modified").length };
   }, [diffStats, graph.nodes]);
-  const nodeTypesForFlow = useMemo(() => (isLogic ? logicNodeTypes : undefined), [isLogic]);
+  const nodeTypesForFlow = useMemo(() => (isLogic ? logicNodeTypes : knowledgeNodeTypes), [isLogic]);
 
   const focusedViewport = useMemo(() => {
     if (!focusFilePath) return null;
