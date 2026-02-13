@@ -513,6 +513,10 @@
   line-height: 1.5;
 }
 
+.diffTable tr {
+  height: 1.5em;
+}
+
 .lineNum {
   width: 40px;
   min-width: 40px;

@@ -245,6 +245,13 @@ const inlineHighlightStyle: React.CSSProperties = {
   whiteSpace: "pre",
 };
 
+const emptyLineStyle: React.CSSProperties = {
+  display: "inline-block",
+  minHeight: "1.5em",
+  whiteSpace: "pre",
+  width: "1px",
+};
+
 const HighlightedCode = memo(({ code, language }: { code: string; language: string }) => (
   <SyntaxHighlighter
     language={language}
@@ -595,7 +602,7 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
                   <tr key={`old-row-${i}`} data-old-line={row.old.lineNumber ?? undefined}>
                     <td className="lineNum" style={lineStyle(row.old.type)}>{row.old.lineNumber ?? ""}</td>
                     <td className="lineCode" style={lineStyle(row.old.type)}>
-                      {row.old.type === "empty" ? <span /> : <HighlightedCode code={row.old.text} language={lang} />}
+                      {row.old.type === "empty" ? <span style={emptyLineStyle}>&nbsp;</span> : <HighlightedCode code={row.old.text} language={lang} />}
                     </td>
                   </tr>
                 ))}
@@ -612,7 +619,7 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
                   <tr key={`new-row-${i}`} data-new-line={row.new.lineNumber ?? undefined}>
                     <td className="lineNum" style={lineStyle(row.new.type)}>{row.new.lineNumber ?? ""}</td>
                     <td className="lineCode" style={lineStyle(row.new.type)}>
-                      {row.new.type === "empty" ? <span /> : <HighlightedCode code={row.new.text} language={lang} />}
+                      {row.new.type === "empty" ? <span style={emptyLineStyle}>&nbsp;</span> : <HighlightedCode code={row.new.text} language={lang} />}
                     </td>
                   </tr>
                 ))}
