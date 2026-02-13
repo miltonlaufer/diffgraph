@@ -31,12 +31,19 @@ const App = () => {
   const toggleChangesOnly = useCallback(() => {
     setChangesOnly((current) => !current);
   }, []);
+  const canShowReact = meta?.hasReactView ?? true;
 
   /******************* USEEFFECTS ***********************/
   useEffect(() => {
     if (!diffId) return;
     fetchDiffMeta(diffId).then(setMeta).catch(() => {});
   }, [diffId]);
+
+  useEffect(() => {
+    if (!canShowReact && tab === "react") {
+      setTab("logic");
+    }
+  }, [canShowReact, tab]);
 
   if (!diffId) {
     return (
@@ -60,25 +67,35 @@ const App = () => {
             </span>
           )}
         </div>
+        <div className="headerControls">
+          <label className="changesOnlyToggle" htmlFor="changes-only-toggle">
+            <input
+              id="changes-only-toggle"
+              type="checkbox"
+              checked={changesOnly}
+              onChange={toggleChangesOnly}
+            />
+            <span>Changes Only</span>
+          </label>
+        </div>
         <div className="tabBar">
-          <button type="button" onClick={toggleChangesOnly} className={changesOnly ? "active" : ""}>
-            Changes Only
-          </button>
           <button type="button" onClick={showLogic} className={tab === "logic" ? "active" : ""}>
             Logic
           </button>
           <button type="button" onClick={showKnowledge} className={tab === "knowledge" ? "active" : ""}>
             Knowledge
           </button>
-          <button type="button" onClick={showReact} className={tab === "react" ? "active" : ""}>
-            React
-          </button>
+          {canShowReact && (
+            <button type="button" onClick={showReact} className={tab === "react" ? "active" : ""}>
+              React
+            </button>
+          )}
         </div>
       </header>
 
       {tab === "logic" && <LogicDiffView diffId={diffId} showChangesOnly={changesOnly} />}
       {tab === "knowledge" && <KnowledgeDiffView diffId={diffId} showChangesOnly={changesOnly} />}
-      {tab === "react" && <ReactDiffView diffId={diffId} showChangesOnly={changesOnly} />}
+      {tab === "react" && canShowReact && <ReactDiffView diffId={diffId} showChangesOnly={changesOnly} />}
     </main>
   );
 };

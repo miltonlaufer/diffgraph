@@ -13,7 +13,7 @@ import {
   Position,
 } from "@xyflow/react";
 import dagre from "@dagrejs/dagre";
-import type { FileDiffEntry, ViewGraph, ViewGraphNode, ViewportState } from "../types/graph";
+import type { ViewGraph, ViewGraphNode, ViewportState } from "../types/graph";
 import DiamondNode from "./nodes/DiamondNode";
 import PillNode from "./nodes/PillNode";
 import ProcessNode from "./nodes/ProcessNode";
@@ -28,19 +28,32 @@ interface DiffStats {
   modified: number;
 }
 
+export interface GraphDiffTarget {
+  id: string;
+  side: "old" | "new";
+  x: number;
+  y: number;
+  viewportX: number;
+  viewportY: number;
+  viewportZoom: number;
+  diffStatus: "added" | "removed" | "modified";
+}
+
 interface SplitGraphPanelProps {
   title: string;
   side: "old" | "new";
   graph: ViewGraph;
   viewType: "logic" | "knowledge" | "react";
   showCalls?: boolean;
-  onNodeSelect: (nodeId: string) => void;
+  onNodeSelect: (nodeId: string, side: "old" | "new") => void;
   viewport: ViewportState;
   onViewportChange: (viewport: ViewportState) => void;
   selectedNodeId: string;
+  highlightedNodeId?: string;
   focusFilePath: string;
   diffStats?: DiffStats;
-  fileDiffs?: FileDiffEntry[];
+  fileContentMap: Map<string, string>;
+  onDiffTargetsChange?: (side: "old" | "new", targets: GraphDiffTarget[]) => void;
 }
 
 const statusColor: Record<string, string> = {
@@ -421,28 +434,21 @@ const shortenPath = (filePath: string): string => {
 };
 
 export const SplitGraphPanel = ({
-  title, side, graph, viewType, showCalls = true, onNodeSelect, viewport, onViewportChange, selectedNodeId, focusFilePath, diffStats, fileDiffs,
+  title, side, graph, viewType, showCalls = true, onNodeSelect, viewport, onViewportChange, selectedNodeId, highlightedNodeId, focusFilePath, diffStats, fileContentMap, onDiffTargetsChange,
 }: SplitGraphPanelProps) => {
   /******************* STORE ***********************/
   const [searchQuery, setSearchQuery] = useState("");
   const [searchExclude, setSearchExclude] = useState(false);
   const [searchIdx, setSearchIdx] = useState(0);
+  const [searchHighlightedNodeId, setSearchHighlightedNodeId] = useState("");
   const lastAutoFocusSearchRef = useRef<string>("");
+  const searchHighlightTimerRef = useRef<number | null>(null);
+  const flowContainerRef = useRef<HTMLDivElement>(null);
+  const [flowSize, setFlowSize] = useState({ width: 800, height: 500 });
 
   /******************* COMPUTED ***********************/
   const isLogic = useMemo(() => viewType === "logic", [viewType]);
   const isOld = useMemo(() => side === "old", [side]);
-
-  const fileContentMap = useMemo(() => {
-    const map = new Map<string, string>();
-    if (!fileDiffs) return map;
-    for (const f of fileDiffs) {
-      const content = isOld ? f.oldContent : f.newContent;
-      map.set(normPath(f.path), content);
-    }
-    return map;
-  }, [fileDiffs, isOld]);
-
   /* Heavy layout: only recomputes when graph structure changes, NOT on selection */
   const layoutResult = useMemo(
     () => isLogic ? computeLogicLayout(graph, "", fileContentMap, showCalls) : computeFlatLayout(graph, "", fileContentMap),
@@ -451,9 +457,9 @@ export const SplitGraphPanel = ({
 
   /* Light selection pass: just updates node styles */
   const flowElements = useMemo(() => {
-    if (!selectedNodeId) return layoutResult;
+    if (!selectedNodeId && !highlightedNodeId && !searchHighlightedNodeId) return layoutResult;
     const nodes = layoutResult.nodes.map((node) => {
-      const isSelected = node.id === selectedNodeId;
+      const isSelected = node.id === selectedNodeId || node.id === highlightedNodeId || node.id === searchHighlightedNodeId;
       if (!isSelected) return node;
       if (node.type === "scope" || node.type === "diamond" || node.type === "pill" || node.type === "process" || node.type === "knowledge") {
         return { ...node, data: { ...node.data, selected: true } };
@@ -461,7 +467,7 @@ export const SplitGraphPanel = ({
       return { ...node, style: { ...(node.style ?? {}), border: "3px solid #38bdf8", boxShadow: "0 0 12px #38bdf8" } };
     });
     return { nodes, edges: layoutResult.edges };
-  }, [layoutResult, selectedNodeId]);
+  }, [layoutResult, selectedNodeId, highlightedNodeId, searchHighlightedNodeId]);
 
   /* Search: find matching node ids */
   const searchMatches = useMemo(() => {
@@ -510,6 +516,44 @@ export const SplitGraphPanel = ({
     return { x, y };
   }, [flowNodeById]);
 
+  const nodeSize = useCallback((node: Node): { width: number; height: number } => {
+    const styleWidth = typeof node.style?.width === "number" ? node.style.width : undefined;
+    const styleHeight = typeof node.style?.height === "number" ? node.style.height : undefined;
+    if (styleWidth && styleHeight) return { width: styleWidth, height: styleHeight };
+    if (node.type === "diamond") return { width: 120, height: 120 };
+    if (node.type === "knowledge") return { width: NODE_W, height: NODE_H };
+    if (node.type === "scope") return { width: LEAF_W, height: LEAF_H };
+    return { width: LEAF_W, height: LEAF_H };
+  }, []);
+
+  const viewportForNode = useCallback((node: Node): { x: number; y: number; zoom: number } => {
+    const zoom = 0.9;
+    const padding = 24;
+    const abs = nodeAbsolutePosition(node);
+    const size = nodeSize(node);
+    const worldVisibleW = flowSize.width / zoom;
+    const worldVisibleH = flowSize.height / zoom;
+    const tooLarge = size.width > worldVisibleW * 0.8 || size.height > worldVisibleH * 0.8;
+
+    if (tooLarge) {
+      const anchorWorldX = abs.x - padding;
+      const anchorWorldY = abs.y - padding;
+      return {
+        x: padding - anchorWorldX * zoom,
+        y: padding - anchorWorldY * zoom,
+        zoom,
+      };
+    }
+
+    const centerX = abs.x + size.width / 2;
+    const centerY = abs.y + size.height / 2;
+    return {
+      x: flowSize.width / 2 - centerX * zoom,
+      y: flowSize.height / 2 - centerY * zoom,
+      zoom,
+    };
+  }, [flowSize.height, flowSize.width, nodeAbsolutePosition, nodeSize]);
+
   const flowStyle = useMemo(() => ({ width: "100%", height: "100%" }), []);
   const stats = useMemo(() => {
     if (diffStats) return diffStats;
@@ -533,31 +577,84 @@ export const SplitGraphPanel = ({
 
   /******************* FUNCTIONS ***********************/
   const handleSearch = useCallback((q: string, exclude: boolean) => { setSearchQuery(q); setSearchExclude(exclude); setSearchIdx(0); }, []);
+  const flashSearchTarget = useCallback((nodeId: string) => {
+    setSearchHighlightedNodeId(nodeId);
+    if (searchHighlightTimerRef.current !== null) {
+      window.clearTimeout(searchHighlightTimerRef.current);
+    }
+    searchHighlightTimerRef.current = window.setTimeout(() => {
+      setSearchHighlightedNodeId("");
+      searchHighlightTimerRef.current = null;
+    }, 1400);
+  }, []);
   const handleSearchNext = useCallback(() => {
     if (searchMatches.length === 0) return;
     const next = (searchIdx + 1) % searchMatches.length;
     setSearchIdx(next);
     const target = searchMatches[next];
     if (target) {
-      const abs = nodeAbsolutePosition(target);
-      onViewportChange({ x: -abs.x + 200, y: -abs.y + 150, zoom: 0.9 });
+      flashSearchTarget(target.id);
+      onViewportChange(viewportForNode(target));
     }
-  }, [searchMatches, searchIdx, onViewportChange, nodeAbsolutePosition]);
+  }, [searchMatches, searchIdx, onViewportChange, flashSearchTarget, viewportForNode]);
   const handleSearchPrev = useCallback(() => {
     if (searchMatches.length === 0) return;
     const prev = (searchIdx - 1 + searchMatches.length) % searchMatches.length;
     setSearchIdx(prev);
     const target = searchMatches[prev];
     if (target) {
-      const abs = nodeAbsolutePosition(target);
-      onViewportChange({ x: -abs.x + 200, y: -abs.y + 150, zoom: 0.9 });
+      flashSearchTarget(target.id);
+      onViewportChange(viewportForNode(target));
     }
-  }, [searchMatches, searchIdx, onViewportChange, nodeAbsolutePosition]);
-  const handleNodeClick = useCallback<NodeMouseHandler>((_e, n) => { onNodeSelect(n.id); }, [onNodeSelect]);
+  }, [searchMatches, searchIdx, onViewportChange, flashSearchTarget, viewportForNode]);
+  const handleNodeClick = useCallback<NodeMouseHandler>((_e, n) => { onNodeSelect(n.id, side); }, [onNodeSelect, side]);
   const handleMove = useCallback((_e: MouseEvent | TouchEvent | null, v: Viewport) => { onViewportChange({ x: v.x, y: v.y, zoom: v.zoom }); }, [onViewportChange]);
 
   /******************* USEEFFECTS ***********************/
   const prevFocusRef = useRef<string>("");
+
+  useEffect(() => {
+    const el = flowContainerRef.current;
+    if (!el) return;
+    const update = (): void => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setFlowSize({ width: rect.width, height: rect.height });
+      }
+    };
+    update();
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(() => update());
+      observer.observe(el);
+      return () => observer.disconnect();
+    }
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  useEffect(() => {
+    if (!onDiffTargetsChange) return;
+    const graphNodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+    const targets: GraphDiffTarget[] = flowElements.nodes
+      .map((node) => {
+        const gn = graphNodeById.get(node.id);
+        if (!gn || gn.diffStatus === "unchanged") return null;
+        const abs = nodeAbsolutePosition(node);
+        const vp = viewportForNode(node);
+        return {
+          id: node.id,
+          side,
+          x: abs.x,
+          y: abs.y,
+          viewportX: vp.x,
+          viewportY: vp.y,
+          viewportZoom: vp.zoom,
+          diffStatus: gn.diffStatus,
+        } as GraphDiffTarget;
+      })
+      .filter((entry): entry is GraphDiffTarget => entry !== null);
+    onDiffTargetsChange(side, targets);
+  }, [onDiffTargetsChange, side, graph.nodes, flowElements.nodes, nodeAbsolutePosition, viewportForNode]);
 
   useEffect(() => {
     if (!searchQuery || searchQuery.length < 2 || searchMatches.length === 0) return;
@@ -566,9 +663,15 @@ export const SplitGraphPanel = ({
     lastAutoFocusSearchRef.current = searchKey;
     setSearchIdx(0);
     const first = searchMatches[0];
-    const abs = nodeAbsolutePosition(first);
-    onViewportChange({ x: -abs.x + 200, y: -abs.y + 150, zoom: 0.9 });
-  }, [searchQuery, searchExclude, searchMatches, nodeAbsolutePosition, onViewportChange]);
+    flashSearchTarget(first.id);
+    onViewportChange(viewportForNode(first));
+  }, [searchQuery, searchExclude, searchMatches, onViewportChange, flashSearchTarget, viewportForNode]);
+
+  useEffect(() => () => {
+    if (searchHighlightTimerRef.current !== null) {
+      window.clearTimeout(searchHighlightTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (focusFilePath && focusFilePath !== prevFocusRef.current && focusedViewport) {
@@ -597,11 +700,15 @@ export const SplitGraphPanel = ({
           currentIndex={searchIdx}
         />
       </div>
-      <div className="flowContainer">
+      <div className="flowContainer" ref={flowContainerRef}>
         <ReactFlow
+          id={`reactflow-${side}`}
           nodes={searchResultNodes.nodes} edges={searchResultNodes.edges} nodeTypes={nodeTypesForFlow}
           onNodeClick={handleNodeClick} viewport={viewport} onMove={handleMove}
           style={flowStyle} onlyRenderVisibleElements minZoom={0.05} maxZoom={2}
+          nodesDraggable={false}
+          panOnDrag
+          selectionOnDrag={false}
         >
           <Background />
           {!isOld && <Controls />}

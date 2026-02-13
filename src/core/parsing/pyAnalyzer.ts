@@ -27,8 +27,9 @@ interface PyResult {
     params?: string;
     returnType?: string;
     documentation?: string;
+    signature?: string;
   }>;
-  classes: Array<{ name: string; start: number; end: number }>;
+  classes: Array<{ name: string; start: number; end: number; signature?: string }>;
   imports: string[];
   calls: Array<{ caller: string; callee: string; line: number }>;
   branches: PyBranch[];
@@ -69,7 +70,7 @@ export class PyAnalyzer {
           language: "py",
           startLine: classDecl.start,
           endLine: classDecl.end,
-          signatureHash: stableHash(`${classDecl.name}:${classDecl.start}:${classDecl.end}`),
+          signatureHash: stableHash(classDecl.signature ?? `${classDecl.name}:${classDecl.start}:${classDecl.end}`),
           snapshotId,
           ref,
         };
@@ -96,7 +97,7 @@ export class PyAnalyzer {
           language: "py",
           startLine: fn.start,
           endLine: fn.end,
-          signatureHash: stableHash(`${fn.qualifiedName}:${fn.start}:${fn.end}`),
+          signatureHash: stableHash(fn.signature ?? `${fn.qualifiedName}:${fn.start}:${fn.end}`),
           metadata: {
             params: fn.params ?? "()",
             paramsFull: fn.params ?? "()",

@@ -65,12 +65,19 @@ export const createApp = (context: AppContext): express.Express => {
       res.status(404).json({ error: "diff not found" });
       return;
     }
+    const allNodes = [...result.oldGraph.nodes, ...result.newGraph.nodes];
+    const hasReactView = allNodes.some((node) =>
+      node.kind === "ReactComponent"
+      || node.kind === "Hook"
+      || ((node.kind === "File") && (node.language === "ts" || node.language === "js"))
+    );
     res.json({
       diffId: result.diffId,
       oldRef: result.oldGraph.ref,
       newRef: result.newGraph.ref,
       oldSnapshotId: result.oldGraph.snapshotId,
       newSnapshotId: result.newGraph.snapshotId,
+      hasReactView,
     });
   });
 

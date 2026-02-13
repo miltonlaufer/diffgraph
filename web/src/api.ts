@@ -35,6 +35,7 @@ export interface DiffMeta {
   diffId: string;
   oldRef: string;
   newRef: string;
+  hasReactView: boolean;
 }
 
 export const fetchDiffMeta = async (diffId: string): Promise<DiffMeta> => {

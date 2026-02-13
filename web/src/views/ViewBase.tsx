@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchDiffFiles, fetchView } from "../api";
 import { CodeDiffDrawer } from "../components/CodeDiffDrawer";
 import { FileListPanel } from "../components/FileListPanel";
-import { SplitGraphPanel } from "../components/SplitGraphPanel";
+import { SplitGraphPanel, type GraphDiffTarget } from "../components/SplitGraphPanel";
 import { SymbolListPanel } from "../components/SymbolListPanel";
 import type { FileDiffEntry, FileSymbol, ViewGraph, ViewportState } from "../types/graph";
 
@@ -59,12 +59,18 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const [selectedFilePath, setSelectedFilePath] = useState<string>("");
   const [selectedNodeId, setSelectedNodeId] = useState<string>("");
   const [targetLine, setTargetLine] = useState<number>(0);
+  const [targetSide, setTargetSide] = useState<"old" | "new">("new");
   const [scrollTick, setScrollTick] = useState<number>(0);
   const [sharedViewport, setSharedViewport] = useState<ViewportState>({ x: 0, y: 0, zoom: 0.8 });
   const [showCalls, setShowCalls] = useState(true);
+  const [oldDiffTargets, setOldDiffTargets] = useState<GraphDiffTarget[]>([]);
+  const [newDiffTargets, setNewDiffTargets] = useState<GraphDiffTarget[]>([]);
+  const [graphDiffIdx, setGraphDiffIdx] = useState(0);
+  const [highlightedNodeId, setHighlightedNodeId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const codeDiffSectionRef = useRef<HTMLDivElement>(null);
+  const highlightTimerRef = useRef<number | null>(null);
 
   /******************* COMPUTED ***********************/
   const title = useMemo(() => {
@@ -189,18 +195,42 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     [selectedFile],
   );
 
+  const graphDiffTargets = useMemo(() => {
+    const merged = [...oldDiffTargets, ...newDiffTargets];
+    return merged.sort((a, b) => (a.y - b.y) || (a.x - b.x));
+  }, [oldDiffTargets, newDiffTargets]);
+
+  const oldFileContentMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const f of fileDiffs) {
+      map.set(normalizePath(f.path), f.oldContent);
+    }
+    return map;
+  }, [fileDiffs]);
+
+  const newFileContentMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const f of fileDiffs) {
+      map.set(normalizePath(f.path), f.newContent);
+    }
+    return map;
+  }, [fileDiffs]);
+
   /******************* FUNCTIONS ***********************/
   const handleNodeSelect = useCallback(
-    (nodeId: string) => {
+    (nodeId: string, sourceSide: "old" | "new") => {
       setSelectedNodeId(nodeId);
       const matchedOld = oldGraph.nodes.find((n) => n.id === nodeId);
       const matchedNew = newGraph.nodes.find((n) => n.id === nodeId);
-      const filePath = matchedNew?.filePath ?? matchedOld?.filePath ?? "";
+      const primary = sourceSide === "old" ? matchedOld : matchedNew;
+      const fallback = sourceSide === "old" ? matchedNew : matchedOld;
+      const filePath = primary?.filePath ?? fallback?.filePath ?? "";
       if (filePath.length > 0) {
         setSelectedFilePath(normalizePath(filePath));
       }
-      const line = matchedNew?.startLine ?? matchedOld?.startLine ?? 0;
+      const line = primary?.startLine ?? fallback?.startLine ?? 0;
       setTargetLine(line);
+      setTargetSide(sourceSide);
       setScrollTick((prev) => prev + 1);
     },
     [oldGraph.nodes, newGraph.nodes],
@@ -212,6 +242,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
 
   const handleSymbolClick = useCallback((startLine: number) => {
     setTargetLine(startLine);
+    setTargetSide("new");
     setScrollTick((prev) => prev + 1);
   }, []);
 
@@ -222,6 +253,38 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const handleShowCallsChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setShowCalls(e.target.checked);
   }, []);
+
+  const handleDiffTargetsChange = useCallback((side: "old" | "new", targets: GraphDiffTarget[]) => {
+    if (side === "old") {
+      setOldDiffTargets(targets);
+      return;
+    }
+    setNewDiffTargets(targets);
+  }, []);
+
+  const goToGraphDiff = useCallback((idx: number) => {
+    if (graphDiffTargets.length === 0) return;
+    const normalized = ((idx % graphDiffTargets.length) + graphDiffTargets.length) % graphDiffTargets.length;
+    setGraphDiffIdx(normalized);
+    const target = graphDiffTargets[normalized];
+    setHighlightedNodeId(target.id);
+    if (highlightTimerRef.current !== null) {
+      window.clearTimeout(highlightTimerRef.current);
+    }
+    highlightTimerRef.current = window.setTimeout(() => {
+      setHighlightedNodeId("");
+      highlightTimerRef.current = null;
+    }, 1400);
+    setSharedViewport({ x: target.viewportX, y: target.viewportY, zoom: target.viewportZoom });
+  }, [graphDiffTargets]);
+
+  const goToPrevGraphDiff = useCallback(() => {
+    goToGraphDiff(graphDiffIdx - 1);
+  }, [goToGraphDiff, graphDiffIdx]);
+
+  const goToNextGraphDiff = useCallback(() => {
+    goToGraphDiff(graphDiffIdx + 1);
+  }, [goToGraphDiff, graphDiffIdx]);
 
   /******************* USEEFFECTS ***********************/
   useEffect(() => {
@@ -267,6 +330,22 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     });
   }, [scrollTick, selectedFile]);
 
+  useEffect(() => {
+    if (graphDiffTargets.length === 0) {
+      if (graphDiffIdx !== 0) setGraphDiffIdx(0);
+      return;
+    }
+    if (graphDiffIdx >= graphDiffTargets.length) {
+      setGraphDiffIdx(0);
+    }
+  }, [graphDiffTargets.length, graphDiffIdx]);
+
+  useEffect(() => () => {
+    if (highlightTimerRef.current !== null) {
+      window.clearTimeout(highlightTimerRef.current);
+    }
+  }, []);
+
   if (error) {
     return <p className="errorText">{error}</p>;
   }
@@ -293,6 +372,15 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
             <input type="checkbox" checked={showCalls} onChange={handleShowCallsChange} className="showCallsCheckbox" />
             Show calls
           </label>
+          <div className="graphDiffNav">
+            <span className="diffCount">{graphDiffTargets.length > 0 ? `${graphDiffIdx + 1}/${graphDiffTargets.length}` : "0/0"}</span>
+            <button type="button" className="diffNavBtn" onClick={goToPrevGraphDiff} disabled={graphDiffTargets.length === 0} title="Previous graph change">
+              &#9650;
+            </button>
+            <button type="button" className="diffNavBtn" onClick={goToNextGraphDiff} disabled={graphDiffTargets.length === 0} title="Next graph change">
+              &#9660;
+            </button>
+          </div>
         </div>
       )}
 
@@ -307,8 +395,10 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
           viewport={sharedViewport}
           onViewportChange={handleViewportChange}
           selectedNodeId={selectedNodeId}
+          highlightedNodeId={highlightedNodeId}
           focusFilePath={selectedFilePath}
-          fileDiffs={fileDiffs}
+          fileContentMap={oldFileContentMap}
+          onDiffTargetsChange={handleDiffTargetsChange}
         />
         <SplitGraphPanel
           title="New"
@@ -320,9 +410,11 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
           viewport={sharedViewport}
           onViewportChange={handleViewportChange}
           selectedNodeId={selectedNodeId}
+          highlightedNodeId={highlightedNodeId}
           focusFilePath={selectedFilePath}
           diffStats={diffStats}
-          fileDiffs={fileDiffs}
+          fileContentMap={newFileContentMap}
+          onDiffTargetsChange={handleDiffTargetsChange}
         />
       </div>
 
@@ -345,7 +437,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
       )}
 
       <div ref={codeDiffSectionRef}>
-        <CodeDiffDrawer file={selectedFile} targetLine={targetLine} scrollTick={scrollTick} />
+        <CodeDiffDrawer file={selectedFile} targetLine={targetLine} targetSide={targetSide} scrollTick={scrollTick} />
       </div>
     </section>
   );

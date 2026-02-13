@@ -7,6 +7,7 @@ import type { FileDiffEntry } from "../types/graph";
 interface CodeDiffDrawerProps {
   file: FileDiffEntry | null;
   targetLine: number;
+  targetSide: "old" | "new";
   scrollTick: number;
 }
 
@@ -303,7 +304,7 @@ const scrollToRowIndex = (container: HTMLDivElement | null, rowIndex: number): v
   }, 1200);
 };
 
-export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerProps) => {
+export const CodeDiffDrawer = ({ file, targetLine, targetSide, scrollTick }: CodeDiffDrawerProps) => {
   /******************* STORE ***********************/
   const oldCodeScrollRef = useRef<HTMLDivElement>(null);
   const newCodeScrollRef = useRef<HTMLDivElement>(null);
@@ -407,9 +408,11 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
     if (targetLine <= 0) return;
     const scrollContainerToRow = (container: HTMLDivElement | null): void => {
       if (!container) return;
+      const preferredSelector = targetSide === "old" ? `tr[data-old-line="${targetLine}"]` : `tr[data-new-line="${targetLine}"]`;
+      const fallbackSelector = targetSide === "old" ? `tr[data-new-line="${targetLine}"]` : `tr[data-old-line="${targetLine}"]`;
       const row =
-        (container.querySelector(`tr[data-new-line="${targetLine}"]`) as HTMLElement | null) ??
-        (container.querySelector(`tr[data-old-line="${targetLine}"]`) as HTMLElement | null);
+        (container.querySelector(preferredSelector) as HTMLElement | null) ??
+        (container.querySelector(fallbackSelector) as HTMLElement | null);
       if (!row) return;
       const containerRect = container.getBoundingClientRect();
       const rowRect = row.getBoundingClientRect();
@@ -428,7 +431,7 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
       scrollContainerToRow(oldCodeScrollRef.current);
     }, 100);
     return () => clearTimeout(timerId);
-  }, [targetLine, scrollTick]);
+  }, [targetLine, targetSide, scrollTick]);
 
   const syncVerticalScroll = useCallback((source: HTMLDivElement | null, target: HTMLDivElement | null) => {
     if (!source || !target) return;

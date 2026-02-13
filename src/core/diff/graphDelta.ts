@@ -7,7 +7,18 @@ export interface GraphDelta {
   edgeStatus: Map<string, "added" | "removed" | "modified" | "unchanged">;
 }
 
-const nodeKey = (node: GraphNode): string => `${node.qualifiedName}:${node.kind}`;
+const branchOwnerFromQualifiedName = (qualifiedName: string): string =>
+  qualifiedName.replace(/::[^:]+#\d+$/, "");
+
+const nodeKey = (node: GraphNode): string => {
+  if (node.kind === "Branch") {
+    const branchType = (node.metadata?.branchType as string | undefined) ?? "";
+    const snippet = (node.metadata?.codeSnippet as string | undefined) ?? "";
+    const owner = branchOwnerFromQualifiedName(node.qualifiedName);
+    return `Branch:${owner}:${branchType}:${snippet}`;
+  }
+  return `${node.qualifiedName}:${node.kind}`;
+};
 const edgeKey = (edge: GraphEdge): string => `${edge.kind}:${edge.source}:${edge.target}`;
 
 export const buildGraphDelta = (oldGraph: SnapshotGraph, newGraph: SnapshotGraph): GraphDelta => {

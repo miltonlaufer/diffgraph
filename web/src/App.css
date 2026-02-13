@@ -12,6 +12,8 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .headerLeft {
@@ -49,6 +51,31 @@
   gap: 8px;
 }
 
+.headerControls {
+  display: flex;
+  align-items: center;
+}
+
+.changesOnlyToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #0f172a;
+  font-size: 13px;
+  color: #cbd5e1;
+  user-select: none;
+  cursor: pointer;
+}
+
+.changesOnlyToggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: #38bdf8;
+}
+
 .tabBar button {
   background: #0f172a;
   color: #e2e8f0;
@@ -74,6 +101,12 @@
   justify-content: center;
   gap: 16px;
   margin-bottom: 8px;
+}
+
+.graphDiffNav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .showCallsLabel {

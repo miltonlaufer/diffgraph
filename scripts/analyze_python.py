@@ -15,6 +15,10 @@ class Collector(ast.NodeVisitor):
         self.current_scope = "module"
         self._branch_counter: dict[str, int] = {}
 
+    def _semantic_signature(self, node: ast.AST) -> str:
+        """Stable semantic signature that ignores source formatting and line offsets."""
+        return ast.dump(node, annotate_fields=True, include_attributes=False)
+
     def _next_branch_idx(self, kind: str) -> int:
         key = f"{self.current_scope}::{kind}"
         idx = self._branch_counter.get(key, 0)
@@ -37,6 +41,7 @@ class Collector(ast.NodeVisitor):
                 "name": node.name,
                 "start": node.lineno,
                 "end": getattr(node, "end_lineno", node.lineno),
+                "signature": self._semantic_signature(node),
             }
         )
         previous = self.current_scope
@@ -79,6 +84,7 @@ class Collector(ast.NodeVisitor):
                 "params": params,
                 "returnType": return_type,
                 "documentation": documentation,
+                "signature": self._semantic_signature(node),
             }
         )
         previous = self.current_scope
