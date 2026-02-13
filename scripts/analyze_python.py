@@ -62,6 +62,13 @@ class Collector(ast.NodeVisitor):
                     pass
             param_names.append(f"{arg.arg}{annotation}")
         params = f"({', '.join(param_names)})" if param_names else "()"
+        return_type = ""
+        if node.returns:
+            try:
+                return_type = ast.unparse(node.returns)
+            except Exception:
+                return_type = ""
+        documentation = ast.get_docstring(node) or ""
 
         self.functions.append(
             {
@@ -70,6 +77,8 @@ class Collector(ast.NodeVisitor):
                 "start": node.lineno,
                 "end": getattr(node, "end_lineno", node.lineno),
                 "params": params,
+                "returnType": return_type,
+                "documentation": documentation,
             }
         )
         previous = self.current_scope

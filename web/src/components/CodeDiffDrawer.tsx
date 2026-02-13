@@ -258,22 +258,6 @@ const HighlightedCode = memo(({ code, language }: { code: string; language: stri
   </SyntaxHighlighter>
 ));
 
-const MatrixRow = memo(({ row, language }: { row: DiffMatrixRow; language: string }) => (
-  <tr
-    data-old-line={row.old.lineNumber ?? undefined}
-    data-new-line={row.new.lineNumber ?? undefined}
-  >
-    <td className="lineNum" style={lineStyle(row.old.type)}>{row.old.lineNumber ?? ""}</td>
-    <td className="lineCode" style={lineStyle(row.old.type)}>
-      {row.old.type === "empty" ? <span /> : <HighlightedCode code={row.old.text} language={language} />}
-    </td>
-    <td className="lineNum" style={lineStyle(row.new.type)}>{row.new.lineNumber ?? ""}</td>
-    <td className="lineCode" style={lineStyle(row.new.type)}>
-      {row.new.type === "empty" ? <span /> : <HighlightedCode code={row.new.text} language={language} />}
-    </td>
-  </tr>
-));
-
 interface SimpleRowProps {
   side: string;
   index: number;
@@ -309,7 +293,9 @@ const scrollToRowIndex = (container: HTMLDivElement | null, rowIndex: number): v
 
 export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerProps) => {
   /******************* STORE ***********************/
-  const codeScrollRef = useRef<HTMLDivElement>(null);
+  const oldCodeScrollRef = useRef<HTMLDivElement>(null);
+  const newCodeScrollRef = useRef<HTMLDivElement>(null);
+  const syncingScrollRef = useRef(false);
   const [currentHunkIdx, setCurrentHunkIdx] = useState(0);
   const [textSearch, setTextSearch] = useState("");
   const [textSearchIdx, setTextSearchIdx] = useState(0);
@@ -343,7 +329,7 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
       const clamped = Math.max(0, Math.min(idx, hunkCount - 1));
       setCurrentHunkIdx(clamped);
       if (hunkRows[clamped] !== undefined) {
-        scrollToRowIndex(codeScrollRef.current, hunkRows[clamped]);
+        scrollToRowIndex(oldCodeScrollRef.current, hunkRows[clamped]);
       }
     },
     [hunkCount, hunkRows],
@@ -385,7 +371,7 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
     if (textSearchMatches.length === 0) return;
     const clamped = ((idx % textSearchMatches.length) + textSearchMatches.length) % textSearchMatches.length;
     setTextSearchIdx(clamped);
-    scrollToRowIndex(codeScrollRef.current, textSearchMatches[clamped]);
+    scrollToRowIndex(oldCodeScrollRef.current, textSearchMatches[clamped]);
   }, [textSearchMatches]);
 
   const handleTextSearchKey = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
@@ -425,10 +411,29 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
       }, 1500);
     };
     const timerId = setTimeout(() => {
-      scrollContainerToRow(codeScrollRef.current);
+      scrollContainerToRow(newCodeScrollRef.current);
+      scrollContainerToRow(oldCodeScrollRef.current);
     }, 100);
     return () => clearTimeout(timerId);
   }, [targetLine, scrollTick]);
+
+  const syncVerticalScroll = useCallback((source: HTMLDivElement | null, target: HTMLDivElement | null) => {
+    if (!source || !target) return;
+    if (syncingScrollRef.current) return;
+    syncingScrollRef.current = true;
+    target.scrollTop = source.scrollTop;
+    requestAnimationFrame(() => {
+      syncingScrollRef.current = false;
+    });
+  }, []);
+
+  const handleOldScroll = useCallback(() => {
+    syncVerticalScroll(oldCodeScrollRef.current, newCodeScrollRef.current);
+  }, [syncVerticalScroll]);
+
+  const handleNewScroll = useCallback(() => {
+    syncVerticalScroll(newCodeScrollRef.current, oldCodeScrollRef.current);
+  }, [syncVerticalScroll]);
 
   if (!file) {
     return (
@@ -539,18 +544,41 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
           </button>
         </div>
       </div>
-      <div className="codeMatrixHeaders">
-        <h5 className="codeColumnHeader oldHeader">Old</h5>
-        <h5 className="codeColumnHeader newHeader">New</h5>
-      </div>
-      <div className="codeScrollArea" ref={codeScrollRef}>
-        <table className="diffTable diffTableMatrix">
-          <tbody>
-            {matrixRows.map((row, i) => (
-              <MatrixRow key={`row-${i}`} row={row} language={lang} />
-            ))}
-          </tbody>
-        </table>
+      <div className="splitCodeLayout">
+        <div className="codeColumn">
+          <h5 className="codeColumnHeader oldHeader">Old</h5>
+          <div className="codeScrollArea" ref={oldCodeScrollRef} onScroll={handleOldScroll}>
+            <table className="diffTable">
+              <tbody>
+                {matrixRows.map((row, i) => (
+                  <tr key={`old-row-${i}`} data-old-line={row.old.lineNumber ?? undefined}>
+                    <td className="lineNum" style={lineStyle(row.old.type)}>{row.old.lineNumber ?? ""}</td>
+                    <td className="lineCode" style={lineStyle(row.old.type)}>
+                      {row.old.type === "empty" ? <span /> : <HighlightedCode code={row.old.text} language={lang} />}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="codeColumn">
+          <h5 className="codeColumnHeader newHeader">New</h5>
+          <div className="codeScrollArea" ref={newCodeScrollRef} onScroll={handleNewScroll}>
+            <table className="diffTable">
+              <tbody>
+                {matrixRows.map((row, i) => (
+                  <tr key={`new-row-${i}`} data-new-line={row.new.lineNumber ?? undefined}>
+                    <td className="lineNum" style={lineStyle(row.new.type)}>{row.new.lineNumber ?? ""}</td>
+                    <td className="lineCode" style={lineStyle(row.new.type)}>
+                      {row.new.type === "empty" ? <span /> : <HighlightedCode code={row.new.text} language={lang} />}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
   );

@@ -60,6 +60,9 @@ const buildViewGraph = (
       startLine: node.startLine,
       endLine: node.endLine,
       parentId: hasParentGroup ? parentFn.id : undefined,
+      functionParams: (node.metadata?.paramsFull as string | undefined) ?? (node.metadata?.params as string | undefined),
+      returnType: (node.metadata?.returnType as string | undefined) ?? undefined,
+      documentation: (node.metadata?.documentation as string | undefined) ?? undefined,
     });
   }
 

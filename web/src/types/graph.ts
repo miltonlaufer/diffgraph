@@ -10,6 +10,9 @@ export interface ViewGraphNode {
   endLine?: number;
   parentId?: string;
   branchType?: string;
+  functionParams?: string;
+  returnType?: string;
+  documentation?: string;
 }
 
 export interface ViewGraphEdge {

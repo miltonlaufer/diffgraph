@@ -259,7 +259,17 @@ const computeLogicLayout = (
       const pos = parentOk ? (childPos.get(node.id) ?? { x: 0, y: 0 }) : (topPos.get(node.id) ?? { x: 0, y: 0 });
       flowNodes.push({
         id: node.id, type: "scope",
-        data: { label: node.label, bgColor: bg, textColor: txt, selected: sel, width: sz.w, height: sz.h },
+        data: {
+          label: node.label,
+          bgColor: bg,
+          textColor: txt,
+          selected: sel,
+          width: sz.w,
+          height: sz.h,
+          functionParams: node.functionParams,
+          returnType: node.returnType,
+          documentation: node.documentation,
+        },
         position: pos, sourcePosition: Position.Bottom, targetPosition: Position.Top,
         ...(parentOk ? { parentId: node.parentId } : {}),
         style: { width: sz.w, height: sz.h },

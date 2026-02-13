@@ -110,17 +110,108 @@ const createFileNode = (
   ref,
 });
 
-const extractParams = (node: Node): string => {
+interface JsDocTagLike {
+  getTagName: () => string;
+  getCommentText?: () => string | undefined;
+  getComment?: () => string | undefined;
+}
+
+interface JsDocLike {
+  getDescription: () => string;
+  getTags: () => JsDocTagLike[];
+}
+
+const normalizeInline = (value: string): string => value.replace(/\s+/g, " ").trim();
+
+const extractParams = (
+  node: Node,
+  options?: { includeTypes?: boolean; compactIfLong?: boolean },
+): string => {
+  const includeTypes = options?.includeTypes ?? true;
+  const compactIfLong = options?.compactIfLong ?? false;
   if (Node.isFunctionDeclaration(node) || Node.isFunctionExpression(node) || Node.isArrowFunction(node) || Node.isMethodDeclaration(node) || Node.isGetAccessorDeclaration(node) || Node.isSetAccessorDeclaration(node)) {
     const params = node.getParameters();
     if (params.length === 0) return "()";
     const parts = params.map((p) => {
-      const name = p.getName();
+      const rest = p.isRestParameter() ? "..." : "";
+      const optional = p.isOptional() ? "?" : "";
+      const name = `${rest}${p.getName()}${optional}`;
+      if (!includeTypes) return name;
       const typeNode = p.getTypeNode();
-      return typeNode ? `${name}: ${typeNode.getText()}` : name;
+      if (typeNode) return `${name}: ${normalizeInline(typeNode.getText())}`;
+      const inferred = normalizeInline(p.getType().getText(p));
+      return inferred && inferred !== "any" ? `${name}: ${inferred}` : name;
     });
     const result = `(${parts.join(", ")})`;
-    return result.length > 80 ? `(${parts.map((p) => p.split(":")[0]).join(", ")})` : result;
+    if (compactIfLong && includeTypes && result.length > 80) {
+      return extractParams(node, { includeTypes: false, compactIfLong: false });
+    }
+    return result;
+  }
+  return "";
+};
+
+const extractReturnType = (node: Node): string => {
+  let explicit = "";
+  if (
+    Node.isFunctionDeclaration(node) ||
+    Node.isFunctionExpression(node) ||
+    Node.isArrowFunction(node) ||
+    Node.isMethodDeclaration(node) ||
+    Node.isGetAccessorDeclaration(node) ||
+    Node.isSetAccessorDeclaration(node)
+  ) {
+    explicit = normalizeInline(node.getReturnTypeNode()?.getText() ?? "");
+  }
+  if (explicit.length > 0) return explicit;
+  if (Node.isSetAccessorDeclaration(node)) return "void";
+  if (
+    Node.isFunctionDeclaration(node) ||
+    Node.isFunctionExpression(node) ||
+    Node.isArrowFunction(node) ||
+    Node.isMethodDeclaration(node) ||
+    Node.isGetAccessorDeclaration(node) ||
+    Node.isSetAccessorDeclaration(node)
+  ) {
+    const inferred = normalizeInline(node.getReturnType().getText(node));
+    return inferred || "";
+  }
+  return "";
+};
+
+const formatJsDocs = (docs: JsDocLike[]): string => {
+  const blocks = docs
+    .map((doc) => {
+      const description = doc.getDescription().trim();
+      const tags = doc.getTags().map((tag) => {
+        const comment = tag.getCommentText?.() ?? tag.getComment?.() ?? "";
+        return normalizeInline(`@${tag.getTagName()} ${comment}`);
+      });
+      return [description, ...tags].filter((part) => part.length > 0).join("\n");
+    })
+    .filter((entry) => entry.length > 0);
+  return blocks.join("\n\n").trim();
+};
+
+const extractDocumentation = (node: Node): string => {
+  if (
+    Node.isFunctionDeclaration(node) ||
+    Node.isMethodDeclaration(node) ||
+    Node.isGetAccessorDeclaration(node) ||
+    Node.isSetAccessorDeclaration(node)
+  ) {
+    return formatJsDocs(node.getJsDocs() as unknown as JsDocLike[]);
+  }
+  if (Node.isVariableDeclaration(node)) {
+    const statement = node.getVariableStatement();
+    return statement ? formatJsDocs(statement.getJsDocs() as unknown as JsDocLike[]) : "";
+  }
+  if (Node.isArrowFunction(node) || Node.isFunctionExpression(node)) {
+    const varDecl = node.getFirstAncestorByKind(SyntaxKind.VariableDeclaration);
+    if (varDecl) {
+      const statement = varDecl.getVariableStatement();
+      if (statement) return formatJsDocs(statement.getJsDocs() as unknown as JsDocLike[]);
+    }
   }
   return "";
 };
@@ -246,7 +337,10 @@ export class TsAnalyzer {
       ];
       for (const member of allClassMembers) {
         const memberName = member.getName();
-        const params = extractParams(member);
+        const params = extractParams(member, { includeTypes: true, compactIfLong: true });
+        const paramsFull = extractParams(member, { includeTypes: true, compactIfLong: false });
+        const returnType = extractReturnType(member);
+        const documentation = extractDocumentation(member);
         const memberNode = buildSymbolNode(
           "Method",
           sourceFile.getFilePath(),
@@ -257,7 +351,7 @@ export class TsAnalyzer {
           member.getStartLineNumber(),
           member.getEndLineNumber(),
           member.getText(),
-          { params },
+          { params, paramsFull, returnType, documentation },
         );
         nodes.push(memberNode);
         symbolByName.set(memberName, memberNode.id);
@@ -277,7 +371,10 @@ export class TsAnalyzer {
     for (const fn of sourceFile.getFunctions()) {
       const name = fn.getName() ?? "anonymous";
       const kind = detectReactComponent(fn) ? "ReactComponent" : name.startsWith("use") ? "Hook" : "Function";
-      const params = extractParams(fn);
+      const params = extractParams(fn, { includeTypes: true, compactIfLong: true });
+      const paramsFull = extractParams(fn, { includeTypes: true, compactIfLong: false });
+      const returnType = extractReturnType(fn);
+      const documentation = extractDocumentation(fn);
       const fnNode = buildSymbolNode(
         kind,
         sourceFile.getFilePath(),
@@ -288,7 +385,7 @@ export class TsAnalyzer {
         fn.getStartLineNumber(),
         fn.getEndLineNumber(),
         fn.getText(),
-        { params },
+        { params, paramsFull, returnType, documentation },
       );
       nodes.push(fnNode);
       symbolByName.set(name, fnNode.id);
@@ -320,7 +417,10 @@ export class TsAnalyzer {
       const kind: GraphNode["kind"] = looksReact ? "ReactComponent" : isHook ? "Hook" : "Function";
       const startLine = declaration.getStartLineNumber();
       const endLine = declaration.getEndLineNumber();
-      const params = extractParams(initializer);
+      const params = extractParams(initializer, { includeTypes: true, compactIfLong: true });
+      const paramsFull = extractParams(initializer, { includeTypes: true, compactIfLong: false });
+      const returnType = extractReturnType(initializer);
+      const documentation = extractDocumentation(declaration);
       const varNode = buildSymbolNode(
         kind,
         sourceFile.getFilePath(),
@@ -331,7 +431,7 @@ export class TsAnalyzer {
         startLine,
         endLine,
         declaration.getText(),
-        { params },
+        { params, paramsFull, returnType, documentation },
       );
       nodes.push(varNode);
       symbolByName.set(name, varNode.id);
@@ -402,7 +502,10 @@ export class TsAnalyzer {
 
       coveredRanges.add(rangeKey);
 
-      const params = extractParams(node);
+      const params = extractParams(node, { includeTypes: true, compactIfLong: true });
+      const paramsFull = extractParams(node, { includeTypes: true, compactIfLong: false });
+      const returnType = extractReturnType(node);
+      const documentation = extractDocumentation(node);
       const qualifiedName = `${sourceFile.getBaseNameWithoutExtension()}.deep.${name}@${startLine}`;
       const stableQName = `${sourceFile.getBaseNameWithoutExtension()}.deep.${name}`;
       const fnNode: GraphNode = {
@@ -415,7 +518,7 @@ export class TsAnalyzer {
         startLine,
         endLine,
         signatureHash: stableHash(node.getText()),
-        metadata: { params },
+        metadata: { params, paramsFull, returnType, documentation },
         snapshotId,
         ref,
       };
