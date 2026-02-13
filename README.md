@@ -175,7 +175,7 @@ If the default port (4177) is busy, the server automatically finds the next avai
 
 - **Logic** -- flowchart with control-flow branches (if/switch/for/return as diamonds/pills), showing code snippets inline
 - **Knowledge** -- structural graph of classes, functions, services, imports, etc.
-- **React** -- component render tree and hook usage
+- **React** -- component render tree and hook usage (shown only when the diff contains React-relevant symbols)
 
 ### Graph panels (Old / New)
 
@@ -183,21 +183,39 @@ If the default port (4177) is busy, the server automatically finds the next avai
 - Added/Removed/Modified legend appears only on the New panel
 - Controls and MiniMap appear only on the New panel
 - Both panels share synchronized pan/zoom
+- In logic view, dragging the canvas works from node areas too (you are not limited to empty background)
 
 ### Interactions
 
 - **Click a node** -- highlights it (cyan border + glow), selects its file below, and scrolls the code diff to that line
 - **Click a file pill** -- selects the file, scrolls graphs to related nodes, shows its code diff
 - **Escape** -- deselects node and file
-- **Changes Only** (on by default) -- hides unchanged nodes/edges for performance on large repos; toggle off to see full graph
+- **Changes Only** (on by default) -- keeps changed nodes plus required context (hierarchy ancestors and relevant invoke neighbors in Logic view). Toggle off to show full graph.
+- **Show calls** (Logic tab) -- show/hide invoke edges to reduce visual noise
+- **Graph diff navigation** (Logic tab, up/down arrows) -- jumps across graph-level changes (added/removed/modified nodes) and temporarily highlights the focused node
+- **Graph search** (per panel) -- search nodes by text, use up/down arrows to jump matches; matched node is focused and highlighted
+- **Hover function/group headers** -- tooltip includes documentation (JSDoc/docstring), parameters with types, return type, and class/file metadata when available
 
 ### Code diff panel
 
 - Side-by-side view: Old code on the left, New code on the right
 - Line-level change highlighting: green for added lines, red for removed lines
 - Synchronized scrolling between left and right
+- Each side is fixed at 50% width and supports horizontal scrolling for long lines
 - New files show "File did not exist" on the old side; deleted files show "File was deleted" on the new side
-- Clicking a logic node scrolls the diff to the corresponding line number
+- Clicking a logic node scrolls the diff to the corresponding line number and scrolls the page to the code viewer
+- Clicking a code line can navigate back to the best matching node in the graph
+- Fullscreen toggle (top-right icon in code diff panel; `Esc` exits fullscreen)
+- Whitespace-only/blank-line-only changes are ignored for semantic change detection to reduce false modified markers
+
+### Suggested workflow
+
+1. Start with **Changes Only** enabled.
+2. Use **Graph diff navigation** arrows to inspect each structural change quickly.
+3. Click a focused node to inspect exact code in the diff panel.
+4. If needed, click a code line to jump back to the graph context.
+5. Use **Show calls** to simplify/expand execution-flow context.
+6. Use graph **Search** when you know symbol names.
 
 ## Development
 
