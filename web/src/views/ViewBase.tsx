@@ -73,12 +73,6 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const highlightTimerRef = useRef<number | null>(null);
 
   /******************* COMPUTED ***********************/
-  const title = useMemo(() => {
-    if (viewType === "logic") return "Logic Flow";
-    if (viewType === "knowledge") return "Knowledge Graph";
-    return "React Component Structure";
-  }, [viewType]);
-
   const filteredOldGraph = useMemo(() => {
     const nodes = oldGraph.nodes.filter((n) => n.diffStatus !== "added");
     const nodeIds = new Set(nodes.map((n) => n.id));
@@ -353,7 +347,6 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   if (loading) {
     return (
       <section className="viewContainer">
-        <h2>{title}</h2>
         <div className="loadingContainer">
           <div className="spinner" />
           <p className="dimText">Analyzing code and building graphs...</p>
@@ -364,8 +357,6 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
 
   return (
     <section className="viewContainer">
-      <h2>{title}</h2>
-
       {viewType === "logic" && (
         <div className="logicToolbar">
           <label className="showCallsLabel">
