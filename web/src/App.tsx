@@ -45,10 +45,22 @@ const App = () => {
     }
   }, [canShowReact, tab]);
 
+  const diffGraph = useMemo(() => {
+    return <h1><span style={{
+      textDecoration: 'line-through',
+      fontStyle: 'italic',
+    }}>Diff</span><span style={
+      {
+        fontWeight: 900,
+        color: 'white',
+      }
+    }>Graph</span></h1>;
+  }, []);
+
   if (!diffId) {
     return (
       <main className="appContainer">
-        <h1>DiffGraph</h1>
+        {diffGraph}
         <p>Add a <code>diffId</code> query parameter in the URL.</p>
       </main>
     );
@@ -58,7 +70,7 @@ const App = () => {
     <main className="appContainer">
       <header className="appHeader">
         <div className="headerLeft">
-          <h1>DiffGraph</h1>
+         {diffGraph}
           {meta && (
             <span className="diffMetaLabel">
               <span className="refOld">{meta.oldRef}</span>

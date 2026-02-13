@@ -98,15 +98,26 @@
 .logicToolbar {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 16px;
-  margin-bottom: 8px;
+  margin-top: -58px;
+  margin-bottom: 12px;
+  padding-right: 260px;
 }
 
 .graphDiffNav {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+@media (max-width: 1100px) {
+  .logicToolbar {
+    margin-top: 0;
+    padding-right: 0;
+    justify-content: flex-start;
+    margin-bottom: 8px;
+  }
 }
 
 .showCallsLabel {
