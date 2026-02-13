@@ -76,9 +76,9 @@ const LEAF_W = 220;
 const LEAF_H = 64;
 const DIAMOND_W = 220;
 const DIAMOND_H = 220;
-const PAD_X = 35;
-const PAD_TOP = 48;
-const PAD_BOTTOM = 35;
+const PAD_X = 45;
+const PAD_TOP = 52;
+const PAD_BOTTOM = 45;
 const NODE_W = 220;
 const NODE_H = 56;
 
@@ -254,7 +254,7 @@ const computeLogicLayout = (
         id: node.id, type: "scope",
         data: { label: node.label, bgColor: bg, textColor: txt, selected: sel, width: sz.w, height: sz.h },
         position: pos, sourcePosition: Position.Bottom, targetPosition: Position.Top,
-        ...(parentOk ? { parentId: node.parentId, extent: "parent" as const } : {}),
+        ...(parentOk ? { parentId: node.parentId } : {}),
         style: { width: sz.w, height: sz.h },
       });
     } else {
@@ -276,7 +276,7 @@ const computeLogicLayout = (
         id: node.id, type: shape,
         data: { label: node.label, bgColor: nodeBg, textColor: nodeTxt, selected: sel, codeContext },
         position: pos, sourcePosition: Position.Bottom, targetPosition: Position.Top,
-        ...(parentOk ? { parentId: node.parentId, extent: "parent" as const } : {}),
+        ...(parentOk ? { parentId: node.parentId } : {}),
       });
     }
   }

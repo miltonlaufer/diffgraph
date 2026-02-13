@@ -24,8 +24,8 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
   const parts = useMemo(() => splitLabel(data.label), [data.label]);
   const outerStyle = useMemo(
     () => ({
-      width: 150,
-      height: 150,
+      width: 120,
+      height: 120,
       transform: "rotate(45deg)",
       background: data.bgColor,
       border: data.selected ? "3px solid #38bdf8" : "1px solid #475569",
@@ -43,10 +43,10 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
 
   return (
     <div style={outerStyle} onMouseEnter={onEnter} onMouseLeave={onLeave}>
-      <div style={{ transform: "rotate(-45deg)", textAlign: "center", maxWidth: 110, wordBreak: "break-word" as const }}>
-        <div style={{ fontSize: 10, color: data.textColor, opacity: 0.7, marginBottom: 2 }}>{parts.title}</div>
+      <div style={{ transform: "rotate(-45deg)", textAlign: "center", maxWidth: 85, wordBreak: "break-word" as const }}>
+        <div style={{ fontSize: 9, color: data.textColor, opacity: 0.7, marginBottom: 1 }}>{parts.title}</div>
         {parts.code && (
-          <div style={{ fontSize: 9, fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace", color: data.textColor, lineHeight: 1.3 }}>
+          <div style={{ fontSize: 8, fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace", color: data.textColor, lineHeight: 1.2 }}>
             {parts.code}
           </div>
         )}
