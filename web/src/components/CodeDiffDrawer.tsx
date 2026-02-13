@@ -1,4 +1,5 @@
 import { useMemo, useCallback, useRef, useEffect, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { diffLines } from "diff";
 import type { FileDiffEntry } from "../types/graph";
 
 interface CodeDiffDrawerProps {
@@ -17,42 +18,32 @@ const computeSideBySide = (
   oldContent: string,
   newContent: string,
 ): { oldLines: DiffLine[]; newLines: DiffLine[] } => {
-  const oldRaw = oldContent.split("\n");
-  const newRaw = newContent.split("\n");
-  const oldSet = new Set(oldRaw);
-  const newSet = new Set(newRaw);
+  const changes = diffLines(oldContent, newContent);
   const oldLines: DiffLine[] = [];
   const newLines: DiffLine[] = [];
-  let oldIdx = 0;
-  let newIdx = 0;
+  let oldLineNum = 1;
+  let newLineNum = 1;
 
-  while (oldIdx < oldRaw.length || newIdx < newRaw.length) {
-    const oldLine = oldIdx < oldRaw.length ? oldRaw[oldIdx] : undefined;
-    const newLine = newIdx < newRaw.length ? newRaw[newIdx] : undefined;
+  for (const change of changes) {
+    const lines = change.value.replace(/\n$/, "").split("\n");
 
-    if (oldLine !== undefined && newLine !== undefined && oldLine === newLine) {
-      oldLines.push({ text: oldLine, type: "same", lineNumber: oldIdx + 1 });
-      newLines.push({ text: newLine, type: "same", lineNumber: newIdx + 1 });
-      oldIdx++;
-      newIdx++;
-    } else if (oldLine !== undefined && !newSet.has(oldLine)) {
-      oldLines.push({ text: oldLine, type: "removed", lineNumber: oldIdx + 1 });
-      newLines.push({ text: "", type: "empty", lineNumber: null });
-      oldIdx++;
-    } else if (newLine !== undefined && !oldSet.has(newLine)) {
-      oldLines.push({ text: "", type: "empty", lineNumber: null });
-      newLines.push({ text: newLine, type: "added", lineNumber: newIdx + 1 });
-      newIdx++;
-    } else {
-      if (oldLine !== undefined) {
-        oldLines.push({ text: oldLine, type: "removed", lineNumber: oldIdx + 1 });
-        newLines.push({ text: "", type: "empty", lineNumber: null });
-        oldIdx++;
+    if (!change.added && !change.removed) {
+      /* Unchanged */
+      for (const line of lines) {
+        oldLines.push({ text: line, type: "same", lineNumber: oldLineNum++ });
+        newLines.push({ text: line, type: "same", lineNumber: newLineNum++ });
       }
-      if (newLine !== undefined) {
+    } else if (change.removed) {
+      /* Removed from old */
+      for (const line of lines) {
+        oldLines.push({ text: line, type: "removed", lineNumber: oldLineNum++ });
+        newLines.push({ text: "", type: "empty", lineNumber: null });
+      }
+    } else if (change.added) {
+      /* Added in new */
+      for (const line of lines) {
         oldLines.push({ text: "", type: "empty", lineNumber: null });
-        newLines.push({ text: newLine, type: "added", lineNumber: newIdx + 1 });
-        newIdx++;
+        newLines.push({ text: line, type: "added", lineNumber: newLineNum++ });
       }
     }
   }
