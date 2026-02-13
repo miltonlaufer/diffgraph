@@ -28,6 +28,36 @@ const enclosingSymbolName = (node: Node): string | null => {
   return null;
 };
 
+const isCallLikeExpression = (expr: Node): boolean => {
+  if (Node.isCallExpression(expr) || Node.isNewExpression(expr)) {
+    return true;
+  }
+  if (Node.isAwaitExpression(expr)) {
+    const awaited = expr.getExpression();
+    return Node.isCallExpression(awaited) || Node.isNewExpression(awaited);
+  }
+  return false;
+};
+
+const calleeNameFromExpression = (expr: Node): string | null => {
+  let target: Node = expr;
+  if (Node.isAwaitExpression(target)) {
+    target = target.getExpression();
+  }
+  if (Node.isCallExpression(target)) {
+    const calleeText = target.getExpression().getText();
+    const cleaned = calleeText.replace(/\?\./g, ".");
+    const base = cleaned.split(".").at(-1) ?? cleaned;
+    return base.replace(/\(.*\)$/, "");
+  }
+  if (Node.isNewExpression(target)) {
+    const calleeText = target.getExpression().getText();
+    const cleaned = calleeText.replace(/\?\./g, ".");
+    return cleaned.split(".").at(-1) ?? cleaned;
+  }
+  return null;
+};
+
 const buildBranchName = (node: Node): string | null => {
   if (Node.isIfStatement(node)) {
     return "if";
@@ -46,6 +76,18 @@ const buildBranchName = (node: Node): string | null => {
   }
   if (Node.isReturnStatement(node)) {
     return "return";
+  }
+  if (Node.isExpressionStatement(node) && isCallLikeExpression(node.getExpression())) {
+    return "call";
+  }
+  if (Node.isVariableStatement(node)) {
+    const hasCallInitializer = node.getDeclarations().some((decl) => {
+      const init = decl.getInitializer();
+      return init ? isCallLikeExpression(init) : false;
+    });
+    if (hasCallInitializer) {
+      return "call";
+    }
   }
   return null;
 };
@@ -466,6 +508,22 @@ export class TsAnalyzer {
       const line = node.getStartLineNumber();
       const snippet = buildSnippet(node, branchKind);
       const stableQualifiedName = `${ownerNode.qualifiedName}::${branchKind}#${idx}`;
+      const callCallee = branchKind === "call"
+        ? (() => {
+            if (Node.isExpressionStatement(node)) {
+              return calleeNameFromExpression(node.getExpression());
+            }
+            if (Node.isVariableStatement(node)) {
+              for (const decl of node.getDeclarations()) {
+                const init = decl.getInitializer();
+                if (!init) continue;
+                const callee = calleeNameFromExpression(init);
+                if (callee) return callee;
+              }
+            }
+            return null;
+          })()
+        : null;
       return {
         id: stableHash(`${snapshotId}:branch:${stableQualifiedName}`),
         kind: "Branch",
@@ -476,7 +534,11 @@ export class TsAnalyzer {
         startLine: line,
         endLine: node.getEndLineNumber(),
         signatureHash: stableHash(snippet),
-        metadata: { branchType: branchKind, codeSnippet: snippet },
+        metadata: {
+          branchType: branchKind,
+          codeSnippet: snippet,
+          ...(callCallee ? { callee: callCallee } : {}),
+        },
         snapshotId,
         ref,
       };

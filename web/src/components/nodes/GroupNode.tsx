@@ -1,3 +1,4 @@
+import { Handle, Position } from "@xyflow/react";
 import { memo, useMemo } from "react";
 
 interface GroupNodeData {
@@ -38,6 +39,8 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
 
   return (
     <div style={style}>
+      <Handle type="target" position={Position.Top} style={{ opacity: 0, pointerEvents: "none" }} />
+      <Handle type="source" position={Position.Bottom} style={{ opacity: 0, pointerEvents: "none" }} />
       <div style={headerStyle}>{data.label}</div>
     </div>
   );

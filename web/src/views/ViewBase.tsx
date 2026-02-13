@@ -15,6 +15,42 @@ interface ViewBaseProps {
 const normalizePath = (value: string): string =>
   value.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
 
+const includeHierarchyNeighbors = (graph: ViewGraph, seedIds: Set<string>): Set<string> => {
+  const keepIds = new Set(seedIds);
+  const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const id of [...keepIds]) {
+      const node = nodeById.get(id);
+      if (node?.parentId && !keepIds.has(node.parentId)) {
+        keepIds.add(node.parentId);
+        changed = true;
+      }
+    }
+    for (const node of graph.nodes) {
+      if (node.parentId && keepIds.has(node.parentId) && !keepIds.has(node.id)) {
+        keepIds.add(node.id);
+        changed = true;
+      }
+    }
+  }
+  return keepIds;
+};
+
+const includeInvokeNeighbors = (graph: ViewGraph, seedIds: Set<string>): Set<string> => {
+  const keepIds = new Set(seedIds);
+  for (const edge of graph.edges) {
+    const isInvoke = edge.relation === "invoke";
+    if (!isInvoke) continue;
+    if (keepIds.has(edge.source) || keepIds.has(edge.target)) {
+      keepIds.add(edge.source);
+      keepIds.add(edge.target);
+    }
+  }
+  return keepIds;
+};
+
 export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) => {
   /******************* STORE ***********************/
   const [oldGraph, setOldGraph] = useState<ViewGraph>({ nodes: [], edges: [] });
@@ -25,6 +61,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const [targetLine, setTargetLine] = useState<number>(0);
   const [scrollTick, setScrollTick] = useState<number>(0);
   const [sharedViewport, setSharedViewport] = useState<ViewportState>({ x: 0, y: 0, zoom: 0.8 });
+  const [showCalls, setShowCalls] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
 
@@ -56,46 +93,30 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const visibleOldGraph = useMemo(() => {
     if (!showChangesOnly) return filteredOldGraph;
     const changedIds = new Set(filteredOldGraph.nodes.filter((n) => n.diffStatus !== "unchanged").map((n) => n.id));
-    const keepIds = new Set(changedIds);
-    /* Walk up: keep all ancestors of changed nodes */
-    const nodeById = new Map(filteredOldGraph.nodes.map((n) => [n.id, n]));
-    for (const id of changedIds) {
-      let current = nodeById.get(id);
-      while (current?.parentId) {
-        keepIds.add(current.parentId);
-        current = nodeById.get(current.parentId);
-      }
-    }
-    /* Walk down: keep all children of kept groups */
-    for (const node of filteredOldGraph.nodes) {
-      if (node.parentId && keepIds.has(node.parentId)) keepIds.add(node.id);
+    let keepIds = includeHierarchyNeighbors(filteredOldGraph, changedIds);
+    if (viewType === "logic") {
+      keepIds = includeInvokeNeighbors(filteredOldGraph, keepIds);
+      keepIds = includeHierarchyNeighbors(filteredOldGraph, keepIds);
     }
     return {
       nodes: filteredOldGraph.nodes.filter((n) => keepIds.has(n.id)),
       edges: filteredOldGraph.edges.filter((e) => keepIds.has(e.source) && keepIds.has(e.target)),
     };
-  }, [filteredOldGraph, showChangesOnly]);
+  }, [filteredOldGraph, showChangesOnly, viewType]);
 
   const visibleNewGraph = useMemo(() => {
     if (!showChangesOnly) return filteredNewGraph;
     const changedIds = new Set(filteredNewGraph.nodes.filter((n) => n.diffStatus !== "unchanged").map((n) => n.id));
-    const keepIds = new Set(changedIds);
-    const nodeById = new Map(filteredNewGraph.nodes.map((n) => [n.id, n]));
-    for (const id of changedIds) {
-      let current = nodeById.get(id);
-      while (current?.parentId) {
-        keepIds.add(current.parentId);
-        current = nodeById.get(current.parentId);
-      }
-    }
-    for (const node of filteredNewGraph.nodes) {
-      if (node.parentId && keepIds.has(node.parentId)) keepIds.add(node.id);
+    let keepIds = includeHierarchyNeighbors(filteredNewGraph, changedIds);
+    if (viewType === "logic") {
+      keepIds = includeInvokeNeighbors(filteredNewGraph, keepIds);
+      keepIds = includeHierarchyNeighbors(filteredNewGraph, keepIds);
     }
     return {
       nodes: filteredNewGraph.nodes.filter((n) => keepIds.has(n.id)),
       edges: filteredNewGraph.edges.filter((e) => keepIds.has(e.source) && keepIds.has(e.target)),
     };
-  }, [filteredNewGraph, showChangesOnly]);
+  }, [filteredNewGraph, showChangesOnly, viewType]);
 
   const diffStats = useMemo(() => {
     let oldNodes = oldGraph.nodes;
@@ -116,24 +137,40 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const displayOldGraph = useMemo(() => {
     if (!selectedFilePath) return visibleOldGraph;
     const normalizedTarget = normalizePath(selectedFilePath);
-    const nodes = visibleOldGraph.nodes.filter((n) => normalizePath(n.filePath) === normalizedTarget);
-    const nodeIds = new Set(nodes.map((n) => n.id));
+    let nodeIds = new Set(
+      visibleOldGraph.nodes
+        .filter((n) => normalizePath(n.filePath) === normalizedTarget)
+        .map((n) => n.id),
+    );
+    if (viewType === "logic") {
+      nodeIds = includeInvokeNeighbors(visibleOldGraph, nodeIds);
+      nodeIds = includeHierarchyNeighbors(visibleOldGraph, nodeIds);
+    }
+    const nodes = visibleOldGraph.nodes.filter((n) => nodeIds.has(n.id));
     return {
       nodes,
       edges: visibleOldGraph.edges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target)),
     };
-  }, [selectedFilePath, visibleOldGraph]);
+  }, [selectedFilePath, visibleOldGraph, viewType]);
 
   const displayNewGraph = useMemo(() => {
     if (!selectedFilePath) return visibleNewGraph;
     const normalizedTarget = normalizePath(selectedFilePath);
-    const nodes = visibleNewGraph.nodes.filter((n) => normalizePath(n.filePath) === normalizedTarget);
-    const nodeIds = new Set(nodes.map((n) => n.id));
+    let nodeIds = new Set(
+      visibleNewGraph.nodes
+        .filter((n) => normalizePath(n.filePath) === normalizedTarget)
+        .map((n) => n.id),
+    );
+    if (viewType === "logic") {
+      nodeIds = includeInvokeNeighbors(visibleNewGraph, nodeIds);
+      nodeIds = includeHierarchyNeighbors(visibleNewGraph, nodeIds);
+    }
+    const nodes = visibleNewGraph.nodes.filter((n) => nodeIds.has(n.id));
     return {
       nodes,
       edges: visibleNewGraph.edges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target)),
     };
-  }, [selectedFilePath, visibleNewGraph]);
+  }, [selectedFilePath, visibleNewGraph, viewType]);
 
   const isEmptyView = useMemo(
     () => displayOldGraph.nodes.length === 0 && displayNewGraph.nodes.length === 0,
@@ -179,6 +216,10 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
 
   const handleViewportChange = useCallback((vp: ViewportState) => {
     setSharedViewport(vp);
+  }, []);
+
+  const handleShowCallsChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setShowCalls(e.target.checked);
   }, []);
 
   /******************* USEEFFECTS ***********************/
@@ -238,12 +279,22 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     <section className="viewContainer">
       <h2>{title}</h2>
 
+      {viewType === "logic" && (
+        <div className="logicToolbar">
+          <label className="showCallsLabel">
+            <input type="checkbox" checked={showCalls} onChange={handleShowCallsChange} className="showCallsCheckbox" />
+            Show calls
+          </label>
+        </div>
+      )}
+
       <div className="splitLayout">
         <SplitGraphPanel
           title="Old"
           side="old"
           graph={displayOldGraph}
           viewType={viewType}
+          showCalls={viewType === "logic" ? showCalls : true}
           onNodeSelect={handleNodeSelect}
           viewport={sharedViewport}
           onViewportChange={handleViewportChange}
@@ -256,6 +307,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
           side="new"
           graph={displayNewGraph}
           viewType={viewType}
+          showCalls={viewType === "logic" ? showCalls : true}
           onNodeSelect={handleNodeSelect}
           viewport={sharedViewport}
           onViewportChange={handleViewportChange}

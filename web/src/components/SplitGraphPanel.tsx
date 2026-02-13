@@ -33,6 +33,7 @@ interface SplitGraphPanelProps {
   side: "old" | "new";
   graph: ViewGraph;
   viewType: "logic" | "knowledge" | "react";
+  showCalls?: boolean;
   onNodeSelect: (nodeId: string) => void;
   viewport: ViewportState;
   onViewportChange: (viewport: ViewportState) => void;
@@ -115,6 +116,7 @@ const computeLogicLayout = (
   graph: ViewGraph,
   selectedNodeId: string,
   fileContentMap: Map<string, string>,
+  showCalls: boolean,
 ): { nodes: Node[]; edges: Edge[] } => {
   const groupNodes = graph.nodes.filter((n) => n.kind === "group");
   const leafNodes = graph.nodes.filter((n) => n.kind !== "group");
@@ -296,23 +298,44 @@ const computeLogicLayout = (
     return 0;
   });
 
-  /* Edges: only CALLS (flow) edges, not DECLARES (parent-child is shown by nesting) */
+  /* Edges: keep branch flow + function invoke calls, hide hierarchy edges */
   const visibleIds = new Set(flowNodes.map((n) => n.id));
   const groupIdSet = new Set(flowNodes.filter((n) => n.type === "scope").map((n) => n.id));
   const flowEdges: Edge[] = graph.edges
     .filter((e) => {
       if (!visibleIds.has(e.source) || !visibleIds.has(e.target)) return false;
-      /* Hide edges that connect to/from group nodes -- nesting handles that */
-      if (groupIdSet.has(e.source) || groupIdSet.has(e.target)) return false;
+      if (e.relation === "hierarchy") return false;
+      if (!showCalls && e.relation === "invoke") return false;
+      /* Show function invocation links between scope/group nodes */
+      if (groupIdSet.has(e.source) || groupIdSet.has(e.target)) {
+        return e.relation === "invoke";
+      }
       return true;
     })
-    .map((edge) => ({
-      id: edge.id, source: edge.source, target: edge.target,
-      label: "",
-      animated: edge.diffStatus === "added" || edge.diffStatus === "removed",
-      style: { stroke: edge.diffStatus === "added" ? "#4ade80" : edge.diffStatus === "removed" ? "#f87171" : "#64748b", strokeWidth: 1.5 },
-      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#94a3b8" },
-    }));
+    .map((edge) => {
+      const isInvoke = edge.relation === "invoke";
+      const stroke = edge.diffStatus === "added"
+        ? "#4ade80"
+        : edge.diffStatus === "removed"
+          ? "#f87171"
+          : isInvoke
+            ? "#f59e0b"
+            : "#64748b";
+      const strokeWidth = isInvoke ? 2.5 : 1.5;
+      return {
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        label: isInvoke ? "calls" : "",
+        animated: edge.diffStatus === "added" || edge.diffStatus === "removed",
+        style: {
+          stroke,
+          strokeWidth,
+          strokeDasharray: isInvoke ? "6 4" : undefined,
+        },
+        markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: stroke },
+      };
+    });
 
   return { nodes: flowNodes, edges: flowEdges };
 };
@@ -386,7 +409,7 @@ const shortenPath = (filePath: string): string => {
 };
 
 export const SplitGraphPanel = ({
-  title, side, graph, viewType, onNodeSelect, viewport, onViewportChange, selectedNodeId, focusFilePath, diffStats, fileDiffs,
+  title, side, graph, viewType, showCalls = true, onNodeSelect, viewport, onViewportChange, selectedNodeId, focusFilePath, diffStats, fileDiffs,
 }: SplitGraphPanelProps) => {
   /******************* STORE ***********************/
   const [searchQuery, setSearchQuery] = useState("");
@@ -409,8 +432,8 @@ export const SplitGraphPanel = ({
 
   /* Heavy layout: only recomputes when graph structure changes, NOT on selection */
   const layoutResult = useMemo(
-    () => isLogic ? computeLogicLayout(graph, "", fileContentMap) : computeFlatLayout(graph, "", fileContentMap),
-    [graph, isLogic, fileContentMap],
+    () => isLogic ? computeLogicLayout(graph, "", fileContentMap, showCalls) : computeFlatLayout(graph, "", fileContentMap),
+    [graph, isLogic, fileContentMap, showCalls],
   );
 
   /* Light selection pass: just updates node styles */

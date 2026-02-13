@@ -15,6 +15,7 @@ interface PyBranch {
   start: number;
   end: number;
   snippet: string;
+  callee?: string;
 }
 
 interface PyResult {
@@ -149,7 +150,11 @@ export class PyAnalyzer {
           startLine: branch.start,
           endLine: branch.end,
           signatureHash: stableHash(branch.snippet),
-          metadata: { branchType: branch.kind, codeSnippet: branch.snippet },
+          metadata: {
+            branchType: branch.kind,
+            codeSnippet: branch.snippet,
+            ...(branch.callee ? { callee: branch.callee } : {}),
+          },
           snapshotId,
           ref,
         };

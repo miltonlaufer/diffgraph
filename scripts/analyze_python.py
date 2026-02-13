@@ -100,6 +100,48 @@ class Collector(ast.NodeVisitor):
             return first_line[:70] if len(first_line) <= 70 else first_line[:67] + "..."
         return ""
 
+    def _extract_stmt_call(self, node: ast.AST) -> ast.Call | None:
+        value: ast.AST | None = None
+        if isinstance(node, ast.Expr):
+            value = node.value
+        elif isinstance(node, ast.Assign):
+            value = node.value
+        elif isinstance(node, ast.AnnAssign):
+            value = node.value
+        elif isinstance(node, ast.AugAssign):
+            value = node.value
+        if value is None:
+            return None
+        if isinstance(value, ast.Await):
+            value = value.value
+        if isinstance(value, ast.Call):
+            return value
+        return None
+
+    def _call_name(self, call_node: ast.Call) -> str:
+        if isinstance(call_node.func, ast.Name):
+            return call_node.func.id
+        if isinstance(call_node.func, ast.Attribute):
+            return call_node.func.attr
+        return "call"
+
+    def _record_call_branch(self, stmt_node: ast.AST, call_node: ast.Call) -> None:
+        callee = self._call_name(call_node)
+        snippet = self._get_snippet(stmt_node)
+        if not snippet:
+            snippet = f"{callee}(...)"
+        self.branches.append(
+            {
+                "kind": "call",
+                "owner": self.current_scope,
+                "idx": self._next_branch_idx("call"),
+                "start": getattr(stmt_node, "lineno", call_node.lineno),
+                "end": getattr(stmt_node, "end_lineno", getattr(stmt_node, "lineno", call_node.lineno)),
+                "snippet": snippet,
+                "callee": callee,
+            }
+        )
+
     def visit_If(self, node: ast.If) -> Any:
         snippet = self._get_snippet(node)
         if not snippet:
@@ -196,6 +238,30 @@ class Collector(ast.NodeVisitor):
         self.generic_visit(node)
 
     visit_AsyncWith = visit_With
+
+    def visit_Expr(self, node: ast.Expr) -> Any:
+        call_node = self._extract_stmt_call(node)
+        if call_node is not None:
+            self._record_call_branch(node, call_node)
+        self.generic_visit(node)
+
+    def visit_Assign(self, node: ast.Assign) -> Any:
+        call_node = self._extract_stmt_call(node)
+        if call_node is not None:
+            self._record_call_branch(node, call_node)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
+        call_node = self._extract_stmt_call(node)
+        if call_node is not None:
+            self._record_call_branch(node, call_node)
+        self.generic_visit(node)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> Any:
+        call_node = self._extract_stmt_call(node)
+        if call_node is not None:
+            self._record_call_branch(node, call_node)
+        self.generic_visit(node)
 
 
 def main() -> None:

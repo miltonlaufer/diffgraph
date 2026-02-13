@@ -17,6 +17,7 @@ export interface ViewGraphEdge {
   source: string;
   target: string;
   kind: string;
+  relation?: "flow" | "invoke" | "hierarchy";
   diffStatus: DiffStatus;
 }
 

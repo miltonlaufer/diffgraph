@@ -68,6 +68,30 @@
   gap: 10px;
 }
 
+.logicToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.showCallsLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #cbd5e1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.showCallsCheckbox {
+  width: 14px;
+  height: 14px;
+  accent-color: #f59e0b;
+}
+
 .splitLayout {
   display: grid;
   grid-template-columns: 1fr 1fr;
