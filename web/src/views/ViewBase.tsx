@@ -55,13 +55,20 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
 
   const visibleOldGraph = useMemo(() => {
     if (!showChangesOnly) return filteredOldGraph;
-    /* Start with changed nodes */
     const changedIds = new Set(filteredOldGraph.nodes.filter((n) => n.diffStatus !== "unchanged").map((n) => n.id));
-    /* Also include children of kept groups, and parents of kept children */
     const keepIds = new Set(changedIds);
+    /* Walk up: keep all ancestors of changed nodes */
+    const nodeById = new Map(filteredOldGraph.nodes.map((n) => [n.id, n]));
+    for (const id of changedIds) {
+      let current = nodeById.get(id);
+      while (current?.parentId) {
+        keepIds.add(current.parentId);
+        current = nodeById.get(current.parentId);
+      }
+    }
+    /* Walk down: keep all children of kept groups */
     for (const node of filteredOldGraph.nodes) {
-      if (node.parentId && changedIds.has(node.parentId)) keepIds.add(node.id);
-      if (node.parentId && changedIds.has(node.id)) keepIds.add(node.parentId);
+      if (node.parentId && keepIds.has(node.parentId)) keepIds.add(node.id);
     }
     return {
       nodes: filteredOldGraph.nodes.filter((n) => keepIds.has(n.id)),
@@ -73,9 +80,16 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     if (!showChangesOnly) return filteredNewGraph;
     const changedIds = new Set(filteredNewGraph.nodes.filter((n) => n.diffStatus !== "unchanged").map((n) => n.id));
     const keepIds = new Set(changedIds);
+    const nodeById = new Map(filteredNewGraph.nodes.map((n) => [n.id, n]));
+    for (const id of changedIds) {
+      let current = nodeById.get(id);
+      while (current?.parentId) {
+        keepIds.add(current.parentId);
+        current = nodeById.get(current.parentId);
+      }
+    }
     for (const node of filteredNewGraph.nodes) {
-      if (node.parentId && changedIds.has(node.parentId)) keepIds.add(node.id);
-      if (node.parentId && changedIds.has(node.id)) keepIds.add(node.parentId);
+      if (node.parentId && keepIds.has(node.parentId)) keepIds.add(node.id);
     }
     return {
       nodes: filteredNewGraph.nodes.filter((n) => keepIds.has(n.id)),

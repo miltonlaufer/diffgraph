@@ -289,10 +289,16 @@ const computeLogicLayout = (
     return 0;
   });
 
-  /* Edges */
+  /* Edges: only CALLS (flow) edges, not DECLARES (parent-child is shown by nesting) */
   const visibleIds = new Set(flowNodes.map((n) => n.id));
+  const groupIdSet = new Set(flowNodes.filter((n) => n.type === "scope").map((n) => n.id));
   const flowEdges: Edge[] = graph.edges
-    .filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target))
+    .filter((e) => {
+      if (!visibleIds.has(e.source) || !visibleIds.has(e.target)) return false;
+      /* Hide edges that connect to/from group nodes -- nesting handles that */
+      if (groupIdSet.has(e.source) || groupIdSet.has(e.target)) return false;
+      return true;
+    })
     .map((edge) => ({
       id: edge.id, source: edge.source, target: edge.target,
       label: edge.kind === "CALLS" ? "" : edge.kind,

@@ -162,12 +162,20 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
   );
 
   const goToPrevHunk = useCallback(() => {
-    goToHunk(currentHunkIdx - 1);
+    if (currentHunkIdx <= 0) {
+      goToHunk(0); /* re-scroll to the first/only change */
+    } else {
+      goToHunk(currentHunkIdx - 1);
+    }
   }, [currentHunkIdx, goToHunk]);
 
   const goToNextHunk = useCallback(() => {
-    goToHunk(currentHunkIdx + 1);
-  }, [currentHunkIdx, goToHunk]);
+    if (currentHunkIdx >= hunkCount - 1) {
+      goToHunk(hunkCount - 1); /* re-scroll to the last/only change */
+    } else {
+      goToHunk(currentHunkIdx + 1);
+    }
+  }, [currentHunkIdx, hunkCount, goToHunk]);
 
   /******************* USEEFFECTS ***********************/
   const prevFileRef = useRef(file?.path);
@@ -294,11 +302,11 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
         <h4 className="codeDiffTitle">{file.path}</h4>
         <div className="diffNavControls">
           <span className="diffCount">{hunkCount} change{hunkCount !== 1 ? "s" : ""}</span>
-          <button type="button" className="diffNavBtn" onClick={goToPrevHunk} disabled={currentHunkIdx <= 0} title="Previous change">
+          <button type="button" className="diffNavBtn" onClick={goToPrevHunk} disabled={hunkCount === 0} title="Previous change">
             &#9650;
           </button>
           <span className="diffNavPos">{hunkCount > 0 ? `${currentHunkIdx + 1}/${hunkCount}` : "0/0"}</span>
-          <button type="button" className="diffNavBtn" onClick={goToNextHunk} disabled={currentHunkIdx >= hunkCount - 1} title="Next change">
+          <button type="button" className="diffNavBtn" onClick={goToNextHunk} disabled={hunkCount === 0} title="Next change">
             &#9660;
           </button>
         </div>
