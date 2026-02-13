@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useEffect, useRef } from "react";
+import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import {
   Background,
   Controls,
@@ -18,6 +18,7 @@ import DiamondNode from "./nodes/DiamondNode";
 import PillNode from "./nodes/PillNode";
 import ProcessNode from "./nodes/ProcessNode";
 import GroupNode from "./nodes/GroupNode";
+import { SearchBox } from "./SearchBox";
 /* style.css imported globally in main.tsx */
 
 interface DiffStats {
@@ -328,11 +329,21 @@ const computeFlatLayout = (
     const bg = statusColor[node.diffStatus] ?? "#334155";
     const txt = statusTextColor[node.diffStatus] ?? "#f8fafc";
     const sel = node.id === selectedNodeId;
+    const shortPath = shortenPath(node.filePath);
+    const fullText = `${node.label}\n${node.filePath}`;
     return {
-      id: node.id, data: { label: `${node.label}\n${node.filePath}` },
+      id: node.id,
+      data: {
+        label: (
+          <div title={fullText} style={{ width: NODE_W - 20, overflow: "hidden", pointerEvents: "auto" }}>
+            <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11, fontWeight: 500 }}>{node.label}</div>
+            <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 10, opacity: 0.7 }}>{shortPath}</div>
+          </div>
+        ),
+      },
       position: { x: (p?.x ?? 0) - NODE_W / 2, y: (p?.y ?? 0) - NODE_H / 2 },
       sourcePosition: Position.Right, targetPosition: Position.Left,
-      style: { border: sel ? "3px solid #38bdf8" : "1px solid #475569", borderRadius: 8, fontSize: 11, whiteSpace: "pre-line" as const, background: bg, color: txt, boxShadow: sel ? "0 0 12px #38bdf8" : "none" },
+      style: { border: sel ? "3px solid #38bdf8" : "1px solid #475569", borderRadius: 8, fontSize: 11, background: bg, color: txt, boxShadow: sel ? "0 0 12px #38bdf8" : "none", cursor: "pointer", width: NODE_W, overflow: "hidden" },
     };
   });
   const edges: Edge[] = graph.edges.map((edge) => ({
@@ -347,12 +358,22 @@ const computeFlatLayout = (
 const normPath = (v: string): string =>
   v.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
 
+const shortenPath = (filePath: string): string => {
+  const parts = filePath.replace(/\\/g, "/").split("/");
+  if (parts.length <= 3) return filePath;
+  const firstDir = parts[0];
+  const secondDir = parts[1];
+  const fileName = parts[parts.length - 1];
+  return `${firstDir}/${secondDir}/[...]/${fileName}`;
+};
+
 export const SplitGraphPanel = ({
   title, side, graph, viewType, onNodeSelect, viewport, onViewportChange, selectedNodeId, focusFilePath, diffStats, fileDiffs,
 }: SplitGraphPanelProps) => {
   /******************* STORE ***********************/
-  const noStore = null;
-  void noStore;
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchExclude, setSearchExclude] = useState(false);
+  const [searchIdx, setSearchIdx] = useState(0);
 
   /******************* COMPUTED ***********************/
   const isLogic = useMemo(() => viewType === "logic", [viewType]);
@@ -388,6 +409,37 @@ export const SplitGraphPanel = ({
     return { nodes, edges: layoutResult.edges };
   }, [layoutResult, selectedNodeId]);
 
+  /* Search: find matching node ids */
+  const searchMatches = useMemo(() => {
+    if (!searchQuery || searchQuery.length < 2) return [];
+    const q = searchQuery.toLowerCase();
+    return flowElements.nodes.filter((n) => {
+      const gn = graph.nodes.find((g) => g.id === n.id);
+      const text = `${gn?.label ?? ""} ${gn?.filePath ?? ""} ${gn?.kind ?? ""}`.toLowerCase();
+      const matches = text.includes(q);
+      return searchExclude ? !matches : matches;
+    });
+  }, [searchQuery, searchExclude, flowElements.nodes, graph.nodes]);
+
+  const searchResultNodes = useMemo(() => {
+    if (!searchQuery || searchQuery.length < 2) return flowElements;
+    if (searchExclude) {
+      /* Exclude mode: hide nodes that DON'T match (i.e. show only matches, which are non-matching text) */
+      const keepIds = new Set(searchMatches.map((n) => n.id));
+      const nodes = flowElements.nodes.filter((n) => keepIds.has(n.id));
+      const nodeIds = new Set(nodes.map((n) => n.id));
+      const edges = flowElements.edges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target));
+      return { nodes, edges };
+    }
+    /* Normal mode: highlight matches, dim others */
+    const matchIds = new Set(searchMatches.map((n) => n.id));
+    const nodes = flowElements.nodes.map((node) => {
+      if (!matchIds.has(node.id)) return { ...node, style: { ...(node.style ?? {}), opacity: 0.25 } };
+      return { ...node, style: { ...(node.style ?? {}), outline: "2px solid #fbbf24", outlineOffset: "2px" } };
+    });
+    return { nodes, edges: flowElements.edges };
+  }, [flowElements, searchMatches, searchQuery, searchExclude]);
+
   const flowStyle = useMemo(() => ({ width: "100%", height: "100%" }), []);
   const stats = useMemo(() => {
     if (diffStats) return diffStats;
@@ -410,6 +462,21 @@ export const SplitGraphPanel = ({
   }, [focusFilePath, flowElements.nodes, graph.nodes]);
 
   /******************* FUNCTIONS ***********************/
+  const handleSearch = useCallback((q: string, exclude: boolean) => { setSearchQuery(q); setSearchExclude(exclude); setSearchIdx(0); }, []);
+  const handleSearchNext = useCallback(() => {
+    if (searchMatches.length === 0) return;
+    const next = (searchIdx + 1) % searchMatches.length;
+    setSearchIdx(next);
+    const target = searchMatches[next];
+    if (target) onViewportChange({ x: -target.position.x + 200, y: -target.position.y + 150, zoom: 0.9 });
+  }, [searchMatches, searchIdx, onViewportChange]);
+  const handleSearchPrev = useCallback(() => {
+    if (searchMatches.length === 0) return;
+    const prev = (searchIdx - 1 + searchMatches.length) % searchMatches.length;
+    setSearchIdx(prev);
+    const target = searchMatches[prev];
+    if (target) onViewportChange({ x: -target.position.x + 200, y: -target.position.y + 150, zoom: 0.9 });
+  }, [searchMatches, searchIdx, onViewportChange]);
   const handleNodeClick = useCallback<NodeMouseHandler>((_e, n) => { onNodeSelect(n.id); }, [onNodeSelect]);
   const handleMove = useCallback((_e: MouseEvent | TouchEvent | null, v: Viewport) => { onViewportChange({ x: v.x, y: v.y, zoom: v.zoom }); }, [onViewportChange]);
 
@@ -425,16 +492,26 @@ export const SplitGraphPanel = ({
   return (
     <section className="panel">
       <h3>{title}</h3>
-      {!isOld && (
-        <div className="legendRow">
-          <span className="legendItem addedLegend">Added {stats.added}</span>
-          <span className="legendItem removedLegend">Removed {stats.removed}</span>
-          <span className="legendItem modifiedLegend">Modified {stats.modified}</span>
-        </div>
-      )}
+      <div className="panelToolbar">
+        {!isOld && (
+          <div className="legendRow">
+            <span className="legendItem addedLegend">Added {stats.added}</span>
+            <span className="legendItem removedLegend">Removed {stats.removed}</span>
+            <span className="legendItem modifiedLegend">Modified {stats.modified}</span>
+          </div>
+        )}
+        <SearchBox
+          placeholder="Search nodes..."
+          onSearch={handleSearch}
+          onNext={handleSearchNext}
+          onPrev={handleSearchPrev}
+          resultCount={searchMatches.length}
+          currentIndex={searchIdx}
+        />
+      </div>
       <div className="flowContainer">
         <ReactFlow
-          nodes={flowElements.nodes} edges={flowElements.edges} nodeTypes={nodeTypesForFlow}
+          nodes={searchResultNodes.nodes} edges={searchResultNodes.edges} nodeTypes={nodeTypesForFlow}
           onNodeClick={handleNodeClick} viewport={viewport} onMove={handleMove}
           style={flowStyle} onlyRenderVisibleElements
         >

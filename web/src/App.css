@@ -51,10 +51,17 @@
   padding: 8px;
 }
 
+.panelToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  gap: 8px;
+}
+
 .legendRow {
   display: flex;
   gap: 8px;
-  margin-bottom: 6px;
 }
 
 .legendItem {
@@ -71,6 +78,77 @@
 .flowContainer {
   width: 100%;
   height: 52vh;
+}
+
+/* ---------- search box ---------- */
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.searchInput {
+  background: #020617;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  color: #e2e8f0;
+  font-size: 12px;
+  padding: 4px 8px;
+  width: 160px;
+  outline: none;
+}
+
+.searchInput:focus {
+  border-color: #38bdf8;
+}
+
+.searchInfo {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.searchNavBtn {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  width: 20px;
+  height: 20px;
+  font-size: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0;
+}
+
+.searchNavBtn:hover:not(:disabled) {
+  background: #334155;
+}
+
+.searchNavBtn:disabled {
+  opacity: 0.3;
+}
+
+.excludeLabel {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: #94a3b8;
+  cursor: pointer;
+  user-select: none;
+}
+
+.excludeCheckbox {
+  width: 12px;
+  height: 12px;
+  accent-color: #f87171;
 }
 
 /* ---------- file list panel (always visible at bottom) ---------- */

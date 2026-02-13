@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useRef, useEffect, useState } from "react";
+import { useMemo, useCallback, useRef, useEffect, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import type { FileDiffEntry } from "../types/graph";
 
 interface CodeDiffDrawerProps {
@@ -111,6 +111,8 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
   const newScrollRef = useRef<HTMLDivElement>(null);
   const syncing = useRef(false);
   const [currentHunkIdx, setCurrentHunkIdx] = useState(0);
+  const [textSearch, setTextSearch] = useState("");
+  const [textSearchIdx, setTextSearchIdx] = useState(0);
 
   /******************* COMPUTED ***********************/
   const hasOld = useMemo(() => (file?.oldContent ?? "").length > 0, [file?.oldContent]);
@@ -176,6 +178,39 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
       goToHunk(currentHunkIdx + 1);
     }
   }, [currentHunkIdx, hunkCount, goToHunk]);
+
+  /* Text search in code */
+  const textSearchMatches = useMemo(() => {
+    if (!textSearch || textSearch.length < 2 || !diff) return [];
+    const q = textSearch.toLowerCase();
+    const matches: number[] = [];
+    diff.newLines.forEach((line, i) => {
+      if (line.text.toLowerCase().includes(q)) matches.push(i);
+    });
+    return matches;
+  }, [textSearch, diff]);
+
+  const handleTextSearch = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    setTextSearch(e.target.value);
+    setTextSearchIdx(0);
+  }, []);
+
+  const goToTextMatch = useCallback((idx: number) => {
+    if (textSearchMatches.length === 0) return;
+    const clamped = ((idx % textSearchMatches.length) + textSearchMatches.length) % textSearchMatches.length;
+    setTextSearchIdx(clamped);
+    scrollToRowIndex(newScrollRef.current, textSearchMatches[clamped]);
+    syncing.current = true;
+    scrollToRowIndex(oldScrollRef.current, textSearchMatches[clamped]);
+    syncing.current = false;
+  }, [textSearchMatches]);
+
+  const handleTextSearchKey = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      goToTextMatch(e.shiftKey ? textSearchIdx - 1 : textSearchIdx + 1);
+      e.preventDefault();
+    }
+  }, [goToTextMatch, textSearchIdx]);
 
   /******************* USEEFFECTS ***********************/
   const prevFileRef = useRef(file?.path);
@@ -301,6 +336,23 @@ export const CodeDiffDrawer = ({ file, targetLine, scrollTick }: CodeDiffDrawerP
       <div className="diffNavBar">
         <h4 className="codeDiffTitle">{file.path}</h4>
         <div className="diffNavControls">
+          <div className="searchBox">
+            <input
+              type="search"
+              value={textSearch}
+              onChange={handleTextSearch}
+              onKeyDown={handleTextSearchKey}
+              placeholder="Search code..."
+              className="searchInput"
+            />
+            {textSearch.length > 0 && (
+              <span className="searchInfo">
+                {textSearchMatches.length > 0 ? `${textSearchIdx + 1}/${textSearchMatches.length}` : "0"}
+                <button type="button" className="searchNavBtn" onClick={() => goToTextMatch(textSearchIdx - 1)} disabled={textSearchMatches.length === 0}>&#9650;</button>
+                <button type="button" className="searchNavBtn" onClick={() => goToTextMatch(textSearchIdx + 1)} disabled={textSearchMatches.length === 0}>&#9660;</button>
+              </span>
+            )}
+          </div>
           <span className="diffCount">{hunkCount} change{hunkCount !== 1 ? "s" : ""}</span>
           <button type="button" className="diffNavBtn" onClick={goToPrevHunk} disabled={hunkCount === 0} title="Previous change">
             &#9650;
