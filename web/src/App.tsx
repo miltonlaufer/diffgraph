@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
-import { getDiffId } from "./api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { type DiffMeta, fetchDiffMeta, getDiffId } from "./api";
 import LogicDiffView from "./views/LogicDiffView";
 import KnowledgeDiffView from "./views/KnowledgeDiffView";
 import ReactDiffView from "./views/ReactDiffView";
@@ -11,6 +11,7 @@ const App = () => {
   /******************* STORE ***********************/
   const [tab, setTab] = useState<Tab>("logic");
   const [changesOnly, setChangesOnly] = useState<boolean>(true);
+  const [meta, setMeta] = useState<DiffMeta | null>(null);
 
   /******************* COMPUTED ***********************/
   const diffId = useMemo(() => getDiffId(), []);
@@ -32,6 +33,10 @@ const App = () => {
   }, []);
 
   /******************* USEEFFECTS ***********************/
+  useEffect(() => {
+    if (!diffId) return;
+    fetchDiffMeta(diffId).then(setMeta).catch(() => {});
+  }, [diffId]);
 
   if (!diffId) {
     return (
@@ -45,7 +50,16 @@ const App = () => {
   return (
     <main className="appContainer">
       <header className="appHeader">
-        <h1>DiffGraph</h1>
+        <div className="headerLeft">
+          <h1>DiffGraph</h1>
+          {meta && (
+            <span className="diffMetaLabel">
+              <span className="refOld">{meta.oldRef}</span>
+              <span className="refArrow">-&gt;</span>
+              <span className="refNew">{meta.newRef}</span>
+            </span>
+          )}
+        </div>
         <div className="tabBar">
           <button type="button" onClick={toggleChangesOnly} className={changesOnly ? "active" : ""}>
             Changes Only

@@ -14,6 +14,36 @@
   margin-bottom: 12px;
 }
 
+.headerLeft {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.diffMetaLabel {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.refOld {
+  color: #fca5a5;
+  font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+  font-size: 12px;
+}
+
+.refNew {
+  color: #86efac;
+  font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+  font-size: 12px;
+}
+
+.refArrow {
+  color: #64748b;
+  font-size: 14px;
+}
+
 .tabBar {
   display: flex;
   gap: 8px;

@@ -30,3 +30,17 @@ export const fetchDiffFiles = async (diffId: string): Promise<FileDiffEntry[]> =
   }
   return (await response.json()) as FileDiffEntry[];
 };
+
+export interface DiffMeta {
+  diffId: string;
+  oldRef: string;
+  newRef: string;
+}
+
+export const fetchDiffMeta = async (diffId: string): Promise<DiffMeta> => {
+  const response = await fetch(`/api/diff/${diffId}/meta`);
+  if (!response.ok) {
+    throw new Error("Failed to load diff metadata");
+  }
+  return (await response.json()) as DiffMeta;
+};
