@@ -4,6 +4,9 @@ import CodeTooltip from "./CodeTooltip";
 
 interface KnowledgeNodeData {
   label: string;
+  symbolName?: string;
+  functionName?: string;
+  filePath?: string;
   shortPath: string;
   fullPath: string;
   bgColor: string;
@@ -48,7 +51,14 @@ const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
       </div>
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
-      <CodeTooltip visible={hovered} codeContext={data.codeContext as string | undefined} language={data.language} />
+      <CodeTooltip
+        visible={hovered}
+        codeContext={data.codeContext as string | undefined}
+        language={data.language}
+        functionName={data.functionName}
+        symbolName={data.symbolName}
+        filePath={data.filePath ?? data.fullPath}
+      />
     </div>
   );
 };

@@ -80,6 +80,7 @@ export interface ViewGraphEdge {
   target: string;
   kind: GraphEdgeKind;
   relation?: "flow" | "invoke" | "hierarchy";
+  flowType?: "true" | "false" | "next";
   diffStatus: DiffStatus;
 }
 

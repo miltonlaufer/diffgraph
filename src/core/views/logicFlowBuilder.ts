@@ -176,12 +176,18 @@ const buildViewGraph = (
         e.kind === "DECLARES"
           ? "hierarchy"
           : "flow";
+      const rawFlowType = (e.metadata?.flowType as string | undefined) ?? "";
+      const flowType: "true" | "false" | "next" | undefined =
+        rawFlowType === "true" || rawFlowType === "false" || rawFlowType === "next"
+          ? rawFlowType
+          : undefined;
       return {
         id: e.id,
         source: e.source,
         target: e.target,
         kind: e.kind,
         relation,
+        flowType,
         diffStatus: (edgeStatus.get(e.id) ?? "unchanged") as ViewGraphNode["diffStatus"],
       };
     });

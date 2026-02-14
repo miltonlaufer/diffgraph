@@ -1,14 +1,20 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GraphEdge, GraphNode, SnapshotGraph } from "../graph/schema.js";
 import { stableHash } from "../utils/hash.js";
 
 const currentFilePath = fileURLToPath(import.meta.url);
-const packageRoot = path.resolve(path.dirname(currentFilePath), "../../../..");
-const analyzerScript = path.join(packageRoot, "scripts", "analyze_python.py");
+const analyzerScriptCandidates = [
+  path.join(path.resolve(path.dirname(currentFilePath), "../../../"), "scripts", "analyze_python.py"),
+  path.join(path.resolve(path.dirname(currentFilePath), "../../../../"), "scripts", "analyze_python.py"),
+];
+const analyzerScript = analyzerScriptCandidates.find((candidate) => existsSync(candidate))
+  ?? analyzerScriptCandidates[0];
 
 interface PyBranch {
+  id: string;
   kind: string;
   owner: string;
   idx: number;
@@ -16,6 +22,12 @@ interface PyBranch {
   end: number;
   snippet: string;
   callee?: string;
+}
+
+interface PyBranchFlow {
+  source: string;
+  target: string;
+  flowType: "true" | "false" | "next";
 }
 
 interface PyResult {
@@ -33,6 +45,7 @@ interface PyResult {
   imports: string[];
   calls: Array<{ caller: string; callee: string; line: number }>;
   branches: PyBranch[];
+  branchFlows?: PyBranchFlow[];
 }
 
 const normalizeSignatureText = (value: string): string =>
@@ -54,6 +67,7 @@ export class PyAnalyzer {
     const nodes: GraphNode[] = [];
     const edges: GraphEdge[] = [];
     const symbolByName = new Map<string, string>();
+    const symbolByQualifiedName = new Map<string, string>();
 
     for (const file of files.filter((entry) => entry.path.endsWith(".py"))) {
       const fileNode: GraphNode = {
@@ -118,6 +132,7 @@ export class PyAnalyzer {
         };
         nodes.push(fnNode);
         symbolByName.set(fn.name, fnNode.id);
+        symbolByQualifiedName.set(fn.qualifiedName, fnNode.id);
         edges.push({
           id: stableHash(`${snapshotId}:declares:${fileNode.id}:${fnNode.id}`),
           source: fileNode.id,
@@ -159,10 +174,10 @@ export class PyAnalyzer {
       }
 
       /* Branch nodes */
-      const branchNodesByOwner = new Map<string, GraphNode[]>();
+      const branchNodeByFlowId = new Map<string, GraphNode>();
 
       for (const branch of parsed.branches ?? []) {
-        const stableQName = `${file.path}:${branch.owner}::${branch.kind}#${branch.idx}`;
+        const stableQName = `${file.path}:${branch.id}`;
         const branchNode: GraphNode = {
           id: stableHash(`${snapshotId}:branch:${stableQName}`),
           kind: "Branch",
@@ -182,10 +197,11 @@ export class PyAnalyzer {
           ref,
         };
         nodes.push(branchNode);
+        branchNodeByFlowId.set(branch.id, branchNode);
 
         /* Find owner function node */
         const ownerName = branch.owner.split(".").at(-1) ?? "";
-        const ownerId = symbolByName.get(ownerName);
+        const ownerId = symbolByQualifiedName.get(branch.owner) ?? symbolByName.get(ownerName);
         const parentId = ownerId ?? fileNode.id;
         edges.push({
           id: stableHash(`${snapshotId}:declares:${parentId}:${branchNode.id}`),
@@ -197,47 +213,35 @@ export class PyAnalyzer {
           ref,
         });
 
-        /* Group by owner for flow edges */
-        const ownerKey = ownerId ?? fileNode.id;
-        if (!branchNodesByOwner.has(ownerKey)) {
-          branchNodesByOwner.set(ownerKey, []);
-        }
-        branchNodesByOwner.get(ownerKey)!.push(branchNode);
       }
 
-      /* Create flow edges between sibling branches within each function */
-      for (const [ownerId, siblings] of branchNodesByOwner.entries()) {
-        const sorted = [...siblings].sort((a, b) => (a.startLine ?? 0) - (b.startLine ?? 0));
-        let prevNode: GraphNode | null = null;
-        let prevIsReturn = false;
+      /* Create control-flow edges emitted by Python analyzer */
+      for (const flow of parsed.branchFlows ?? []) {
+        const targetNode = branchNodeByFlowId.get(flow.target);
+        if (!targetNode) continue;
 
-        for (const current of sorted) {
-          if (!prevNode) {
-            /* First branch: connect from owner */
-            edges.push({
-              id: stableHash(`${snapshotId}:flow-start:${ownerId}:${current.id}`),
-              source: ownerId,
-              target: current.id,
-              kind: "CALLS",
-              filePath: file.path,
-              snapshotId,
-              ref,
-            });
-          } else if (!prevIsReturn) {
-            /* Connect from previous sibling (unless it was a return) */
-            edges.push({
-              id: stableHash(`${snapshotId}:flow-step:${prevNode.id}:${current.id}`),
-              source: prevNode.id,
-              target: current.id,
-              kind: "CALLS",
-              filePath: file.path,
-              snapshotId,
-              ref,
-            });
-          }
-          prevNode = current;
-          prevIsReturn = (current.metadata?.branchType as string) === "return";
+        let sourceId: string | undefined;
+        if (flow.source.startsWith("owner::")) {
+          const owner = flow.source.slice("owner::".length);
+          const ownerName = owner.split(".").at(-1) ?? "";
+          sourceId = symbolByQualifiedName.get(owner) ?? symbolByName.get(ownerName) ?? fileNode.id;
+        } else {
+          sourceId = branchNodeByFlowId.get(flow.source)?.id;
         }
+        if (!sourceId) continue;
+
+        edges.push({
+          id: stableHash(`${snapshotId}:flow:${sourceId}:${targetNode.id}:${flow.flowType}`),
+          source: sourceId,
+          target: targetNode.id,
+          kind: "CALLS",
+          filePath: file.path,
+          metadata: {
+            flowType: flow.flowType,
+          },
+          snapshotId,
+          ref,
+        });
       }
     }
 

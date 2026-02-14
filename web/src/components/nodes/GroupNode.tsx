@@ -3,6 +3,8 @@ import { memo, useMemo, useState, useCallback } from "react";
 
 interface GroupNodeData {
   label: string;
+  functionName?: string;
+  filePath?: string;
   bgColor: string;
   textColor: string;
   selected: boolean;
@@ -33,9 +35,42 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
     [data.bgColor, data.selected, data.width, data.height],
   );
   const hasFunctionDetails = useMemo(
-    () => Boolean((data.documentation ?? "").trim() || (data.functionParams ?? "").trim() || (data.returnType ?? "").trim()),
-    [data.documentation, data.functionParams, data.returnType],
+    () =>
+      Boolean(
+        (data.functionName ?? "").trim()
+        || (data.filePath ?? "").trim()
+        || (data.documentation ?? "").trim()
+        || (data.functionParams ?? "").trim()
+        || (data.returnType ?? "").trim(),
+      ),
+    [data.documentation, data.filePath, data.functionName, data.functionParams, data.returnType],
   );
+  const normalized = useCallback((value: string): string => value.replace(/\s+/g, " ").trim(), []);
+  const functionNameRaw = useMemo(
+    () => (data.functionName ?? "").trim(),
+    [data.functionName],
+  );
+  const functionNameNoBadge = useMemo(
+    () => functionNameRaw.replace(/^\[[^\]]+\]\s*/, "").trim(),
+    [functionNameRaw],
+  );
+  const functionNameDisplay = useMemo(() => {
+    const idx = functionNameNoBadge.indexOf("(");
+    return (idx >= 0 ? functionNameNoBadge.slice(0, idx) : functionNameNoBadge).trim();
+  }, [functionNameNoBadge]);
+  const paramsRaw = useMemo(
+    () => (data.functionParams ?? "").trim(),
+    [data.functionParams],
+  );
+  const showFunctionName = useMemo(
+    () => functionNameDisplay.length > 0,
+    [functionNameDisplay],
+  );
+  const showParameters = useMemo(() => {
+    if (!paramsRaw) return false;
+    if (!functionNameNoBadge) return true;
+    return !normalized(functionNameNoBadge).includes(normalized(paramsRaw));
+  }, [functionNameNoBadge, normalized, paramsRaw]);
   const headerStyle = useMemo(
     () => ({
       background: data.bgColor,
@@ -107,8 +142,14 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
       </div>
       <NodeToolbar isVisible={hovered && hasFunctionDetails} position={Position.Top} offset={8}>
         <div style={tooltipStyle}>
-          {data.functionParams && (
-            <div><strong>Parameters:</strong> {data.functionParams}</div>
+          {showFunctionName && (
+            <div><strong>Function:</strong> {functionNameDisplay}</div>
+          )}
+          {data.filePath && (
+            <div><strong>File:</strong> {data.filePath}</div>
+          )}
+          {showParameters && (
+            <div><strong>Parameters:</strong> {paramsRaw}</div>
           )}
           {data.returnType && (
             <div><strong>Returns:</strong> {data.returnType}</div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { type DiffMeta, fetchDiffMeta, getDiffId } from "./api";
 import LogicDiffView from "./views/LogicDiffView";
 import KnowledgeDiffView from "./views/KnowledgeDiffView";
@@ -12,26 +12,57 @@ const App = () => {
   const [tab, setTab] = useState<Tab>("logic");
   const [changesOnly, setChangesOnly] = useState<boolean>(true);
   const [meta, setMeta] = useState<DiffMeta | null>(null);
+  const [interactionBusy, setInteractionBusy] = useState(false);
+  const [isTransitionPending, startTransition] = useTransition();
+  const startRafRef = useRef<number | null>(null);
+  const endRafRef = useRef<number | null>(null);
 
   /******************* COMPUTED ***********************/
   const diffId = useMemo(() => getDiffId(), []);
 
   /******************* FUNCTIONS ***********************/
-  const showLogic = useCallback(() => {
-    setTab("logic");
+  const cancelPendingFrames = useCallback(() => {
+    if (startRafRef.current !== null) {
+      window.cancelAnimationFrame(startRafRef.current);
+      startRafRef.current = null;
+    }
+    if (endRafRef.current !== null) {
+      window.cancelAnimationFrame(endRafRef.current);
+      endRafRef.current = null;
+    }
   }, []);
+
+  const runInteractiveUpdate = useCallback((update: () => void) => {
+    setInteractionBusy(true);
+    cancelPendingFrames();
+    startRafRef.current = window.requestAnimationFrame(() => {
+      startRafRef.current = null;
+      startTransition(() => {
+        update();
+      });
+      endRafRef.current = window.requestAnimationFrame(() => {
+        endRafRef.current = null;
+        setInteractionBusy(false);
+      });
+    });
+  }, [cancelPendingFrames, startTransition]);
+
+  const showLogic = useCallback(() => {
+    runInteractiveUpdate(() => setTab("logic"));
+  }, [runInteractiveUpdate]);
 
   const showKnowledge = useCallback(() => {
-    setTab("knowledge");
-  }, []);
+    runInteractiveUpdate(() => setTab("knowledge"));
+  }, [runInteractiveUpdate]);
 
   const showReact = useCallback(() => {
-    setTab("react");
-  }, []);
+    runInteractiveUpdate(() => setTab("react"));
+  }, [runInteractiveUpdate]);
   const toggleChangesOnly = useCallback(() => {
-    setChangesOnly((current) => !current);
-  }, []);
+    runInteractiveUpdate(() => setChangesOnly((current) => !current));
+  }, [runInteractiveUpdate]);
   const canShowReact = meta?.hasReactView ?? true;
+  const isInteractionPending = interactionBusy || isTransitionPending;
 
   /******************* USEEFFECTS ***********************/
   useEffect(() => {
@@ -44,6 +75,10 @@ const App = () => {
       setTab("logic");
     }
   }, [canShowReact, tab]);
+
+  useEffect(() => () => {
+    cancelPendingFrames();
+  }, [cancelPendingFrames]);
 
   const diffGraph = useMemo(() => {
     return <h1><span style={{
@@ -108,6 +143,13 @@ const App = () => {
       {tab === "logic" && <LogicDiffView diffId={diffId} showChangesOnly={changesOnly} />}
       {tab === "knowledge" && <KnowledgeDiffView diffId={diffId} showChangesOnly={changesOnly} />}
       {tab === "react" && canShowReact && <ReactDiffView diffId={diffId} showChangesOnly={changesOnly} />}
+
+      {isInteractionPending && (
+        <div className="interactionOverlay interactionOverlayGlobal" role="status" aria-live="polite">
+          <div className="spinner" />
+          <p className="dimText">Updating view...</p>
+        </div>
+      )}
     </main>
   );
 };

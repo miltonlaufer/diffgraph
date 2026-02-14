@@ -26,7 +26,10 @@ const nodeKey = (node: GraphNode): string => {
   }
   return `${node.qualifiedName}:${node.kind}`;
 };
-const edgeKey = (edge: GraphEdge): string => `${edge.kind}:${edge.source}:${edge.target}`;
+const edgeKey = (edge: GraphEdge): string => {
+  const flowType = (edge.metadata?.flowType as string | undefined) ?? "";
+  return `${edge.kind}:${edge.source}:${edge.target}:${flowType}`;
+};
 
 export const buildGraphDelta = (oldGraph: SnapshotGraph, newGraph: SnapshotGraph): GraphDelta => {
   const nodeStatus = new Map<string, "added" | "removed" | "modified" | "unchanged">();

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { fetchDiffFiles, fetchView } from "../api";
 import { CodeDiffDrawer } from "../components/CodeDiffDrawer";
 import { FileListPanel } from "../components/FileListPanel";
@@ -14,6 +14,12 @@ interface ViewBaseProps {
 
 const normalizePath = (value: string): string =>
   value.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
+
+const functionIdentityFromLabel = (label: string): string => {
+  const noBadge = label.replace(/^\[[^\]]+\]\s*/, "").trim();
+  const idx = noBadge.indexOf("(");
+  return (idx >= 0 ? noBadge.slice(0, idx) : noBadge).trim().toLowerCase();
+};
 
 const includeHierarchyAncestors = (graph: ViewGraph, seedIds: Set<string>): Set<string> => {
   const keepIds = new Set(seedIds);
@@ -42,6 +48,33 @@ const includeInvokeNeighbors = (graph: ViewGraph, seedIds: Set<string>): Set<str
   return keepIds;
 };
 
+const includeHierarchyDescendants = (graph: ViewGraph, seedIds: Set<string>): Set<string> => {
+  const keepIds = new Set(seedIds);
+  const childrenByParent = new Map<string, string[]>();
+  for (const node of graph.nodes) {
+    if (!node.parentId) continue;
+    if (!childrenByParent.has(node.parentId)) {
+      childrenByParent.set(node.parentId, []);
+    }
+    childrenByParent.get(node.parentId)!.push(node.id);
+  }
+  const queue = [...seedIds];
+  while (queue.length > 0) {
+    const parentId = queue.shift();
+    if (!parentId) continue;
+    const children = childrenByParent.get(parentId) ?? [];
+    for (const childId of children) {
+      if (keepIds.has(childId)) continue;
+      keepIds.add(childId);
+      queue.push(childId);
+    }
+  }
+  return keepIds;
+};
+
+const viewNodeKey = (node: ViewGraph["nodes"][number]): string =>
+  `${node.kind}:${normalizePath(node.filePath)}:${(node.className ?? "").trim().toLowerCase()}:${functionIdentityFromLabel(node.label)}`;
+
 export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) => {
   /******************* STORE ***********************/
   const [oldGraph, setOldGraph] = useState<ViewGraph>({ nodes: [], edges: [] });
@@ -56,14 +89,21 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const [showCalls, setShowCalls] = useState(true);
   const [oldDiffTargets, setOldDiffTargets] = useState<GraphDiffTarget[]>([]);
   const [newDiffTargets, setNewDiffTargets] = useState<GraphDiffTarget[]>([]);
+  const [oldTopAnchors, setOldTopAnchors] = useState<Record<string, { x: number; y: number }>>({});
+  const [newTopAnchors, setNewTopAnchors] = useState<Record<string, { x: number; y: number }>>({});
   const [graphDiffIdx, setGraphDiffIdx] = useState(0);
   const [highlightedNodeId, setHighlightedNodeId] = useState<string>("");
   const [focusNodeId, setFocusNodeId] = useState<string>("");
   const [focusNodeTick, setFocusNodeTick] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
+  const [interactionBusy, setInteractionBusy] = useState(false);
+  const [isUiPending, startUiTransition] = useTransition();
   const codeDiffSectionRef = useRef<HTMLDivElement>(null);
   const highlightTimerRef = useRef<number | null>(null);
+  const didAutoViewportRef = useRef(false);
+  const startRafRef = useRef<number | null>(null);
+  const endRafRef = useRef<number | null>(null);
 
   /******************* COMPUTED ***********************/
   const filteredOldGraph = useMemo(() => {
@@ -87,8 +127,20 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const visibleOldGraph = useMemo(() => {
     if (!showChangesOnly) return filteredOldGraph;
     const changedIds = new Set(filteredOldGraph.nodes.filter((n) => n.diffStatus !== "unchanged").map((n) => n.id));
-    let keepIds = includeHierarchyAncestors(filteredOldGraph, changedIds);
+    const otherChangedKeys = new Set(
+      filteredNewGraph.nodes.filter((n) => n.diffStatus === "modified").map((n) => viewNodeKey(n)),
+    );
+    const counterpartIds = new Set(
+      filteredOldGraph.nodes.filter((n) => otherChangedKeys.has(viewNodeKey(n))).map((n) => n.id),
+    );
+    let keepIds = new Set([...changedIds, ...counterpartIds]);
+    keepIds = includeHierarchyAncestors(filteredOldGraph, keepIds);
     if (viewType === "logic") {
+      const groupSeedIds = new Set(
+        filteredOldGraph.nodes.filter((n) => keepIds.has(n.id) && n.kind === "group").map((n) => n.id),
+      );
+      keepIds = includeHierarchyDescendants(filteredOldGraph, groupSeedIds);
+      keepIds = includeHierarchyAncestors(filteredOldGraph, keepIds);
       keepIds = includeInvokeNeighbors(filteredOldGraph, keepIds);
       keepIds = includeHierarchyAncestors(filteredOldGraph, keepIds);
     }
@@ -96,13 +148,25 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
       nodes: filteredOldGraph.nodes.filter((n) => keepIds.has(n.id)),
       edges: filteredOldGraph.edges.filter((e) => keepIds.has(e.source) && keepIds.has(e.target)),
     };
-  }, [filteredOldGraph, showChangesOnly, viewType]);
+  }, [filteredOldGraph, filteredNewGraph, showChangesOnly, viewType]);
 
   const visibleNewGraph = useMemo(() => {
     if (!showChangesOnly) return filteredNewGraph;
     const changedIds = new Set(filteredNewGraph.nodes.filter((n) => n.diffStatus !== "unchanged").map((n) => n.id));
-    let keepIds = includeHierarchyAncestors(filteredNewGraph, changedIds);
+    const otherChangedKeys = new Set(
+      filteredOldGraph.nodes.filter((n) => n.diffStatus === "modified").map((n) => viewNodeKey(n)),
+    );
+    const counterpartIds = new Set(
+      filteredNewGraph.nodes.filter((n) => otherChangedKeys.has(viewNodeKey(n))).map((n) => n.id),
+    );
+    let keepIds = new Set([...changedIds, ...counterpartIds]);
+    keepIds = includeHierarchyAncestors(filteredNewGraph, keepIds);
     if (viewType === "logic") {
+      const groupSeedIds = new Set(
+        filteredNewGraph.nodes.filter((n) => keepIds.has(n.id) && n.kind === "group").map((n) => n.id),
+      );
+      keepIds = includeHierarchyDescendants(filteredNewGraph, groupSeedIds);
+      keepIds = includeHierarchyAncestors(filteredNewGraph, keepIds);
       keepIds = includeInvokeNeighbors(filteredNewGraph, keepIds);
       keepIds = includeHierarchyAncestors(filteredNewGraph, keepIds);
     }
@@ -110,7 +174,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
       nodes: filteredNewGraph.nodes.filter((n) => keepIds.has(n.id)),
       edges: filteredNewGraph.edges.filter((e) => keepIds.has(e.source) && keepIds.has(e.target)),
     };
-  }, [filteredNewGraph, showChangesOnly, viewType]);
+  }, [filteredOldGraph, filteredNewGraph, showChangesOnly, viewType]);
 
   const diffStats = useMemo(() => {
     let oldNodes = oldGraph.nodes;
@@ -186,6 +250,27 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     const merged = [...oldDiffTargets, ...newDiffTargets];
     return merged.sort((a, b) => (a.y - b.y) || (a.x - b.x));
   }, [oldDiffTargets, newDiffTargets]);
+  const newAlignmentOffset = useMemo(() => {
+    if (viewType !== "logic") return undefined;
+    const keys = Object.keys(oldTopAnchors).filter((key) => newTopAnchors[key] !== undefined);
+    if (keys.length === 0) return undefined;
+    let sumX = 0;
+    let sumY = 0;
+    let count = 0;
+    for (const key of keys) {
+      const oldPt = oldTopAnchors[key];
+      const newPt = newTopAnchors[key];
+      if (!oldPt || !newPt) continue;
+      sumX += oldPt.x - newPt.x;
+      sumY += oldPt.y - newPt.y;
+      count += 1;
+    }
+    if (count === 0) return undefined;
+    return {
+      x: sumX / count,
+      y: sumY / count,
+    };
+  }, [oldTopAnchors, newTopAnchors, viewType]);
 
   const oldFileContentMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -204,28 +289,58 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   }, [fileDiffs]);
 
   /******************* FUNCTIONS ***********************/
+  const cancelPendingFrames = useCallback(() => {
+    if (startRafRef.current !== null) {
+      window.cancelAnimationFrame(startRafRef.current);
+      startRafRef.current = null;
+    }
+    if (endRafRef.current !== null) {
+      window.cancelAnimationFrame(endRafRef.current);
+      endRafRef.current = null;
+    }
+  }, []);
+
+  const runInteractiveUpdate = useCallback((update: () => void) => {
+    setInteractionBusy(true);
+    cancelPendingFrames();
+    startRafRef.current = window.requestAnimationFrame(() => {
+      startRafRef.current = null;
+      startUiTransition(() => {
+        update();
+      });
+      endRafRef.current = window.requestAnimationFrame(() => {
+        endRafRef.current = null;
+        setInteractionBusy(false);
+      });
+    });
+  }, [cancelPendingFrames, startUiTransition]);
+
   const handleNodeSelect = useCallback(
     (nodeId: string, sourceSide: "old" | "new") => {
-      setSelectedNodeId(nodeId);
-      const matchedOld = oldGraph.nodes.find((n) => n.id === nodeId);
-      const matchedNew = newGraph.nodes.find((n) => n.id === nodeId);
-      const primary = sourceSide === "old" ? matchedOld : matchedNew;
-      const fallback = sourceSide === "old" ? matchedNew : matchedOld;
-      const filePath = primary?.filePath ?? fallback?.filePath ?? "";
-      if (filePath.length > 0) {
-        setSelectedFilePath(normalizePath(filePath));
-      }
-      const line = primary?.startLine ?? fallback?.startLine ?? 0;
-      setTargetLine(line);
-      setTargetSide(sourceSide);
-      setScrollTick((prev) => prev + 1);
+      runInteractiveUpdate(() => {
+        setSelectedNodeId(nodeId);
+        const matchedOld = oldGraph.nodes.find((n) => n.id === nodeId);
+        const matchedNew = newGraph.nodes.find((n) => n.id === nodeId);
+        const primary = sourceSide === "old" ? matchedOld : matchedNew;
+        const fallback = sourceSide === "old" ? matchedNew : matchedOld;
+        const filePath = primary?.filePath ?? fallback?.filePath ?? "";
+        if (filePath.length > 0) {
+          setSelectedFilePath(normalizePath(filePath));
+        }
+        const line = primary?.startLine ?? fallback?.startLine ?? 0;
+        setTargetLine(line);
+        setTargetSide(sourceSide);
+        setScrollTick((prev) => prev + 1);
+      });
     },
-    [oldGraph.nodes, newGraph.nodes],
+    [oldGraph.nodes, newGraph.nodes, runInteractiveUpdate],
   );
 
   const handleFileSelect = useCallback((filePath: string) => {
-    setSelectedFilePath(filePath);
-  }, []);
+    runInteractiveUpdate(() => {
+      setSelectedFilePath(filePath);
+    });
+  }, [runInteractiveUpdate]);
 
   const handleSymbolClick = useCallback((startLine: number) => {
     setTargetLine(startLine);
@@ -238,8 +353,11 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   }, []);
 
   const handleShowCallsChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setShowCalls(e.target.checked);
-  }, []);
+    const nextChecked = e.target.checked;
+    runInteractiveUpdate(() => {
+      setShowCalls(nextChecked);
+    });
+  }, [runInteractiveUpdate]);
 
   const handleDiffTargetsChange = useCallback((side: "old" | "new", targets: GraphDiffTarget[]) => {
     if (side === "old") {
@@ -247,6 +365,13 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
       return;
     }
     setNewDiffTargets(targets);
+  }, []);
+  const handleTopLevelAnchorsChange = useCallback((side: "old" | "new", anchors: Record<string, { x: number; y: number }>) => {
+    if (side === "old") {
+      setOldTopAnchors(anchors);
+      return;
+    }
+    setNewTopAnchors(anchors);
   }, []);
 
   const handleCodeLineClick = useCallback((line: number, side: "old" | "new") => {
@@ -326,11 +451,14 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
 
   useEffect(() => {
     let mounted = true;
+    didAutoViewportRef.current = false;
     Promise.all([fetchView(diffId, viewType), fetchDiffFiles(diffId)])
       .then(([payload, files]) => {
         if (!mounted) return;
         setOldGraph(payload.oldGraph);
         setNewGraph(payload.newGraph);
+        setOldTopAnchors({});
+        setNewTopAnchors({});
         setFileDiffs(files);
         setSelectedFilePath("");
         setSharedViewport({ x: 20, y: 20, zoom: 0.5 });
@@ -363,11 +491,32 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     }
   }, [graphDiffTargets.length, graphDiffIdx]);
 
+  useEffect(() => {
+    if (loading || didAutoViewportRef.current) return;
+    if (viewType === "logic") {
+      const oldKeys = Object.keys(oldTopAnchors);
+      const newKeys = Object.keys(newTopAnchors);
+      const hasCommonAnchor = oldKeys.some((key) => newTopAnchors[key] !== undefined);
+      if (oldKeys.length > 0 && newKeys.length > 0 && hasCommonAnchor && !newAlignmentOffset) {
+        return;
+      }
+    }
+    const preferredTarget = oldDiffTargets[0] ?? newDiffTargets[0] ?? graphDiffTargets[0];
+    if (!preferredTarget) return;
+    didAutoViewportRef.current = true;
+    setSharedViewport({
+      x: preferredTarget.viewportX,
+      y: preferredTarget.viewportY,
+      zoom: preferredTarget.viewportZoom,
+    });
+  }, [loading, newDiffTargets, oldDiffTargets, graphDiffTargets, viewType, oldTopAnchors, newTopAnchors, newAlignmentOffset]);
+
   useEffect(() => () => {
+    cancelPendingFrames();
     if (highlightTimerRef.current !== null) {
       window.clearTimeout(highlightTimerRef.current);
     }
-  }, []);
+  }, [cancelPendingFrames]);
 
   if (error) {
     return <p className="errorText">{error}</p>;
@@ -384,8 +533,16 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     );
   }
 
+  const isInteractionPending = interactionBusy || isUiPending;
+
   return (
     <section className="viewContainer">
+      {isInteractionPending && (
+        <div className="interactionOverlay interactionOverlayLocal" role="status" aria-live="polite">
+          <div className="spinner" />
+          <p className="dimText">Updating graph...</p>
+        </div>
+      )}
       {viewType === "logic" && (
         <div className="logicToolbar">
           <label className="showCallsLabel">
@@ -421,6 +578,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
           focusFilePath={selectedFilePath}
           fileContentMap={oldFileContentMap}
           onDiffTargetsChange={handleDiffTargetsChange}
+          onTopLevelAnchorsChange={handleTopLevelAnchorsChange}
         />
         <SplitGraphPanel
           title="New"
@@ -439,6 +597,8 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
           diffStats={diffStats}
           fileContentMap={newFileContentMap}
           onDiffTargetsChange={handleDiffTargetsChange}
+          alignmentOffset={newAlignmentOffset}
+          onTopLevelAnchorsChange={handleTopLevelAnchorsChange}
         />
       </div>
 

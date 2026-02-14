@@ -59,3 +59,23 @@ body {
 .react-flow__controls button svg {
   fill: #e2e8f0 !important;
 }
+
+/* ReactFlow attribution: keep visible on dark backgrounds */
+.react-flow__attribution {
+  background: rgba(15, 23, 42, 0.9) !important;
+  border: 1px solid #334155 !important;
+  border-bottom: none !important;
+  border-right: none !important;
+  color: #cbd5e1 !important;
+  font-size: 10px !important;
+  padding: 2px 6px !important;
+  z-index: 20;
+}
+
+.react-flow__attribution a {
+  color: #cbd5e1 !important;
+}
+
+.react-flow__attribution a:hover {
+  color: #f8fafc !important;
+}

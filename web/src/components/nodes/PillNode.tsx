@@ -15,6 +15,9 @@ interface PillNodeData {
   selected: boolean;
   codeContext?: unknown;
   language?: string;
+  functionName?: string;
+  symbolName?: string;
+  filePath?: string;
 }
 
 const PillNode = ({ data }: { data: PillNodeData }) => {
@@ -51,7 +54,14 @@ const PillNode = ({ data }: { data: PillNodeData }) => {
       )}
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
-      <CodeTooltip visible={hovered} codeContext={data.codeContext as string | undefined} language={data.language} />
+      <CodeTooltip
+        visible={hovered}
+        codeContext={data.codeContext as string | undefined}
+        language={data.language}
+        functionName={data.functionName}
+        symbolName={data.symbolName}
+        filePath={data.filePath}
+      />
     </div>
   );
 };

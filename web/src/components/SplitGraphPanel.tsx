@@ -14,6 +14,7 @@ import {
 } from "@xyflow/react";
 import dagre from "@dagrejs/dagre";
 import type { ViewGraph, ViewGraphNode, ViewportState } from "../types/graph";
+import type { LayoutWorkerRequest, LayoutWorkerResponse } from "../workers/layoutTypes";
 import DiamondNode from "./nodes/DiamondNode";
 import PillNode from "./nodes/PillNode";
 import ProcessNode from "./nodes/ProcessNode";
@@ -56,6 +57,8 @@ interface SplitGraphPanelProps {
   diffStats?: DiffStats;
   fileContentMap: Map<string, string>;
   onDiffTargetsChange?: (side: "old" | "new", targets: GraphDiffTarget[]) => void;
+  alignmentOffset?: { x: number; y: number };
+  onTopLevelAnchorsChange?: (side: "old" | "new", anchors: Record<string, { x: number; y: number }>) => void;
 }
 
 const statusColor: Record<string, string> = {
@@ -72,8 +75,8 @@ const statusTextColor: Record<string, string> = {
   unchanged: "#f8fafc",
 };
 
-const decisionKinds = new Set(["if", "switch", "ternary"]);
-const terminalKinds = new Set(["return"]);
+const decisionKinds = new Set(["if", "elif", "switch", "ternary"]);
+const terminalKinds = new Set(["return", "raise"]);
 const loopKinds = new Set(["for", "while"]);
 
 const leafNodeShape = (branchType: string): string => {
@@ -140,6 +143,7 @@ const computeLogicLayout = (
   fileContentMap: Map<string, string>,
   showCalls: boolean,
 ): { nodes: Node[]; edges: Edge[] } => {
+  const graphNodeById = new Map(graph.nodes.map((n) => [n.id, n]));
   const groupNodes = graph.nodes.filter((n) => n.kind === "group");
   const leafNodes = graph.nodes.filter((n) => n.kind !== "group");
 
@@ -266,7 +270,6 @@ const computeLogicLayout = (
     const h = sz?.h ?? LEAF_H;
     topPos.set(n.id, { x: (p?.x ?? 0) - w / 2, y: (p?.y ?? 0) - h / 2 });
   }
-
   /* Build ReactFlow nodes */
   const flowNodes: Node[] = [];
   for (const node of graph.nodes) {
@@ -283,6 +286,8 @@ const computeLogicLayout = (
         id: node.id, type: "scope",
         data: {
           label: node.label,
+          functionName: node.label,
+          filePath: node.filePath,
           bgColor: bg,
           textColor: txt,
           selected: sel,
@@ -306,6 +311,7 @@ const computeLogicLayout = (
         ? { width: 120, height: 120 }
         : { width: LEAF_W, height: LEAF_H };
       const pos = parentOk ? (childPos.get(node.id) ?? { x: 0, y: 0 }) : (topPos.get(node.id) ?? { x: 0, y: 0 });
+      const ownerFn = node.parentId ? graphNodeById.get(node.parentId) : undefined;
       const normalizedFilePath = normPath(node.filePath);
       const fileContent = fileContentMap.get(normalizedFilePath) ?? "";
       const codeContext = extractCodeContext(fileContent, node.startLine, node.endLine);
@@ -321,7 +327,17 @@ const computeLogicLayout = (
 
       flowNodes.push({
         id: node.id, type: shape,
-        data: { label: node.label, bgColor: nodeBg, textColor: nodeTxt, selected: sel, codeContext, language: nodeLang },
+        data: {
+          label: node.label,
+          symbolName: node.label,
+          functionName: ownerFn?.kind === "group" ? ownerFn.label : undefined,
+          filePath: node.filePath,
+          bgColor: nodeBg,
+          textColor: nodeTxt,
+          selected: sel,
+          codeContext,
+          language: nodeLang,
+        },
         position: pos, sourcePosition: Position.Bottom, targetPosition: Position.Top,
         initialWidth: initialSize.width,
         initialHeight: initialSize.height,
@@ -355,24 +371,55 @@ const computeLogicLayout = (
     })
     .map((edge) => {
       const isInvoke = edge.relation === "invoke";
+      const flowType = edge.relation === "flow" ? edge.flowType : undefined;
       const stroke = edge.diffStatus === "added"
         ? "#4ade80"
         : edge.diffStatus === "removed"
           ? "#f87171"
           : isInvoke
             ? "#f59e0b"
-            : "#64748b";
+            : flowType === "true"
+              ? "#22c55e"
+              : flowType === "false"
+                ? "#f87171"
+                : "#94a3b8";
       const strokeWidth = isInvoke ? 2.5 : 1.5;
+      const sourceHandle = flowType === "true"
+        ? "yes"
+        : flowType === "false"
+          ? "no"
+          : undefined;
+      const label = isInvoke
+        ? "calls"
+        : flowType === "next"
+          ? "next"
+          : flowType === "true"
+            ? "T"
+            : flowType === "false"
+              ? "F"
+              : "";
       return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        label: isInvoke ? "calls" : "",
+        ...(sourceHandle ? { sourceHandle } : {}),
+        label,
         animated: edge.diffStatus === "added" || edge.diffStatus === "removed",
+        labelStyle: {
+          fill: flowType === "false" ? "#fca5a5" : flowType === "true" ? "#86efac" : "#cbd5e1",
+          fontSize: 10,
+          fontWeight: 700,
+        },
         style: {
           stroke,
           strokeWidth,
-          strokeDasharray: isInvoke ? "6 4" : undefined,
+          strokeDasharray: isInvoke
+            ? "6 4"
+            : flowType === "next"
+              ? "3 6"
+              : flowType === "false"
+                ? "8 5"
+                : undefined,
         },
         markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: stroke },
       };
@@ -409,6 +456,9 @@ const computeFlatLayout = (
       type: "knowledge",
       data: {
         label: node.label,
+        symbolName: node.label,
+        functionName: node.label,
+        filePath: node.filePath,
         shortPath: shortenPath(node.filePath),
         fullPath: node.filePath,
         bgColor: bg,
@@ -435,6 +485,15 @@ const computeFlatLayout = (
 const normPath = (v: string): string =>
   v.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
 
+const functionIdentityFromLabel = (label: string): string => {
+  const noBadge = label.replace(/^\[[^\]]+\]\s*/, "").trim();
+  const idx = noBadge.indexOf("(");
+  return (idx >= 0 ? noBadge.slice(0, idx) : noBadge).trim().toLowerCase();
+};
+
+const stableNodeKey = (node: Pick<ViewGraphNode, "kind" | "filePath" | "label" | "className">): string =>
+  `${node.kind}:${normPath(node.filePath)}:${(node.className ?? "").trim().toLowerCase()}:${functionIdentityFromLabel(node.label)}`;
+
 const langFromPath = (path: string): string => {
   if (path.endsWith(".ts") || path.endsWith(".tsx")) return "typescript";
   if (path.endsWith(".js") || path.endsWith(".jsx")) return "javascript";
@@ -452,7 +511,7 @@ const shortenPath = (filePath: string): string => {
 };
 
 export const SplitGraphPanel = ({
-  title, side, graph, viewType, showCalls = true, onNodeSelect, viewport, onViewportChange, selectedNodeId, highlightedNodeId, focusNodeId, focusNodeTick, focusFilePath, diffStats, fileContentMap, onDiffTargetsChange,
+  title, side, graph, viewType, showCalls = true, onNodeSelect, viewport, onViewportChange, selectedNodeId, highlightedNodeId, focusNodeId, focusNodeTick, focusFilePath, diffStats, fileContentMap, onDiffTargetsChange, alignmentOffset, onTopLevelAnchorsChange,
 }: SplitGraphPanelProps) => {
   /******************* STORE ***********************/
   const [searchQuery, setSearchQuery] = useState("");
@@ -463,20 +522,36 @@ export const SplitGraphPanel = ({
   const searchHighlightTimerRef = useRef<number | null>(null);
   const flowContainerRef = useRef<HTMLDivElement>(null);
   const [flowSize, setFlowSize] = useState({ width: 800, height: 500 });
+  const [layoutResult, setLayoutResult] = useState<{ nodes: Node[]; edges: Edge[] }>({ nodes: [], edges: [] });
+  const layoutWorkerRef = useRef<Worker | null>(null);
+  const layoutRequestIdRef = useRef(0);
+  const [workerReady, setWorkerReady] = useState(false);
+  const [workerFailed, setWorkerFailed] = useState(false);
 
   /******************* COMPUTED ***********************/
   const isLogic = useMemo(() => viewType === "logic", [viewType]);
   const isOld = useMemo(() => side === "old", [side]);
-  /* Heavy layout: only recomputes when graph structure changes, NOT on selection */
-  const layoutResult = useMemo(
-    () => isLogic ? computeLogicLayout(graph, "", fileContentMap, showCalls) : computeFlatLayout(graph, "", fileContentMap),
+  const fileEntries = useMemo(() => Array.from(fileContentMap.entries()), [fileContentMap]);
+  const computeLayoutSync = useCallback(
+    () => (isLogic ? computeLogicLayout(graph, "", fileContentMap, showCalls) : computeFlatLayout(graph, "", fileContentMap)),
     [graph, isLogic, fileContentMap, showCalls],
   );
+  const positionedLayoutResult = useMemo(() => {
+    if (!alignmentOffset) return layoutResult;
+    const nodes = layoutResult.nodes.map((node) => ({
+      ...node,
+      position: {
+        x: node.parentId ? node.position.x : node.position.x + alignmentOffset.x,
+        y: node.parentId ? node.position.y : node.position.y + alignmentOffset.y,
+      },
+    }));
+    return { nodes, edges: layoutResult.edges };
+  }, [alignmentOffset, layoutResult]);
 
   /* Light selection pass: just updates node styles */
   const flowElements = useMemo(() => {
-    if (!selectedNodeId && !highlightedNodeId && !searchHighlightedNodeId) return layoutResult;
-    const nodes = layoutResult.nodes.map((node) => {
+    if (!selectedNodeId && !highlightedNodeId && !searchHighlightedNodeId) return positionedLayoutResult;
+    const nodes = positionedLayoutResult.nodes.map((node) => {
       const isSearchTarget = node.id === searchHighlightedNodeId;
       const isSelected = node.id === selectedNodeId || node.id === highlightedNodeId || isSearchTarget;
       if (!isSelected) return node;
@@ -488,8 +563,8 @@ export const SplitGraphPanel = ({
       }
       return { ...baseNode, style: { ...(baseNode.style ?? {}), ...SEARCH_FLASH_STYLE } };
     });
-    return { nodes, edges: layoutResult.edges };
-  }, [layoutResult, selectedNodeId, highlightedNodeId, searchHighlightedNodeId]);
+    return { nodes, edges: positionedLayoutResult.edges };
+  }, [positionedLayoutResult, selectedNodeId, highlightedNodeId, searchHighlightedNodeId]);
 
   /* Search: find matching node ids */
   const searchMatches = useMemo(() => {
@@ -561,10 +636,10 @@ export const SplitGraphPanel = ({
     const tooLarge = size.width > worldVisibleW * 0.8 || size.height > worldVisibleH * 0.8;
 
     if (tooLarge) {
-      const anchorWorldX = abs.x - padding;
+      const centerX = abs.x + size.width / 2;
       const anchorWorldY = abs.y - padding;
       return {
-        x: padding - anchorWorldX * zoom,
+        x: flowSize.width / 2 - centerX * zoom,
         y: padding - anchorWorldY * zoom,
         zoom,
       };
@@ -650,6 +725,63 @@ export const SplitGraphPanel = ({
   const prevFocusRef = useRef<string>("");
 
   useEffect(() => {
+    const worker = new Worker(new URL("../workers/layoutWorker.ts", import.meta.url), { type: "module" });
+    layoutWorkerRef.current = worker;
+
+    const handleMessage = (event: MessageEvent<LayoutWorkerResponse>): void => {
+      const data = event.data;
+      if (data.requestId !== layoutRequestIdRef.current) return;
+      if (!data.ok) {
+        setWorkerFailed(true);
+        return;
+      }
+      setLayoutResult({ nodes: data.result.nodes as Node[], edges: data.result.edges as Edge[] });
+    };
+
+    const handleError = (): void => {
+      setWorkerFailed(true);
+    };
+
+    worker.addEventListener("message", handleMessage as EventListener);
+    worker.addEventListener("error", handleError as EventListener);
+    setWorkerReady(true);
+
+    return () => {
+      worker.removeEventListener("message", handleMessage as EventListener);
+      worker.removeEventListener("error", handleError as EventListener);
+      worker.terminate();
+      layoutWorkerRef.current = null;
+      setWorkerReady(false);
+    };
+  }, []);
+
+  useEffect(() => {
+    const requestId = layoutRequestIdRef.current + 1;
+    layoutRequestIdRef.current = requestId;
+
+    if (workerFailed) {
+      const fallbackTimer = window.setTimeout(() => {
+        if (requestId !== layoutRequestIdRef.current) return;
+        setLayoutResult(computeLayoutSync());
+      }, 0);
+      return () => {
+        window.clearTimeout(fallbackTimer);
+      };
+    }
+
+    if (!workerReady || !layoutWorkerRef.current) return;
+
+    const payload: LayoutWorkerRequest = {
+      requestId,
+      graph,
+      viewType,
+      showCalls,
+      fileEntries,
+    };
+    layoutWorkerRef.current.postMessage(payload);
+  }, [computeLayoutSync, fileEntries, graph, showCalls, viewType, workerFailed, workerReady]);
+
+  useEffect(() => {
     const el = flowContainerRef.current;
     if (!el) return;
     const update = (): void => {
@@ -691,6 +823,19 @@ export const SplitGraphPanel = ({
       .filter((entry): entry is GraphDiffTarget => entry !== null);
     onDiffTargetsChange(side, targets);
   }, [onDiffTargetsChange, side, graph.nodes, flowElements.nodes, nodeAbsolutePosition, viewportForNode]);
+
+  useEffect(() => {
+    if (!onTopLevelAnchorsChange) return;
+    const graphNodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+    const anchors: Record<string, { x: number; y: number }> = {};
+    for (const node of layoutResult.nodes) {
+      if (node.parentId) continue;
+      const gn = graphNodeById.get(node.id);
+      if (!gn || gn.kind !== "group") continue;
+      anchors[stableNodeKey(gn)] = { x: node.position.x, y: node.position.y };
+    }
+    onTopLevelAnchorsChange(side, anchors);
+  }, [graph.nodes, layoutResult.nodes, onTopLevelAnchorsChange, side]);
 
   useEffect(() => {
     if (!searchQuery || searchQuery.length < 2 || searchMatches.length === 0) return;
@@ -755,18 +900,16 @@ export const SplitGraphPanel = ({
         >
           <Background />
           {!isOld && <Controls />}
-          {!isOld && (
-            <MiniMap
-              pannable
-              zoomable
-              bgColor="#0b1120"
-              maskColor="rgba(148, 163, 184, 0.2)"
-              maskStrokeColor="#cbd5e1"
-              nodeColor={minimapNodeColor}
-              nodeStrokeColor={minimapNodeStrokeColor}
-              nodeStrokeWidth={2}
-            />
-          )}
+          <MiniMap
+            pannable
+            zoomable
+            bgColor="#0b1120"
+            maskColor="rgba(148, 163, 184, 0.2)"
+            maskStrokeColor="#cbd5e1"
+            nodeColor={minimapNodeColor}
+            nodeStrokeColor={minimapNodeStrokeColor}
+            nodeStrokeWidth={2}
+          />
         </ReactFlow>
       </div>
     </section>

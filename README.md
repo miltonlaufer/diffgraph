@@ -236,7 +236,7 @@ If the default port (4177) is busy, the server automatically finds the next avai
 
 - Old graph shows only nodes that existed before; New graph shows only nodes that exist after
 - Added/Removed/Modified legend appears only on the New panel
-- Controls and MiniMap appear only on the New panel
+- Controls appear only on the New panel; MiniMap appears on both Old and New panels
 - Both panels share synchronized pan/zoom
 - In logic view, dragging the canvas works from node areas too (you are not limited to empty background)
 

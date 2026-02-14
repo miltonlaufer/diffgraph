@@ -1,0 +1,64 @@
+import { describe, it, expect } from "vitest";
+import { PyAnalyzer } from "../src/core/parsing/pyAnalyzer.js";
+
+describe("PyAnalyzer control flow", () => {
+  it("builds correct false edges for elif chains and sequential guard ifs", async () => {
+    const analyzer = new PyAnalyzer();
+    const graph = await analyzer.analyze("repo", "snap", "ref", [
+      {
+        path: "sample.py",
+        content: [
+          "def render(frontend_dynamic_timing_override, is_paid_user):",
+          "    if frontend_dynamic_timing_override is not None:",
+          "        if is_paid_user:",
+          "            x = 1",
+          "    elif is_paid_user:",
+          "        x = 2",
+          "",
+          "def auth(user):",
+          "    if not user:",
+          "        raise HTTPException(status_code=404)",
+          "    if user.status == -2:",
+          "        raise HTTPException(status_code=403)",
+          "",
+        ].join("\n"),
+      },
+    ]);
+
+    const branchNodes = graph.nodes.filter((node) => node.kind === "Branch");
+    const byStart = new Map<number, string>();
+    for (const node of branchNodes) {
+      if (node.startLine) byStart.set(node.startLine, node.id);
+    }
+
+    const if2145 = byStart.get(2);
+    const nestedIf2147 = byStart.get(3);
+    const elif2150 = byStart.get(5);
+    const if2097 = byStart.get(9);
+    const if2099 = byStart.get(11);
+    const raise404 = byStart.get(10);
+    const raise403 = byStart.get(12);
+
+    expect(if2145).toBeTruthy();
+    expect(nestedIf2147).toBeTruthy();
+    expect(elif2150).toBeTruthy();
+    expect(if2097).toBeTruthy();
+    expect(if2099).toBeTruthy();
+    expect(raise404).toBeTruthy();
+    expect(raise403).toBeTruthy();
+
+    const flowEdges = graph.edges.filter((edge) => edge.kind === "CALLS");
+    const hasEdge = (source: string, target: string, flowType: "true" | "false" | "next"): boolean =>
+      flowEdges.some(
+        (edge) => edge.source === source
+          && edge.target === target
+          && (edge.metadata?.flowType as string | undefined) === flowType,
+      );
+
+    expect(hasEdge(if2145!, nestedIf2147!, "true")).toBe(true);
+    expect(hasEdge(if2145!, elif2150!, "false")).toBe(true);
+    expect(hasEdge(if2097!, raise404!, "true")).toBe(true);
+    expect(hasEdge(if2097!, if2099!, "false")).toBe(true);
+    expect(hasEdge(if2099!, raise403!, "true")).toBe(true);
+  });
+});

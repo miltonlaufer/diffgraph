@@ -15,6 +15,9 @@ interface DiamondNodeData {
   selected: boolean;
   codeContext?: unknown;
   language?: string;
+  functionName?: string;
+  symbolName?: string;
+  filePath?: string;
 }
 
 const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
@@ -54,10 +57,45 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
       </div>
       <Handle type="target" position={Position.Top} style={{ transform: "rotate(-45deg)" }} />
       <Handle type="source" position={Position.Right} id="yes" style={{ transform: "rotate(-45deg)", top: "25%" }} />
-      <span style={{ position: "absolute", right: -6, top: "15%", transform: "rotate(-45deg)", fontSize: 9, color: "#4ade80", fontWeight: 600 }}>T</span>
+      <span
+        style={{
+          position: "absolute",
+          right: -10,
+          top: "14%",
+          transform: "rotate(-45deg)",
+          fontSize: 14,
+          color: "#4ade80",
+          fontWeight: 800,
+          textShadow: "0 0 8px rgba(34, 197, 94, 0.55)",
+          lineHeight: 1,
+        }}
+      >
+        T
+      </span>
       <Handle type="source" position={Position.Bottom} id="no" style={{ transform: "rotate(-45deg)" }} />
-      <span style={{ position: "absolute", bottom: -6, left: "15%", transform: "rotate(-45deg)", fontSize: 9, color: "#f87171", fontWeight: 600 }}>F</span>
-      <CodeTooltip visible={hovered} codeContext={data.codeContext as string | undefined} language={data.language} />
+      <span
+        style={{
+          position: "absolute",
+          bottom: -10,
+          left: "13%",
+          transform: "rotate(-45deg)",
+          fontSize: 14,
+          color: "#f87171",
+          fontWeight: 800,
+          textShadow: "0 0 8px rgba(248, 113, 113, 0.55)",
+          lineHeight: 1,
+        }}
+      >
+        F
+      </span>
+      <CodeTooltip
+        visible={hovered}
+        codeContext={data.codeContext as string | undefined}
+        language={data.language}
+        functionName={data.functionName}
+        symbolName={data.symbolName}
+        filePath={data.filePath}
+      />
     </div>
   );
 };

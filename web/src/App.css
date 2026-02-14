@@ -5,6 +5,7 @@
   color: #e2e8f0;
   box-sizing: border-box;
   padding: 12px;
+  position: relative;
 }
 
 .appHeader {
@@ -93,6 +94,30 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  position: relative;
+}
+
+.interactionOverlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(2, 6, 23, 0.62);
+  backdrop-filter: blur(1px);
+}
+
+.interactionOverlayGlobal {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+}
+
+.interactionOverlayLocal {
+  position: absolute;
+  inset: 0;
+  z-index: 90;
+  border-radius: 10px;
 }
 
 .logicToolbar {

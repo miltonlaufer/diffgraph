@@ -15,6 +15,9 @@ interface ProcessNodeData {
   selected: boolean;
   codeContext?: unknown;
   language?: string;
+  functionName?: string;
+  symbolName?: string;
+  filePath?: string;
 }
 
 const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
@@ -51,7 +54,14 @@ const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
       )}
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
-      <CodeTooltip visible={hovered} codeContext={data.codeContext as string | undefined} language={data.language} />
+      <CodeTooltip
+        visible={hovered}
+        codeContext={data.codeContext as string | undefined}
+        language={data.language}
+        functionName={data.functionName}
+        symbolName={data.symbolName}
+        filePath={data.filePath}
+      />
     </div>
   );
 };
