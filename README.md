@@ -10,16 +10,38 @@ It supports:
 
 ## 60-Second Quick Start
 
+Install once in this project:
+
 ```bash
 npm install
 npm run build
 npm link
+```
+
+Then go to the repo you want to inspect and run:
+
+```bash
+cd /path/to/your-repo
+diffgraph staged
+diffgraph -b main feature/your-feature-branch
+diffgraph staged --staged-only
+```
+
+Quick single-command example from any folder:
+
+```bash
 diffgraph staged --repo /path/to/your-repo
+```
+
+Or run from any folder by passing `--repo`:
+
+```bash
+diffgraph -b main feature/your-feature-branch --repo /path/to/your-repo
 ```
 
 What happens:
 1. `npm link` installs a global `diffgraph` command from this project.
-2. You can run `diffgraph` from any folder, targeting any repo with `--repo`.
+2. You can run `diffgraph` inside the target repo directly, or from any folder with `--repo`.
 3. DiffGraph analyzes uncommitted changes, starts a local server on `http://localhost:4177` (or next free port), and opens the browser.
 
 ## Visual Preview
