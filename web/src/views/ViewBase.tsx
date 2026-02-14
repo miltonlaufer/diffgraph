@@ -598,6 +598,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
           fileContentMap={newFileContentMap}
           onDiffTargetsChange={handleDiffTargetsChange}
           alignmentOffset={newAlignmentOffset}
+          alignmentAnchors={oldTopAnchors}
           onTopLevelAnchorsChange={handleTopLevelAnchorsChange}
         />
       </div>

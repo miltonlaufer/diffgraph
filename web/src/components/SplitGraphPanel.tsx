@@ -59,6 +59,7 @@ interface SplitGraphPanelProps {
   fileContentMap: Map<string, string>;
   onDiffTargetsChange?: (side: "old" | "new", targets: GraphDiffTarget[]) => void;
   alignmentOffset?: { x: number; y: number };
+  alignmentAnchors?: Record<string, { x: number; y: number }>;
   onTopLevelAnchorsChange?: (side: "old" | "new", anchors: Record<string, { x: number; y: number }>) => void;
 }
 
@@ -526,7 +527,7 @@ const shortenPath = (filePath: string): string => {
 };
 
 export const SplitGraphPanel = ({
-  title, side, graph, viewType, showCalls = true, onNodeSelect, viewport, onViewportChange, selectedNodeId, highlightedNodeId, focusNodeId, focusNodeTick, focusFilePath, diffStats, fileContentMap, onDiffTargetsChange, alignmentOffset, onTopLevelAnchorsChange,
+  title, side, graph, viewType, showCalls = true, onNodeSelect, viewport, onViewportChange, selectedNodeId, highlightedNodeId, focusNodeId, focusNodeTick, focusFilePath, diffStats, fileContentMap, onDiffTargetsChange, alignmentOffset, alignmentAnchors, onTopLevelAnchorsChange,
 }: SplitGraphPanelProps) => {
   /******************* STORE ***********************/
   const [searchQuery, setSearchQuery] = useState("");
@@ -553,16 +554,33 @@ export const SplitGraphPanel = ({
     [graph, isLogic, fileContentMap, showCalls],
   );
   const positionedLayoutResult = useMemo(() => {
-    if (!alignmentOffset) return layoutResult;
+    if (!alignmentOffset && !alignmentAnchors) return layoutResult;
+    const graphNodeById = new Map(graph.nodes.map((n) => [n.id, n]));
     const nodes = layoutResult.nodes.map((node) => ({
       ...node,
       position: {
-        x: node.parentId ? node.position.x : node.position.x + alignmentOffset.x,
-        y: node.parentId ? node.position.y : node.position.y + alignmentOffset.y,
+        x: (() => {
+          if (node.parentId) return node.position.x;
+          const graphNode = graphNodeById.get(node.id);
+          if (graphNode && graphNode.kind === "group" && alignmentAnchors) {
+            const anchored = alignmentAnchors[stableNodeKey(graphNode)];
+            if (anchored) return anchored.x;
+          }
+          return alignmentOffset ? node.position.x + alignmentOffset.x : node.position.x;
+        })(),
+        y: (() => {
+          if (node.parentId) return node.position.y;
+          const graphNode = graphNodeById.get(node.id);
+          if (graphNode && graphNode.kind === "group" && alignmentAnchors) {
+            const anchored = alignmentAnchors[stableNodeKey(graphNode)];
+            if (anchored) return anchored.y;
+          }
+          return alignmentOffset ? node.position.y + alignmentOffset.y : node.position.y;
+        })(),
       },
     }));
     return { nodes, edges: layoutResult.edges };
-  }, [alignmentOffset, layoutResult]);
+  }, [alignmentAnchors, alignmentOffset, graph.nodes, layoutResult]);
 
   /* Light selection pass: just updates node styles */
   const flowElements = useMemo(() => {
