@@ -295,11 +295,16 @@ const computeLogicLayout = (
           documentation: node.documentation,
         },
         position: pos, sourcePosition: Position.Bottom, targetPosition: Position.Top,
+        initialWidth: sz.w,
+        initialHeight: sz.h,
         ...(parentOk ? { parentId: node.parentId } : {}),
         style: { width: sz.w, height: sz.h },
       });
     } else {
       const shape = leafNodeShape(node.branchType ?? "");
+      const initialSize = shape === "diamond"
+        ? { width: 120, height: 120 }
+        : { width: LEAF_W, height: LEAF_H };
       const pos = parentOk ? (childPos.get(node.id) ?? { x: 0, y: 0 }) : (topPos.get(node.id) ?? { x: 0, y: 0 });
       const normalizedFilePath = normPath(node.filePath);
       const fileContent = fileContentMap.get(normalizedFilePath) ?? "";
@@ -318,6 +323,8 @@ const computeLogicLayout = (
         id: node.id, type: shape,
         data: { label: node.label, bgColor: nodeBg, textColor: nodeTxt, selected: sel, codeContext, language: nodeLang },
         position: pos, sourcePosition: Position.Bottom, targetPosition: Position.Top,
+        initialWidth: initialSize.width,
+        initialHeight: initialSize.height,
         ...(parentOk ? { parentId: node.parentId } : {}),
       });
     }
@@ -412,6 +419,8 @@ const computeFlatLayout = (
       },
       position: { x: (p?.x ?? 0) - NODE_W / 2, y: (p?.y ?? 0) - NODE_H / 2 },
       sourcePosition: Position.Right, targetPosition: Position.Left,
+      initialWidth: NODE_W,
+      initialHeight: NODE_H,
     };
   });
   const edges: Edge[] = graph.edges.map((edge) => ({
@@ -571,6 +580,17 @@ export const SplitGraphPanel = ({
   }, [flowSize.height, flowSize.width, nodeAbsolutePosition, nodeSize]);
 
   const flowStyle = useMemo(() => ({ width: "100%", height: "100%" }), []);
+  const minimapNodeColor = useCallback((node: Node): string => {
+    const data = node.data as { bgColor?: unknown } | undefined;
+    if (data && typeof data.bgColor === "string" && data.bgColor.length > 0) {
+      return data.bgColor;
+    }
+    return "#94a3b8";
+  }, []);
+  const minimapNodeStrokeColor = useCallback((node: Node): string => {
+    const data = node.data as { selected?: unknown } | undefined;
+    return data?.selected ? "#f8fafc" : "#1e293b";
+  }, []);
   const stats = useMemo(() => {
     if (diffStats) return diffStats;
     return { added: graph.nodes.filter((n) => n.diffStatus === "added").length, removed: graph.nodes.filter((n) => n.diffStatus === "removed").length, modified: graph.nodes.filter((n) => n.diffStatus === "modified").length };
@@ -735,7 +755,18 @@ export const SplitGraphPanel = ({
         >
           <Background />
           {!isOld && <Controls />}
-          {!isOld && <MiniMap pannable zoomable />}
+          {!isOld && (
+            <MiniMap
+              pannable
+              zoomable
+              bgColor="#0b1120"
+              maskColor="rgba(148, 163, 184, 0.2)"
+              maskStrokeColor="#cbd5e1"
+              nodeColor={minimapNodeColor}
+              nodeStrokeColor={minimapNodeStrokeColor}
+              nodeStrokeWidth={2}
+            />
+          )}
         </ReactFlow>
       </div>
     </section>
