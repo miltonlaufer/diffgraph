@@ -77,6 +77,9 @@ const buildBranchName = (node: Node): string | null => {
   if (Node.isReturnStatement(node)) {
     return "return";
   }
+  if (Node.isThrowStatement(node)) {
+    return "throw";
+  }
   if (Node.isExpressionStatement(node) && isCallLikeExpression(node.getExpression())) {
     return "call";
   }
@@ -168,7 +171,11 @@ const extractReturnType = (node: Node): string => {
     Node.isGetAccessorDeclaration(node) ||
     Node.isSetAccessorDeclaration(node)
   ) {
-    explicit = normalizeInline(node.getReturnTypeNode()?.getText() ?? "");
+    try {
+      explicit = normalizeInline(node.getReturnTypeNode()?.getText() ?? "");
+    } catch {
+      explicit = "";
+    }
   }
   if (explicit.length > 0) return explicit;
   if (Node.isSetAccessorDeclaration(node)) return "void";
@@ -180,8 +187,12 @@ const extractReturnType = (node: Node): string => {
     Node.isGetAccessorDeclaration(node) ||
     Node.isSetAccessorDeclaration(node)
   ) {
-    const inferred = normalizeInline(node.getReturnType().getText(node));
-    return inferred || "";
+    try {
+      const inferred = normalizeInline(node.getReturnType().getText(node));
+      return inferred || "";
+    } catch {
+      return "";
+    }
   }
   return "";
 };
@@ -453,7 +464,7 @@ export class TsAnalyzer {
         snapshotId,
         ref,
       });
-      this.collectControlFlow(declaration, varNode, snapshotId, ref, nodes, edges);
+      this.collectControlFlow(initializer, varNode, snapshotId, ref, nodes, edges);
     }
   }
 
@@ -570,7 +581,14 @@ export class TsAnalyzer {
     nodes: GraphNode[],
     edges: GraphEdge[],
   ): void {
+    type FlowType = "true" | "false" | "next";
+    interface ExitAnchor {
+      sourceId: string;
+      flowType: FlowType;
+    }
+
     const branchCounter = new Map<string, number>();
+    const flowEdgeKeys = new Set<string>();
 
     const buildSnippet = (node: Node, branchKind: string): string => {
       const trim = (s: string, max: number): string => s.length > max ? `${s.slice(0, max - 3)}...` : s;
@@ -613,8 +631,43 @@ export class TsAnalyzer {
       return trim(firstLine, 60);
     };
 
+    const knownBooleanLiteral = (expr: Node): boolean | undefined => {
+      if (Node.isParenthesizedExpression(expr)) {
+        return knownBooleanLiteral(expr.getExpression());
+      }
+      if (Node.isTrueLiteral(expr)) return true;
+      if (Node.isFalseLiteral(expr)) return false;
+      if (Node.isPrefixUnaryExpression(expr) && expr.getOperatorToken() === SyntaxKind.ExclamationToken) {
+        const inner = knownBooleanLiteral(expr.getOperand());
+        return inner === undefined ? undefined : !inner;
+      }
+      return undefined;
+    };
+
+    const addFlowEdge = (sourceId: string, targetId: string, flowType: FlowType): void => {
+      const dedupKey = `${sourceId}:${targetId}:${flowType}`;
+      if (flowEdgeKeys.has(dedupKey)) return;
+      flowEdgeKeys.add(dedupKey);
+      edges.push({
+        id: stableHash(`${snapshotId}:flow:${sourceId}:${targetId}:${flowType}`),
+        source: sourceId,
+        target: targetId,
+        kind: "CALLS",
+        filePath: ownerNode.filePath,
+        metadata: { flowType },
+        snapshotId,
+        ref,
+      });
+    };
+
     const makeBranchNode = (node: Node): GraphNode => {
-      const branchKind = buildBranchName(node) ?? "unknown";
+      let branchKind = buildBranchName(node) ?? "unknown";
+      if (branchKind === "if" && Node.isIfStatement(node)) {
+        const parentIf = node.getParentIfKind(SyntaxKind.IfStatement);
+        if (parentIf && parentIf.getElseStatement() === node) {
+          branchKind = "elif";
+        }
+      }
       const idx = branchCounter.get(branchKind) ?? 0;
       branchCounter.set(branchKind, idx + 1);
       const line = node.getStartLineNumber();
@@ -656,6 +709,18 @@ export class TsAnalyzer {
       };
     };
 
+    const addDeclaresEdge = (branchNode: GraphNode): void => {
+      edges.push({
+        id: stableHash(`${snapshotId}:declares:${ownerNode.id}:${branchNode.id}`),
+        source: ownerNode.id,
+        target: branchNode.id,
+        kind: "DECLARES",
+        filePath: ownerNode.filePath,
+        snapshotId,
+        ref,
+      });
+    };
+
     /** Get direct statements from a block-like node */
     const getStatements = (node: Node): Node[] => {
       if (Node.isBlock(node)) {
@@ -683,94 +748,150 @@ export class TsAnalyzer {
       return [node];
     };
 
-    /** Recursively collect control flow from a block of statements */
-    const walkBlock = (block: Node, parentGraphNode: GraphNode): void => {
+    const statementFallsThrough = (stmt: Node): boolean => {
+      if (Node.isReturnStatement(stmt) || Node.isThrowStatement(stmt)) return false;
+      if (Node.isIfStatement(stmt)) {
+        const known = knownBooleanLiteral(stmt.getExpression());
+        const thenFalls = blockFallsThrough(stmt.getThenStatement());
+        const elseStmt = stmt.getElseStatement();
+        const elseFalls = elseStmt ? blockFallsThrough(elseStmt) : true;
+        if (known === true) return thenFalls;
+        if (known === false) return elseFalls;
+        return thenFalls || elseFalls;
+      }
+      return true;
+    };
+
+    const blockFallsThrough = (block: Node): boolean => {
       const statements = getStatements(block);
-      let prevBranch: GraphNode | null = null;
-      let prevIsTerminal = false;
+      let pathOpen = true;
+      for (const stmt of statements) {
+        if (!pathOpen) break;
+        pathOpen = statementFallsThrough(stmt);
+      }
+      return pathOpen;
+    };
+
+    const dedupExits = (exits: ExitAnchor[]): ExitAnchor[] => {
+      const seen = new Set<string>();
+      const out: ExitAnchor[] = [];
+      for (const exit of exits) {
+        const key = `${exit.sourceId}:${exit.flowType}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(exit);
+      }
+      return out;
+    };
+
+    const collectBlock = (block: Node): { entryId: string | null; exits: ExitAnchor[]; fallsThrough: boolean } => {
+      const statements = getStatements(block);
+      let entryId: string | null = null;
+      let pendingExits: ExitAnchor[] = [];
 
       for (const stmt of statements) {
-        const branchKind = buildBranchName(stmt);
-        if (!branchKind) {
-          continue;
+        const result = collectStatement(stmt);
+        if (result.entryId) {
+          if (!entryId) entryId = result.entryId;
+          for (const pending of pendingExits) {
+            addFlowEdge(pending.sourceId, result.entryId, pending.flowType);
+          }
+          pendingExits = result.exits;
+        } else if (!result.fallsThrough) {
+          pendingExits = [];
+        }
+      }
+
+      return { entryId, exits: pendingExits, fallsThrough: blockFallsThrough(block) };
+    };
+
+    const collectStatement = (stmt: Node): { entryId: string | null; exits: ExitAnchor[]; fallsThrough: boolean } => {
+      const branchKind = buildBranchName(stmt);
+      if (!branchKind) {
+        return { entryId: null, exits: [], fallsThrough: statementFallsThrough(stmt) };
+      }
+
+      const branchNode = makeBranchNode(stmt);
+      nodes.push(branchNode);
+      addDeclaresEdge(branchNode);
+
+      if (branchKind === "return" || branchKind === "throw") {
+        return { entryId: branchNode.id, exits: [], fallsThrough: false };
+      }
+
+      if (Node.isIfStatement(stmt)) {
+        const knownTruth = knownBooleanLiteral(stmt.getExpression());
+        const thenReachable = knownTruth !== false;
+        const elseReachable = knownTruth !== true;
+
+        const thenResult = collectBlock(stmt.getThenStatement());
+        const elseStmt = stmt.getElseStatement();
+        const elseResult = elseStmt
+          ? collectBlock(elseStmt)
+          : { entryId: null, exits: [] as ExitAnchor[], fallsThrough: true };
+
+        if (thenResult.entryId && thenReachable) {
+          addFlowEdge(branchNode.id, thenResult.entryId, "true");
+        }
+        if (elseResult.entryId && elseReachable) {
+          addFlowEdge(branchNode.id, elseResult.entryId, "false");
         }
 
-        const branchNode = makeBranchNode(stmt);
-        nodes.push(branchNode);
-
-        /* DECLARES edge: parent owns this branch */
-        edges.push({
-          id: stableHash(`${snapshotId}:declares:${parentGraphNode.id}:${branchNode.id}`),
-          source: parentGraphNode.id,
-          target: branchNode.id,
-          kind: "DECLARES",
-          filePath: ownerNode.filePath,
-          snapshotId,
-          ref,
-        });
-
-        /* Flow edge: connect to previous sibling (unless previous was a return/terminal) */
-        if (prevBranch && !prevIsTerminal) {
-          edges.push({
-            id: stableHash(`${snapshotId}:flow-step:${prevBranch.id}:${branchNode.id}`),
-            source: prevBranch.id,
-            target: branchNode.id,
-            kind: "CALLS",
-            filePath: ownerNode.filePath,
-            snapshotId,
-            ref,
-          });
-        } else if (!prevBranch) {
-          edges.push({
-            id: stableHash(`${snapshotId}:flow-start:${parentGraphNode.id}:${branchNode.id}`),
-            source: parentGraphNode.id,
-            target: branchNode.id,
-            kind: "CALLS",
-            filePath: ownerNode.filePath,
-            snapshotId,
-            ref,
-          });
+        // For if-without-else, continuation is represented from IF node itself.
+        if (!elseStmt) {
+          if (knownTruth === false) {
+            return { entryId: branchNode.id, exits: [{ sourceId: branchNode.id, flowType: "next" }], fallsThrough: true };
+          }
+          if (thenResult.fallsThrough) {
+            return { entryId: branchNode.id, exits: [{ sourceId: branchNode.id, flowType: "next" }], fallsThrough: true };
+          }
+          return { entryId: branchNode.id, exits: [{ sourceId: branchNode.id, flowType: "false" }], fallsThrough: true };
         }
 
-        prevBranch = branchNode;
-        prevIsTerminal = branchKind === "return";
+        const exits: ExitAnchor[] = [];
+        if (thenReachable) {
+          exits.push(...thenResult.exits);
+          if (!thenResult.entryId && thenResult.fallsThrough) {
+            exits.push({ sourceId: branchNode.id, flowType: "true" });
+          }
+        }
+        if (elseReachable) {
+          exits.push(...elseResult.exits);
+          if (!elseResult.entryId && elseResult.fallsThrough) {
+            exits.push({ sourceId: branchNode.id, flowType: "false" });
+          }
+        }
+        const fallsThrough = (thenReachable && thenResult.fallsThrough) || (elseReachable && elseResult.fallsThrough);
+        return { entryId: branchNode.id, exits: dedupExits(exits), fallsThrough };
+      }
 
-        /* Recurse into sub-blocks for if/for/while/switch */
-        if (Node.isIfStatement(stmt)) {
-          walkBlock(stmt.getThenStatement(), branchNode);
-          const elseStmt = stmt.getElseStatement();
-          if (elseStmt) {
-            walkBlock(elseStmt, branchNode);
+      if (Node.isForStatement(stmt) || Node.isForOfStatement(stmt) || Node.isForInStatement(stmt) || Node.isWhileStatement(stmt) || Node.isDoStatement(stmt)) {
+        const body = stmt.getStatement();
+        if (body) {
+          const bodyResult = collectBlock(body);
+          if (bodyResult.entryId) {
+            addFlowEdge(branchNode.id, bodyResult.entryId, "true");
           }
-        } else if (Node.isForStatement(stmt) || Node.isForOfStatement(stmt) || Node.isForInStatement(stmt) || Node.isWhileStatement(stmt) || Node.isDoStatement(stmt)) {
-          const body = stmt.getStatement();
-          if (body) {
-            walkBlock(body, branchNode);
-          }
-        } else if (Node.isSwitchStatement(stmt)) {
-          for (const clause of stmt.getClauses()) {
-            for (const clauseStmt of clause.getStatements()) {
-              const innerKind = buildBranchName(clauseStmt);
-              if (innerKind) {
-                const innerNode = makeBranchNode(clauseStmt);
-                nodes.push(innerNode);
-                edges.push({
-                  id: stableHash(`${snapshotId}:declares:${branchNode.id}:${innerNode.id}`),
-                  source: branchNode.id,
-                  target: innerNode.id,
-                  kind: "DECLARES",
-                  filePath: ownerNode.filePath,
-                  snapshotId,
-                  ref,
-                });
-              }
-            }
+        }
+        return { entryId: branchNode.id, exits: [{ sourceId: branchNode.id, flowType: "next" }], fallsThrough: true };
+      }
+
+      if (Node.isSwitchStatement(stmt)) {
+        for (const clause of stmt.getClauses()) {
+          const clauseResult = collectBlock(clause);
+          if (clauseResult.entryId) {
+            addFlowEdge(branchNode.id, clauseResult.entryId, "true");
           }
         }
       }
+
+      return { entryId: branchNode.id, exits: [{ sourceId: branchNode.id, flowType: "next" }], fallsThrough: true };
     };
 
-    walkBlock(root, ownerNode);
+    const rootResult = collectBlock(root);
+    if (rootResult.entryId) {
+      addFlowEdge(ownerNode.id, rootResult.entryId, "next");
+    }
   }
 
   private collectCallsAndRenders(
