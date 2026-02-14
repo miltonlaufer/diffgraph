@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import parseGitDiff from "parse-git-diff";
 
 const execFileAsync = promisify(execFile);
@@ -10,10 +11,20 @@ export type DiffMode =
   | { type: "files"; oldFile: string; newFile: string }
   | { type: "branches"; baseBranch: string; targetBranch: string };
 
+export type DiffFileStatus = "added" | "deleted" | "modified" | "renamed" | "copied" | "type-changed" | "unknown";
+
+export interface DiffFilePair {
+  path: string;
+  oldPath: string;
+  newPath: string;
+  status: DiffFileStatus;
+}
+
 export interface DiffPayload {
   oldRef: string;
   newRef: string;
   files: string[];
+  filePairs: DiffFilePair[];
   oldFiles: Array<{ path: string; content: string }>;
   newFiles: Array<{ path: string; content: string }>;
   hunksByPath: Map<string, string[]>;
@@ -48,10 +59,19 @@ export class DiffProvider {
   private async fromFiles(oldFile: string, newFile: string): Promise<DiffPayload> {
     const [oldContent, newContent] = await Promise.all([readFile(oldFile, "utf8"), readFile(newFile, "utf8")]);
     const path = newFile;
+    const filePairs: DiffFilePair[] = [
+      {
+        path,
+        oldPath: oldFile,
+        newPath: newFile,
+        status: oldFile === newFile ? "modified" : "renamed",
+      },
+    ];
     return {
       oldRef: oldFile,
       newRef: newFile,
       files: [path],
+      filePairs,
       oldFiles: [{ path, content: oldContent }],
       newFiles: [{ path, content: newContent }],
       hunksByPath: new Map([[path, [`--- ${oldFile}`, `+++ ${newFile}`]]]),
@@ -59,23 +79,22 @@ export class DiffProvider {
   }
 
   private async fromBranches(baseBranch: string, targetBranch: string, repoPath: string): Promise<DiffPayload> {
-    const diffText = await textFromGit(["diff", `${baseBranch}...${targetBranch}`], repoPath);
-    const nameOnly = await textFromGit(["diff", "--name-only", `${baseBranch}...${targetBranch}`], repoPath);
-    const files = nameOnly
-      .split("\n")
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0);
+    const diffRange = `${baseBranch}...${targetBranch}`;
+    const diffText = await textFromGit(["diff", "-M", diffRange], repoPath);
+    const nameStatus = await textFromGit(["diff", "--name-status", "-M", diffRange], repoPath);
+    const filePairs = this.parseFilePairs(nameStatus);
+    const files = filePairs.map((pair) => pair.path);
 
     const oldFiles = await Promise.all(
-      files.map(async (path) => ({
-        path,
-        content: await safeGitShow(repoPath, `${baseBranch}:${path}`),
+      filePairs.map(async (pair) => ({
+        path: pair.path,
+        content: pair.status === "added" ? "" : await safeGitShow(repoPath, `${baseBranch}:${pair.oldPath}`),
       })),
     );
     const newFiles = await Promise.all(
-      files.map(async (path) => ({
-        path,
-        content: await safeGitShow(repoPath, `${targetBranch}:${path}`),
+      filePairs.map(async (pair) => ({
+        path: pair.path,
+        content: pair.status === "deleted" ? "" : await safeGitShow(repoPath, `${targetBranch}:${pair.newPath}`),
       })),
     );
 
@@ -83,6 +102,7 @@ export class DiffProvider {
       oldRef: baseBranch,
       newRef: targetBranch,
       files,
+      filePairs,
       oldFiles,
       newFiles,
       hunksByPath: this.extractHunks(diffText),
@@ -90,18 +110,14 @@ export class DiffProvider {
   }
 
   private async fromStaged(repoPath: string, includeUnstaged: boolean): Promise<DiffPayload> {
-    const stagedDiff = await textFromGit(["diff", "--staged"], repoPath);
-    const stagedNames = await textFromGit(["diff", "--name-only", "--staged"], repoPath);
-    const unstagedNames = includeUnstaged ? await textFromGit(["diff", "--name-only"], repoPath) : "";
-    const stagedFiles = stagedNames
-      .split("\n")
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-    const extraFiles = unstagedNames
-      .split("\n")
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-    const files = [...new Set([...stagedFiles, ...extraFiles])];
+    const diffArgs = includeUnstaged ? ["diff", "-M", "HEAD"] : ["diff", "-M", "--staged"];
+    const statusArgs = includeUnstaged
+      ? ["diff", "--name-status", "-M", "HEAD"]
+      : ["diff", "--name-status", "-M", "--staged"];
+    const diffText = await textFromGit(diffArgs, repoPath);
+    const nameStatus = await textFromGit(statusArgs, repoPath);
+    const filePairs = this.parseFilePairs(nameStatus);
+    const files = filePairs.map((pair) => pair.path);
     if (files.length === 0) {
       throw new Error(
         includeUnstaged
@@ -111,27 +127,90 @@ export class DiffProvider {
     }
 
     const oldFiles = await Promise.all(
-      files.map(async (path) => ({
-        path,
-        content: await safeGitShow(repoPath, `HEAD:${path}`),
+      filePairs.map(async (pair) => ({
+        path: pair.path,
+        content: pair.status === "added" ? "" : await safeGitShow(repoPath, `HEAD:${pair.oldPath}`),
       })),
     );
     const newFiles = await Promise.all(
-      files.map(async (path) => ({
-        path,
-        content: await readFile(`${repoPath}/${path}`, "utf8").catch(() => ""),
+      filePairs.map(async (pair) => ({
+        path: pair.path,
+        content: await this.readNewContentFromStagedMode(pair, repoPath, includeUnstaged),
       })),
     );
 
-    const combinedDiff = includeUnstaged ? `${stagedDiff}\n${await textFromGit(["diff"], repoPath)}` : stagedDiff;
     return {
       oldRef: "HEAD",
       newRef: includeUnstaged ? "WORKTREE" : "INDEX",
       files,
+      filePairs,
       oldFiles,
       newFiles,
-      hunksByPath: this.extractHunks(combinedDiff),
+      hunksByPath: this.extractHunks(diffText),
     };
+  }
+
+  private async readNewContentFromStagedMode(
+    pair: DiffFilePair,
+    repoPath: string,
+    includeUnstaged: boolean,
+  ): Promise<string> {
+    if (pair.status === "deleted") {
+      return "";
+    }
+    if (includeUnstaged) {
+      return readFile(join(repoPath, pair.newPath), "utf8").catch(() => "");
+    }
+    return safeGitShow(repoPath, `:${pair.newPath}`);
+  }
+
+  private parseFilePairs(nameStatusText: string): DiffFilePair[] {
+    const pairs: DiffFilePair[] = [];
+    const seen = new Set<string>();
+    for (const rawLine of nameStatusText.split("\n")) {
+      const line = rawLine.trim();
+      if (line.length === 0) {
+        continue;
+      }
+      const parts = line.split("\t");
+      const statusToken = parts[0] ?? "";
+      const status = this.mapStatus(statusToken);
+      let oldPath = "";
+      let newPath = "";
+      if ((statusToken.startsWith("R") || statusToken.startsWith("C")) && parts.length >= 3) {
+        oldPath = parts[1] ?? "";
+        newPath = parts[2] ?? "";
+      } else {
+        oldPath = parts[1] ?? "";
+        newPath = parts[1] ?? "";
+      }
+      const displayPath = status === "deleted" ? oldPath : newPath;
+      if (!displayPath) {
+        continue;
+      }
+      const key = `${displayPath}:${oldPath}:${newPath}:${status}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      pairs.push({
+        path: displayPath,
+        oldPath: oldPath || displayPath,
+        newPath: newPath || displayPath,
+        status,
+      });
+    }
+    return pairs;
+  }
+
+  private mapStatus(token: string): DiffFileStatus {
+    if (token.startsWith("A")) return "added";
+    if (token.startsWith("D")) return "deleted";
+    if (token.startsWith("M")) return "modified";
+    if (token.startsWith("R")) return "renamed";
+    if (token.startsWith("C")) return "copied";
+    if (token.startsWith("T")) return "type-changed";
+    return "unknown";
   }
 
   private extractHunks(diffText: string): Map<string, string[]> {

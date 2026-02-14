@@ -11,7 +11,7 @@ const isPortFree = (port: number): Promise<boolean> =>
   new Promise((res) => {
     const tester = createNetServer();
     tester.once("error", () => res(false));
-    tester.listen(port, () => {
+    tester.listen(port, "127.0.0.1", () => {
       tester.close(() => res(true));
     });
   });
@@ -64,7 +64,7 @@ export const runDiff = async (
   }
   const server = createServer(app);
   await new Promise<void>((resolveServer) => {
-    server.listen(port, resolveServer);
+    server.listen(port, "127.0.0.1", resolveServer);
   });
   const url = `http://localhost:${port}/?diffId=${result.diffId}`;
 

@@ -8,6 +8,38 @@ It supports:
 - React/frontend structure change view
 - split screen visualization (old on the left, new on the right)
 
+## 60-Second Quick Start
+
+```bash
+npm install
+npm run build
+node dist/src/cli/index.js staged
+```
+
+What happens:
+1. DiffGraph analyzes your current uncommitted changes.
+2. It starts a local server on `http://localhost:4177` (or next free port).
+3. It opens the browser so you can review structural changes immediately.
+
+## Visual Preview
+
+![DiffGraph](web/public/diffgraph.svg)
+
+| Code Diff | Logic View | Symbols View |
+| --- | --- | --- |
+| ![Code Diff](docs/images/codediff.png) | ![Logic View](docs/images/logic.png) | ![Symbols View](docs/images/symbols.png) |
+
+## When To Use DiffGraph vs `git diff`
+
+- Use `git diff` when:
+  - you need exact line patches quickly
+  - the change is very small and localized
+  - you are editing commit messages or patching directly
+- Use DiffGraph when:
+  - you want fast understanding of flow/structure impact
+  - changes touch multiple files/symbols
+  - you want to jump graph <-> code and review by risk first
+
 ## Requirements
 
 - Node.js 20+ (recommended)
@@ -54,7 +86,7 @@ export NEO4J_PASSWORD=your_password
 After `npm run build`, run:
 
 ```bash
-node dist/cli/index.js <command>
+node dist/src/cli/index.js <command>
 ```
 
 ## Using DiffGraph in Other Repositories
@@ -64,15 +96,15 @@ You can use this project as a central tool to analyze any repository on your mac
 ### Option 1: Run from this project with `--repo` (recommended)
 
 ```bash
-node dist/cli/index.js staged --repo /path/to/other-repo
-node dist/cli/index.js -b main feature --repo /path/to/other-repo
-node dist/cli/index.js analyze --repo /path/to/other-repo --ref WORKTREE
+node dist/src/cli/index.js staged --repo /path/to/other-repo
+node dist/src/cli/index.js -b main feature --repo /path/to/other-repo
+node dist/src/cli/index.js analyze --repo /path/to/other-repo --ref WORKTREE
 ```
 
 For file-to-file mode, pass two explicit file paths:
 
 ```bash
-node dist/cli/index.js -ff /path/to/file_old.ts /path/to/file_new.ts
+node dist/src/cli/index.js -ff /path/to/file_old.ts /path/to/file_new.ts
 ```
 
 ### Option 2: Install a global local command with `npm link`
@@ -110,13 +142,13 @@ This is useful while developing, but the built CLI is preferred for normal usage
 By default, `staged` compares **all uncommitted changes** (staged + unstaged) against `HEAD`:
 
 ```bash
-node dist/cli/index.js staged
+node dist/src/cli/index.js staged
 ```
 
 Use only staged changes:
 
 ```bash
-node dist/cli/index.js staged --staged-only
+node dist/src/cli/index.js staged --staged-only
 ```
 
 Quick rule of thumb:
@@ -128,7 +160,7 @@ If `--staged-only` appears empty, run `git add <files>` first.
 Use custom repo path and port:
 
 ```bash
-node dist/cli/index.js staged --repo /path/to/repo --port 4177
+node dist/src/cli/index.js staged --repo /path/to/repo --port 4177
 ```
 
 ### 2) File-to-file mode (`-ff`)
@@ -136,7 +168,7 @@ node dist/cli/index.js staged --repo /path/to/repo --port 4177
 Compare two files directly:
 
 ```bash
-node dist/cli/index.js -ff old_version.ts new_version.ts
+node dist/src/cli/index.js -ff old_version.ts new_version.ts
 ```
 
 ### 3) Branch-to-branch mode (`-b`)
@@ -144,13 +176,13 @@ node dist/cli/index.js -ff old_version.ts new_version.ts
 Compare two branches:
 
 ```bash
-node dist/cli/index.js -b main feature
+node dist/src/cli/index.js -b main feature
 ```
 
 With repo path:
 
 ```bash
-node dist/cli/index.js -b branch1 branch2 --repo /path/to/repo
+node dist/src/cli/index.js -b branch1 branch2 --repo /path/to/repo
 ```
 
 ### 4) Analyze snapshot only
@@ -158,7 +190,7 @@ node dist/cli/index.js -b branch1 branch2 --repo /path/to/repo
 Create and persist a graph snapshot for a reference label:
 
 ```bash
-node dist/cli/index.js analyze --repo /path/to/repo --ref WORKTREE
+node dist/src/cli/index.js analyze --repo /path/to/repo --ref WORKTREE
 ```
 
 ## Browser Behavior
@@ -189,12 +221,14 @@ If the default port (4177) is busy, the server automatically finds the next avai
 
 - **Click a node** -- highlights it (cyan border + glow), selects its file below, and scrolls the code diff to that line
 - **Click a file pill** -- selects the file, scrolls graphs to related nodes, shows its code diff
+- **Risk-ranked file list** -- changed files are sorted by deterministic risk score (graph connectivity + change type + churn)
 - **Escape** -- deselects node and file
 - **Changes Only** (on by default) -- keeps changed nodes plus required context (hierarchy ancestors and relevant invoke neighbors in Logic view). Toggle off to show full graph.
 - **Show calls** (Logic tab) -- show/hide invoke edges to reduce visual noise
 - **Graph diff navigation** (Logic tab, up/down arrows) -- jumps across graph-level changes (added/removed/modified nodes) and temporarily highlights the focused node
 - **Graph search** (per panel) -- search nodes by text, use up/down arrows to jump matches; matched node is focused and highlighted
 - **Hover function/group headers** -- tooltip includes documentation (JSDoc/docstring), parameters with types, return type, and class/file metadata when available
+- **Risk-ranked symbols** -- functions/methods/classes inside a file are sorted by deterministic risk score to prioritize review order
 
 ### Code diff panel
 

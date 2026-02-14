@@ -13,6 +13,10 @@ export const FileListPanel = ({ files, selectedFilePath, onFileSelect }: FileLis
 
   /******************* COMPUTED ***********************/
   const count = useMemo(() => files.length, [files.length]);
+  const topRisk = useMemo(
+    () => files.reduce((max, file) => Math.max(max, file.riskScore ?? 0), 0),
+    [files],
+  );
 
   /******************* FUNCTIONS ***********************/
   const handleClick = useCallback(
@@ -47,7 +51,20 @@ export const FileListPanel = ({ files, selectedFilePath, onFileSelect }: FileLis
               onClick={handleClick}
               className={entry.path === selectedFilePath ? "filePill filePillActive" : "filePill"}
             >
-              {entry.path}
+              <span className="filePillPath">
+                {entry.changeType === "renamed" && entry.oldPath && entry.newPath
+                  ? `${entry.oldPath} -> ${entry.newPath}`
+                  : entry.path}
+              </span>
+              <span
+                className="riskBadge"
+                style={{
+                  borderColor: (entry.riskLevel === "high" || (entry.riskScore ?? 0) >= topRisk * 0.75) ? "#fca5a5" : entry.riskLevel === "medium" ? "#facc15" : "#86efac",
+                  color: entry.riskLevel === "high" ? "#fecaca" : entry.riskLevel === "medium" ? "#fde68a" : "#bbf7d0",
+                }}
+              >
+                R{entry.riskScore ?? 0}
+              </span>
             </button>
           ))}
         </div>

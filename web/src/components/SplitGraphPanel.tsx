@@ -102,6 +102,13 @@ const PAD_TOP = 72;
 const PAD_BOTTOM = 45;
 const NODE_W = 220;
 const NODE_H = 56;
+const SEARCH_FLASH_MS = 3200;
+const SEARCH_FLASH_STYLE = {
+  outline: "5px solid #ffffff",
+  outlineOffset: "3px",
+  boxShadow: "0 0 0 2px rgba(255,255,255,0.95), 0 0 28px rgba(255,255,255,0.92)",
+  zIndex: 1000,
+};
 
 /* ========== LOGIC: two-pass nested layout ========== */
 
@@ -461,12 +468,16 @@ export const SplitGraphPanel = ({
   const flowElements = useMemo(() => {
     if (!selectedNodeId && !highlightedNodeId && !searchHighlightedNodeId) return layoutResult;
     const nodes = layoutResult.nodes.map((node) => {
-      const isSelected = node.id === selectedNodeId || node.id === highlightedNodeId || node.id === searchHighlightedNodeId;
+      const isSearchTarget = node.id === searchHighlightedNodeId;
+      const isSelected = node.id === selectedNodeId || node.id === highlightedNodeId || isSearchTarget;
       if (!isSelected) return node;
-      if (node.type === "scope" || node.type === "diamond" || node.type === "pill" || node.type === "process" || node.type === "knowledge") {
-        return { ...node, data: { ...node.data, selected: true } };
+      const baseNode = (node.type === "scope" || node.type === "diamond" || node.type === "pill" || node.type === "process" || node.type === "knowledge")
+        ? { ...node, data: { ...node.data, selected: true } }
+        : { ...node, style: { ...(node.style ?? {}), border: "3px solid #38bdf8", boxShadow: "0 0 12px #38bdf8" } };
+      if (!isSearchTarget) {
+        return baseNode;
       }
-      return { ...node, style: { ...(node.style ?? {}), border: "3px solid #38bdf8", boxShadow: "0 0 12px #38bdf8" } };
+      return { ...baseNode, style: { ...(baseNode.style ?? {}), ...SEARCH_FLASH_STYLE } };
     });
     return { nodes, edges: layoutResult.edges };
   }, [layoutResult, selectedNodeId, highlightedNodeId, searchHighlightedNodeId]);
@@ -496,11 +507,14 @@ export const SplitGraphPanel = ({
     /* Normal mode: highlight matches, dim others */
     const matchIds = new Set(searchMatches.map((n) => n.id));
     const nodes = flowElements.nodes.map((node) => {
+      if (node.id === searchHighlightedNodeId) {
+        return { ...node, style: { ...(node.style ?? {}), ...SEARCH_FLASH_STYLE } };
+      }
       if (!matchIds.has(node.id)) return { ...node, style: { ...(node.style ?? {}), opacity: 0.25 } };
       return { ...node, style: { ...(node.style ?? {}), outline: "2px solid #fbbf24", outlineOffset: "2px" } };
     });
     return { nodes, edges: flowElements.edges };
-  }, [flowElements, searchMatches, searchQuery, searchExclude]);
+  }, [flowElements, searchMatches, searchQuery, searchExclude, searchHighlightedNodeId]);
 
   const flowNodeById = useMemo(() => new Map(flowElements.nodes.map((n) => [n.id, n])), [flowElements.nodes]);
 
@@ -587,7 +601,7 @@ export const SplitGraphPanel = ({
     searchHighlightTimerRef.current = window.setTimeout(() => {
       setSearchHighlightedNodeId("");
       searchHighlightTimerRef.current = null;
-    }, 1400);
+    }, SEARCH_FLASH_MS);
   }, []);
   const handleSearchNext = useCallback(() => {
     if (searchMatches.length === 0) return;
@@ -690,7 +704,7 @@ export const SplitGraphPanel = ({
   }, [focusNodeId, focusNodeTick, flowElements.nodes, onViewportChange, viewportForNode]);
 
   return (
-    <section className="panel">
+    <section className={searchHighlightedNodeId ? "panel panelSearchFlash" : "panel"}>
       <h3>{title}</h3>
       <div className="panelToolbar">
         {!isOld && (

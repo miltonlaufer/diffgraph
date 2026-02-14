@@ -31,6 +31,10 @@ export const SymbolListPanel = ({ symbols, onSymbolClick }: SymbolListPanelProps
     () => symbols.filter((s) => s.diffStatus !== "unchanged").length,
     [symbols],
   );
+  const topRisk = useMemo(
+    () => symbols.reduce((max, symbol) => Math.max(max, symbol.riskScore), 0),
+    [symbols],
+  );
 
   /******************* FUNCTIONS ***********************/
   const toggleCollapsed = useCallback(() => {
@@ -70,6 +74,15 @@ export const SymbolListPanel = ({ symbols, onSymbolClick }: SymbolListPanelProps
               <span className="symbolDot" style={{ background: statusDot[sym.diffStatus] ?? "#64748b" }} />
               <span className="symbolBadge">{kindBadge[sym.kind] ?? sym.kind}</span>
               <span className="symbolName">{sym.name}</span>
+              <span
+                className="riskBadge riskBadgeSymbol"
+                style={{
+                  borderColor: sym.riskScore >= Math.max(8, topRisk * 0.75) ? "#fca5a5" : sym.riskScore >= 4 ? "#facc15" : "#86efac",
+                  color: sym.riskScore >= Math.max(8, topRisk * 0.75) ? "#fecaca" : sym.riskScore >= 4 ? "#fde68a" : "#bbf7d0",
+                }}
+              >
+                R{sym.riskScore}
+              </span>
               <span className="symbolLine">:{sym.startLine}</span>
             </button>
           ))}

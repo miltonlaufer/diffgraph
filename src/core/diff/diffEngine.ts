@@ -18,6 +18,7 @@ export interface DiffResult {
     knowledge: { oldGraph: ViewGraph; newGraph: ViewGraph };
     react: { oldGraph: ViewGraph; newGraph: ViewGraph };
   };
+  filePairs: DiffPayload["filePairs"];
   hunksByPath: Map<string, string[]>;
   oldFileContents: Map<string, string>;
   newFileContents: Map<string, string>;
@@ -86,6 +87,7 @@ export class DiffEngine {
       newGraph,
       delta,
       views,
+      filePairs: payload.filePairs,
       hunksByPath: payload.hunksByPath,
       oldFileContents,
       newFileContents,

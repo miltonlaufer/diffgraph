@@ -39,6 +39,12 @@ export const runAnalyze = async (repoPath: string, ref: string): Promise<{ snaps
       oldRef: ref,
       newRef: ref,
       files: fileContent.map((item) => item.path),
+      filePairs: fileContent.map((item) => ({
+        path: item.path,
+        oldPath: item.path,
+        newPath: item.path,
+        status: "modified" as const,
+      })),
       oldFiles: fileContent,
       newFiles: fileContent,
       hunksByPath: new Map(),

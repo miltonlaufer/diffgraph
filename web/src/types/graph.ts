@@ -53,14 +53,22 @@ export interface FileSymbol {
   kind: string;
   startLine: number;
   diffStatus: DiffStatus;
+  riskScore: number;
+  callFanIn?: number;
+  callFanOut?: number;
 }
 
 export interface FileDiffEntry {
   path: string;
+  oldPath?: string;
+  newPath?: string;
+  changeType?: string;
   hunks: string[];
   oldContent: string;
   newContent: string;
   symbols: FileSymbol[];
+  riskScore?: number;
+  riskLevel?: "low" | "medium" | "high";
 }
 
 export interface ViewportState {

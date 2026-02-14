@@ -66,7 +66,7 @@ describe("diff modes integration", () => {
     await writeFile(oldFile, "export function alpha() { return 1; }\n", "utf8");
     await writeFile(newFile, "export function alpha() { return 2; }\n", "utf8");
 
-    const port = 4300 + Math.floor(Math.random() * 1000);
+    const port = 4177;
     const runner = await runDiff({
       mode: { type: "files", oldFile, newFile },
       repoPath: repoDir,
@@ -79,6 +79,23 @@ describe("diff modes integration", () => {
     const viewPayload = (await viewResponse.json()) as { oldGraph: { nodes: unknown[] }; newGraph: { nodes: unknown[] } };
     expect(viewPayload.oldGraph.nodes.length).toBeGreaterThan(0);
     expect(viewPayload.newGraph.nodes.length).toBeGreaterThan(0);
+
+    const filesResponse = await fetch(`${apiBase}/api/diff/${runner.diffId}/files`);
+    expect(filesResponse.ok).toBe(true);
+    const filesPayload = (await filesResponse.json()) as Array<{
+      path: string;
+      riskScore: number;
+      symbols: Array<{ riskScore: number }>;
+    }>;
+    expect(filesPayload.length).toBeGreaterThan(0);
+    expect(filesPayload[0].riskScore).toBeGreaterThanOrEqual(0);
+    if (filesPayload.length > 1) {
+      expect(filesPayload[0].riskScore).toBeGreaterThanOrEqual(filesPayload[1].riskScore);
+    }
+    const firstFileSymbols = filesPayload[0]?.symbols ?? [];
+    if (firstFileSymbols.length > 1) {
+      expect(firstFileSymbols[0].riskScore).toBeGreaterThanOrEqual(firstFileSymbols[1].riskScore);
+    }
     await runner.close();
   });
 });
