@@ -91,4 +91,54 @@ describe("PyAnalyzer control flow", () => {
     expect(hasEdge(toy2IfRandom!, toy2IfTuesday!, "next")).toBe(true);
     expect(hasEdge(toy2PrintCaca!, toy2IfTuesday!, "next")).toBe(false);
   });
+
+  it("keeps try/with internal flow instead of skipping directly to outer statements", async () => {
+    const analyzer = new PyAnalyzer();
+    const graph = await analyzer.analyze("repo", "snap", "ref", [
+      {
+        path: "sample.py",
+        content: [
+          "def get_model_costs(current_model):",
+          "    try:",
+          "        with get_db() as db:",
+          "            costs = get_costs(db, current_model)",
+          "            return costs",
+          "    except Exception:",
+          "        return None",
+          "",
+        ].join("\n"),
+      },
+    ]);
+
+    const branchNodes = graph.nodes.filter((node) => node.kind === "Branch");
+    const byStart = new Map<number, string>();
+    for (const node of branchNodes) {
+      if (node.startLine) byStart.set(node.startLine, node.id);
+    }
+
+    const try2 = byStart.get(2);
+    const with3 = byStart.get(3);
+    const call4 = byStart.get(4);
+    const ret5 = byStart.get(5);
+    const ret7 = byStart.get(7);
+
+    expect(try2).toBeTruthy();
+    expect(with3).toBeTruthy();
+    expect(call4).toBeTruthy();
+    expect(ret5).toBeTruthy();
+    expect(ret7).toBeTruthy();
+
+    const flowEdges = graph.edges.filter((edge) => edge.kind === "CALLS");
+    const hasEdge = (source: string, target: string, flowType: "true" | "false" | "next"): boolean =>
+      flowEdges.some(
+        (edge) => edge.source === source
+          && edge.target === target
+          && (edge.metadata?.flowType as string | undefined) === flowType,
+      );
+
+    expect(hasEdge(try2!, with3!, "next")).toBe(true);
+    expect(hasEdge(with3!, call4!, "next")).toBe(true);
+    expect(hasEdge(call4!, ret5!, "next")).toBe(true);
+    expect(hasEdge(try2!, ret7!, "next")).toBe(true);
+  });
 });

@@ -206,6 +206,20 @@ class Collector(ast.NodeVisitor):
             then_falls = self._block_falls_through(stmt.body)
             else_falls = self._block_falls_through(stmt.orelse) if stmt.orelse else True
             return then_falls or else_falls
+        if isinstance(stmt, (ast.With, ast.AsyncWith)):
+            return self._block_falls_through(stmt.body)
+        if isinstance(stmt, ast.Try):
+            body_falls = self._block_falls_through(stmt.body)
+            else_falls = self._block_falls_through(stmt.orelse) if stmt.orelse else True
+            handlers_fall = (
+                any(self._block_falls_through(handler.body) for handler in stmt.handlers)
+                if stmt.handlers
+                else False
+            )
+            pre_final_falls = (body_falls and else_falls) or handlers_fall
+            if stmt.finalbody:
+                return self._block_falls_through(stmt.finalbody)
+            return pre_final_falls
         return True
 
     def _known_truth_value(self, expr: ast.expr) -> bool | None:
@@ -253,6 +267,16 @@ class Collector(ast.NodeVisitor):
     def _collect_stmt(
         self, owner: str, stmt: ast.stmt
     ) -> tuple[str | None, list[ExitAnchor], bool]:
+        def _dedup_exits(exits: list[ExitAnchor]) -> list[ExitAnchor]:
+            seen: set[ExitAnchor] = set()
+            out: list[ExitAnchor] = []
+            for entry in exits:
+                if entry in seen:
+                    continue
+                seen.add(entry)
+                out.append(entry)
+            return out
+
         if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             return None, [], True
 
@@ -344,14 +368,63 @@ class Collector(ast.NodeVisitor):
 
         if isinstance(stmt, ast.Try):
             branch_id = self._add_branch(owner=owner, kind="try", node=stmt, snippet="try:")
-            return branch_id, [(branch_id, "next")], True
+
+            body_entry, body_exits, body_falls = self._collect_block(owner, stmt.body)
+            if body_entry is not None:
+                self._add_flow(branch_id, body_entry, "next")
+
+            normal_exits: list[ExitAnchor] = list(body_exits)
+            if body_entry is None and body_falls:
+                normal_exits.append((branch_id, "next"))
+
+            handler_exits: list[ExitAnchor] = []
+            for handler in stmt.handlers:
+                h_entry, h_exits, h_falls = self._collect_block(owner, handler.body)
+                if h_entry is not None:
+                    self._add_flow(branch_id, h_entry, "next")
+                    handler_exits.extend(h_exits)
+                elif h_falls:
+                    handler_exits.append((branch_id, "next"))
+
+            if stmt.orelse:
+                else_entry, else_exits, else_falls = self._collect_block(owner, stmt.orelse)
+                if else_entry is not None:
+                    for source_id, flow_type in _dedup_exits(normal_exits):
+                        self._add_flow(source_id, else_entry, flow_type)
+                    normal_exits = list(else_exits)
+                elif not else_falls:
+                    normal_exits = []
+
+            exits = normal_exits + handler_exits
+
+            if stmt.finalbody:
+                final_entry, final_exits, final_falls = self._collect_block(owner, stmt.finalbody)
+                if final_entry is not None:
+                    unique_exits = _dedup_exits(exits)
+                    if unique_exits:
+                        for source_id, flow_type in unique_exits:
+                            self._add_flow(source_id, final_entry, flow_type)
+                    else:
+                        self._add_flow(branch_id, final_entry, "next")
+                    exits = list(final_exits)
+                elif not final_falls:
+                    exits = []
+
+            dedup_exits = _dedup_exits(exits)
+            return branch_id, dedup_exits, len(dedup_exits) > 0
 
         if isinstance(stmt, (ast.With, ast.AsyncWith)):
             snippet = self._get_snippet(stmt) or "with ...:"
             branch_id = self._add_branch(
                 owner=owner, kind="with", node=stmt, snippet=snippet
             )
-            return branch_id, [(branch_id, "next")], True
+            body_entry, body_exits, body_falls = self._collect_block(owner, stmt.body)
+            if body_entry is not None:
+                self._add_flow(branch_id, body_entry, "next")
+                return branch_id, _dedup_exits(body_exits), body_falls
+            if body_falls:
+                return branch_id, [(branch_id, "next")], True
+            return branch_id, [], False
 
         return None, [], self._stmt_falls_through(stmt)
 
