@@ -22,6 +22,10 @@ export interface LayoutEdge {
   sourceHandle?: string;
   label?: string;
   labelStyle?: Record<string, unknown>;
+  labelShowBg?: boolean;
+  labelBgPadding?: [number, number];
+  labelBgBorderRadius?: number;
+  labelBgStyle?: Record<string, unknown>;
   animated?: boolean;
   style?: Record<string, unknown>;
   markerEnd?: {

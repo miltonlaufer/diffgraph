@@ -327,6 +327,8 @@ const computeLogicLayout = (
     .map((edge) => {
       const isInvoke = edge.relation === "invoke";
       const flowType = edge.relation === "flow" ? edge.flowType : undefined;
+      const sourceGraphNode = graphNodeById.get(edge.source);
+      const sourceIsDecision = sourceGraphNode?.kind === "Branch" && decisionKinds.has(sourceGraphNode.branchType ?? "");
       const stroke = edge.diffStatus === "added"
         ? "#4ade80"
         : edge.diffStatus === "removed"
@@ -343,6 +345,8 @@ const computeLogicLayout = (
         ? "yes"
         : flowType === "false"
           ? "no"
+          : flowType === "next" && sourceIsDecision
+            ? "next"
           : undefined;
       const label = isInvoke
         ? "calls"
@@ -360,10 +364,20 @@ const computeLogicLayout = (
         ...(sourceHandle ? { sourceHandle } : {}),
         label,
         animated: edge.diffStatus === "added" || edge.diffStatus === "removed",
+        labelShowBg: true,
+        labelBgPadding: [8, 5],
+        labelBgBorderRadius: 6,
+        labelBgStyle: {
+          fill: "#020617",
+          fillOpacity: 0.92,
+          stroke: "#334155",
+          strokeWidth: 1.1,
+        },
         labelStyle: {
-          fill: flowType === "false" ? "#fca5a5" : flowType === "true" ? "#86efac" : "#cbd5e1",
-          fontSize: 10,
-          fontWeight: 700,
+          fill: flowType === "false" ? "#fecaca" : flowType === "true" ? "#bbf7d0" : "#f8fafc",
+          fontSize: 12,
+          fontWeight: 800,
+          letterSpacing: 0.2,
         },
         style: {
           stroke,

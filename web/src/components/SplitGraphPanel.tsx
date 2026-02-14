@@ -5,6 +5,7 @@ import {
   MiniMap,
   ReactFlow,
   type Edge,
+  type EdgeMouseHandler,
   type Node,
   type NodeMouseHandler,
   type NodeTypes,
@@ -372,6 +373,8 @@ const computeLogicLayout = (
     .map((edge) => {
       const isInvoke = edge.relation === "invoke";
       const flowType = edge.relation === "flow" ? edge.flowType : undefined;
+      const sourceGraphNode = graphNodeById.get(edge.source);
+      const sourceIsDecision = sourceGraphNode?.kind === "Branch" && decisionKinds.has(sourceGraphNode.branchType ?? "");
       const stroke = edge.diffStatus === "added"
         ? "#4ade80"
         : edge.diffStatus === "removed"
@@ -388,6 +391,8 @@ const computeLogicLayout = (
         ? "yes"
         : flowType === "false"
           ? "no"
+          : flowType === "next" && sourceIsDecision
+            ? "next"
           : undefined;
       const label = isInvoke
         ? "calls"
@@ -398,21 +403,31 @@ const computeLogicLayout = (
             : flowType === "false"
               ? "F"
               : "";
-      return {
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        ...(sourceHandle ? { sourceHandle } : {}),
-        label,
-        animated: edge.diffStatus === "added" || edge.diffStatus === "removed",
-        labelStyle: {
-          fill: flowType === "false" ? "#fca5a5" : flowType === "true" ? "#86efac" : "#cbd5e1",
-          fontSize: 10,
-          fontWeight: 700,
-        },
-        style: {
-          stroke,
-          strokeWidth,
+        return {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          ...(sourceHandle ? { sourceHandle } : {}),
+          label,
+          animated: edge.diffStatus === "added" || edge.diffStatus === "removed",
+          labelShowBg: true,
+          labelBgPadding: [8, 5],
+          labelBgBorderRadius: 6,
+          labelBgStyle: {
+            fill: "#020617",
+            fillOpacity: 0.92,
+            stroke: "#334155",
+            strokeWidth: 1.1,
+          },
+          labelStyle: {
+            fill: flowType === "false" ? "#fecaca" : flowType === "true" ? "#bbf7d0" : "#f8fafc",
+            fontSize: 12,
+            fontWeight: 800,
+            letterSpacing: 0.2,
+          },
+          style: {
+            stroke,
+            strokeWidth,
           strokeDasharray: isInvoke
             ? "6 4"
             : flowType === "next"
@@ -518,6 +533,7 @@ export const SplitGraphPanel = ({
   const [searchExclude, setSearchExclude] = useState(false);
   const [searchIdx, setSearchIdx] = useState(0);
   const [searchHighlightedNodeId, setSearchHighlightedNodeId] = useState("");
+  const [hoveredEdgeId, setHoveredEdgeId] = useState("");
   const lastAutoFocusSearchRef = useRef<string>("");
   const searchHighlightTimerRef = useRef<number | null>(null);
   const flowContainerRef = useRef<HTMLDivElement>(null);
@@ -550,21 +566,60 @@ export const SplitGraphPanel = ({
 
   /* Light selection pass: just updates node styles */
   const flowElements = useMemo(() => {
-    if (!selectedNodeId && !highlightedNodeId && !searchHighlightedNodeId) return positionedLayoutResult;
-    const nodes = positionedLayoutResult.nodes.map((node) => {
-      const isSearchTarget = node.id === searchHighlightedNodeId;
-      const isSelected = node.id === selectedNodeId || node.id === highlightedNodeId || isSearchTarget;
-      if (!isSelected) return node;
-      const baseNode = (node.type === "scope" || node.type === "diamond" || node.type === "pill" || node.type === "process" || node.type === "knowledge")
-        ? { ...node, data: { ...node.data, selected: true } }
-        : { ...node, style: { ...(node.style ?? {}), border: "3px solid #38bdf8", boxShadow: "0 0 12px #38bdf8" } };
-      if (!isSearchTarget) {
-        return baseNode;
-      }
-      return { ...baseNode, style: { ...(baseNode.style ?? {}), ...SEARCH_FLASH_STYLE } };
-    });
-    return { nodes, edges: positionedLayoutResult.edges };
-  }, [positionedLayoutResult, selectedNodeId, highlightedNodeId, searchHighlightedNodeId]);
+    const hasNodeHighlights = Boolean(selectedNodeId || highlightedNodeId || searchHighlightedNodeId);
+    const hasEdgeHover = hoveredEdgeId.length > 0;
+    if (!hasNodeHighlights && !hasEdgeHover) return positionedLayoutResult;
+
+    const nodes = hasNodeHighlights
+      ? positionedLayoutResult.nodes.map((node) => {
+        const isSearchTarget = node.id === searchHighlightedNodeId;
+        const isSelected = node.id === selectedNodeId || node.id === highlightedNodeId || isSearchTarget;
+        if (!isSelected) return node;
+        const baseNode = (node.type === "scope" || node.type === "diamond" || node.type === "pill" || node.type === "process" || node.type === "knowledge")
+          ? { ...node, data: { ...node.data, selected: true } }
+          : { ...node, style: { ...(node.style ?? {}), border: "3px solid #38bdf8", boxShadow: "0 0 12px #38bdf8" } };
+        if (!isSearchTarget) {
+          return baseNode;
+        }
+        return { ...baseNode, style: { ...(baseNode.style ?? {}), ...SEARCH_FLASH_STYLE } };
+      })
+      : positionedLayoutResult.nodes;
+
+    const edges = hasEdgeHover
+      ? positionedLayoutResult.edges.map((edge) => {
+        const isHovered = edge.id === hoveredEdgeId;
+        const baseStyle = edge.style ?? {};
+        const baseLabelStyle = edge.labelStyle ?? {};
+        const baseLabelBgStyle = edge.labelBgStyle ?? {};
+        const baseStrokeWidth =
+          typeof baseStyle.strokeWidth === "number"
+            ? baseStyle.strokeWidth
+            : Number(baseStyle.strokeWidth ?? 1.5);
+        return {
+          ...edge,
+          style: {
+            ...baseStyle,
+            stroke: isHovered ? "#f8fafc" : baseStyle.stroke,
+            strokeWidth: isHovered ? Math.max(baseStrokeWidth + 1.8, 3) : baseStrokeWidth,
+            strokeOpacity: isHovered ? 1 : 0.24,
+            filter: isHovered ? "drop-shadow(0 0 6px rgba(248,250,252,0.9))" : baseStyle.filter,
+          },
+          labelStyle: {
+            ...baseLabelStyle,
+            fill: isHovered ? "#ffffff" : baseLabelStyle.fill,
+            opacity: isHovered ? 1 : 0.35,
+          },
+          labelBgStyle: {
+            ...baseLabelBgStyle,
+            fillOpacity: isHovered ? 0.98 : 0.5,
+            stroke: isHovered ? "#f8fafc" : baseLabelBgStyle.stroke,
+          },
+        };
+      })
+      : positionedLayoutResult.edges;
+
+    return { nodes, edges };
+  }, [positionedLayoutResult, selectedNodeId, highlightedNodeId, searchHighlightedNodeId, hoveredEdgeId]);
 
   /* Search: find matching node ids */
   const searchMatches = useMemo(() => {
@@ -719,6 +774,12 @@ export const SplitGraphPanel = ({
     }
   }, [searchMatches, searchIdx, onViewportChange, flashSearchTarget, viewportForNode]);
   const handleNodeClick = useCallback<NodeMouseHandler>((_e, n) => { onNodeSelect(n.id, side); }, [onNodeSelect, side]);
+  const handleEdgeMouseEnter = useCallback<EdgeMouseHandler>((_e, edge) => {
+    setHoveredEdgeId(edge.id);
+  }, []);
+  const handleEdgeMouseLeave = useCallback<EdgeMouseHandler>(() => {
+    setHoveredEdgeId("");
+  }, []);
   const handleMove = useCallback((_e: MouseEvent | TouchEvent | null, v: Viewport) => { onViewportChange({ x: v.x, y: v.y, zoom: v.zoom }); }, [onViewportChange]);
 
   /******************* USEEFFECTS ***********************/
@@ -868,6 +929,10 @@ export const SplitGraphPanel = ({
     onViewportChange(viewportForNode(target));
   }, [focusNodeId, focusNodeTick, flowElements.nodes, onViewportChange, viewportForNode]);
 
+  useEffect(() => {
+    setHoveredEdgeId("");
+  }, [graph.nodes, graph.edges, viewType, showCalls]);
+
   return (
     <section className={searchHighlightedNodeId ? "panel panelSearchFlash" : "panel"}>
       <h3>{title}</h3>
@@ -892,7 +957,12 @@ export const SplitGraphPanel = ({
         <ReactFlow
           id={`reactflow-${side}`}
           nodes={searchResultNodes.nodes} edges={searchResultNodes.edges} nodeTypes={nodeTypesForFlow}
-          onNodeClick={handleNodeClick} viewport={viewport} onMove={handleMove}
+          onNodeClick={handleNodeClick}
+          onEdgeMouseEnter={handleEdgeMouseEnter}
+          onEdgeMouseLeave={handleEdgeMouseLeave}
+          onPaneMouseLeave={() => setHoveredEdgeId("")}
+          viewport={viewport}
+          onMove={handleMove}
           style={flowStyle} onlyRenderVisibleElements minZoom={0.05} maxZoom={2}
           nodesDraggable={false}
           panOnDrag

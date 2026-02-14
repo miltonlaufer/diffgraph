@@ -72,6 +72,22 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
       >
         T
       </span>
+      <Handle type="source" position={Position.Left} id="next" style={{ transform: "rotate(-45deg)", top: "50%" }} />
+      <span
+        style={{
+          position: "absolute",
+          left: -11,
+          top: "47%",
+          transform: "rotate(-45deg)",
+          fontSize: 13,
+          color: "#cbd5e1",
+          fontWeight: 800,
+          textShadow: "0 0 8px rgba(203, 213, 225, 0.5)",
+          lineHeight: 1,
+        }}
+      >
+        N
+      </span>
       <Handle type="source" position={Position.Bottom} id="no" style={{ transform: "rotate(-45deg)" }} />
       <span
         style={{

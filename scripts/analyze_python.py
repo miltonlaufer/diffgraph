@@ -208,6 +208,19 @@ class Collector(ast.NodeVisitor):
             return then_falls or else_falls
         return True
 
+    def _known_truth_value(self, expr: ast.expr) -> bool | None:
+        if isinstance(expr, ast.Constant):
+            if isinstance(expr.value, bool):
+                return expr.value
+            if expr.value is None:
+                return False
+        if isinstance(expr, ast.UnaryOp) and isinstance(expr.op, ast.Not):
+            inner = self._known_truth_value(expr.operand)
+            if inner is None:
+                return None
+            return not inner
+        return None
+
     def _block_falls_through(self, statements: list[ast.stmt]) -> bool:
         path_open = True
         for stmt in statements:
@@ -249,6 +262,9 @@ class Collector(ast.NodeVisitor):
             cond_id = self._add_branch(
                 owner=owner, kind=branch_kind, node=stmt, snippet=snippet
             )
+            known_truth = self._known_truth_value(stmt.test)
+            then_reachable = known_truth is not False
+            else_reachable = known_truth is not True
 
             then_entry, then_exits, then_falls = self._collect_block(owner, stmt.body)
             else_entry: str | None = None
@@ -259,21 +275,37 @@ class Collector(ast.NodeVisitor):
                     owner, stmt.orelse
                 )
 
-            if then_entry is not None:
+            if then_entry is not None and then_reachable:
                 self._add_flow(cond_id, then_entry, "true")
-            if else_entry is not None:
+            if else_entry is not None and else_reachable:
                 self._add_flow(cond_id, else_entry, "false")
 
             exits: list[ExitAnchor] = []
-            exits.extend(then_exits)
-            exits.extend(else_exits)
-            if then_entry is None and then_falls:
+            if then_reachable:
+                exits.extend(then_exits)
+            if else_reachable:
+                exits.extend(else_exits)
+            if then_entry is None and then_falls and then_reachable:
                 exits.append((cond_id, "true"))
-            if else_entry is None and else_falls:
-                exits.append((cond_id, "false"))
+            if else_entry is None and else_falls and else_reachable:
+                if len(stmt.orelse) == 0 and then_reachable and then_falls:
+                    exits.append((cond_id, "next"))
+                else:
+                    exits.append((cond_id, "false"))
+
+            # For if-without-else, model continuation from the IF node itself.
+            # This makes the graph semantics explicit:
+            # - IF -> N -> next statement, when body can fall through
+            # - IF -> F -> next statement, when body is terminal (guard-return)
+            if len(stmt.orelse) == 0:
+                if then_falls:
+                    exits = [(cond_id, "next")]
+                    return cond_id, exits, True
+                exits = [(cond_id, "false")]
+                return cond_id, exits, True
 
             dedup_exits = list(dict.fromkeys(exits))
-            return cond_id, dedup_exits, then_falls or else_falls
+            return cond_id, dedup_exits, (then_reachable and then_falls) or (else_reachable and else_falls)
 
         if isinstance(stmt, ast.Return):
             snippet = self._get_snippet(stmt) or (
