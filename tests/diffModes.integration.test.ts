@@ -28,6 +28,8 @@ const gitCommit = async (cwd: string, message: string): Promise<void> => {
 
 describe("diff modes integration", () => {
   let repoDir = "";
+  let mainCommit = "";
+  let featureCommit = "";
 
   beforeAll(async () => {
     repoDir = await mkdtemp(join(tmpdir(), "diffgraph-repo-"));
@@ -40,7 +42,9 @@ describe("diff modes integration", () => {
     await writeFile(join(repoDir, "src/app.ts"), "export const value = 2;\nexport const next = 3;\n", "utf8");
     await git(repoDir, "add", ".");
     await gitCommit(repoDir, "feature change");
+    featureCommit = (await gitOut(repoDir, "rev-parse", "HEAD")).trim();
     await git(repoDir, "checkout", "main");
+    mainCommit = (await gitOut(repoDir, "rev-parse", "HEAD")).trim();
   });
 
   it("collects staged diff", async () => {
@@ -57,6 +61,14 @@ describe("diff modes integration", () => {
     const result = await provider.collect({ type: "branches", baseBranch: "main", targetBranch: "feature" }, repoDir);
     expect(result.files).toContain("src/app.ts");
     const diffText = await gitOut(repoDir, "diff", "main...feature");
+    expect(diffText.length).toBeGreaterThan(0);
+  });
+
+  it("collects commit ref diff", async () => {
+    const provider = new DiffProvider();
+    const result = await provider.collect({ type: "refs", oldRef: mainCommit, newRef: featureCommit }, repoDir);
+    expect(result.files).toContain("src/app.ts");
+    const diffText = await gitOut(repoDir, "diff", mainCommit, featureCommit);
     expect(diffText.length).toBeGreaterThan(0);
   });
 

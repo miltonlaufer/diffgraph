@@ -9,7 +9,8 @@ const execFileAsync = promisify(execFile);
 export type DiffMode =
   | { type: "staged"; includeUnstaged?: boolean }
   | { type: "files"; oldFile: string; newFile: string }
-  | { type: "branches"; baseBranch: string; targetBranch: string };
+  | { type: "branches"; baseBranch: string; targetBranch: string }
+  | { type: "refs"; oldRef: string; newRef: string };
 
 export type DiffFileStatus = "added" | "deleted" | "modified" | "renamed" | "copied" | "type-changed" | "unknown";
 
@@ -51,6 +52,10 @@ export class DiffProvider {
 
     if (mode.type === "branches") {
       return this.fromBranches(mode.baseBranch, mode.targetBranch, repoPath);
+    }
+
+    if (mode.type === "refs") {
+      return this.fromRefs(mode.oldRef, mode.newRef, repoPath);
     }
 
     return this.fromStaged(repoPath, Boolean(mode.includeUnstaged));
@@ -101,6 +106,36 @@ export class DiffProvider {
     return {
       oldRef: baseBranch,
       newRef: targetBranch,
+      files,
+      filePairs,
+      oldFiles,
+      newFiles,
+      hunksByPath: this.extractHunks(diffText),
+    };
+  }
+
+  private async fromRefs(oldRef: string, newRef: string, repoPath: string): Promise<DiffPayload> {
+    const diffText = await textFromGit(["diff", "-M", oldRef, newRef], repoPath);
+    const nameStatus = await textFromGit(["diff", "--name-status", "-M", oldRef, newRef], repoPath);
+    const filePairs = this.parseFilePairs(nameStatus);
+    const files = filePairs.map((pair) => pair.path);
+
+    const oldFiles = await Promise.all(
+      filePairs.map(async (pair) => ({
+        path: pair.path,
+        content: pair.status === "added" ? "" : await safeGitShow(repoPath, `${oldRef}:${pair.oldPath}`),
+      })),
+    );
+    const newFiles = await Promise.all(
+      filePairs.map(async (pair) => ({
+        path: pair.path,
+        content: pair.status === "deleted" ? "" : await safeGitShow(repoPath, `${newRef}:${pair.newPath}`),
+      })),
+    );
+
+    return {
+      oldRef,
+      newRef,
       files,
       filePairs,
       oldFiles,

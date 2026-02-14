@@ -39,6 +39,7 @@ program
 program
   .option("--file-file <files...>", "Compare two files: -ff <oldFile> <newFile>")
   .option("-b, --branches <branches...>", "Compare two branches: -b <base> <target>")
+  .option("-r, --refs <refs...>", "Compare two refs (commit/tag/branch): -r <oldRef> <newRef>")
   .option("--repo <path>", "Repository path", process.cwd())
   .option("--no-open", "Do not open browser", false)
   .option("--port <port>", "Server port", "4177")
@@ -73,7 +74,22 @@ program
       return;
     }
 
-    console.error("Use `staged`, `-ff <oldFile> <newFile>`, or `-b <baseBranch> <targetBranch>`.");
+    if (Array.isArray(options.refs) && options.refs.length === 2) {
+      const result = await runDiff({
+        mode: {
+          type: "refs",
+          oldRef: options.refs[0],
+          newRef: options.refs[1],
+        },
+        repoPath: options.repo,
+        openBrowser: options.open !== false,
+        port: Number(options.port),
+      });
+      console.log(`Diff ready at ${result.url}`);
+      return;
+    }
+
+    console.error("Use `staged`, `-ff <oldFile> <newFile>`, `-b <baseBranch> <targetBranch>`, or `-r <oldRef> <newRef>`.");
     process.exitCode = 1;
   });
 

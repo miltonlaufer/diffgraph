@@ -24,6 +24,7 @@ Then go to the repo you want to inspect and run:
 cd /path/to/your-repo
 diffgraph staged
 diffgraph -b main feature/your-feature-branch
+diffgraph -r <oldCommit> <newCommit>
 diffgraph staged --staged-only
 ```
 
@@ -208,7 +209,21 @@ With repo path:
 node dist/src/cli/index.js -b branch1 branch2 --repo /path/to/repo
 ```
 
-### 4) Analyze snapshot only
+### 4) Ref-to-ref mode (`-r`)
+
+Compare any two Git refs (commits, tags, or branches) using exact `git diff <oldRef> <newRef>` semantics:
+
+```bash
+node dist/src/cli/index.js -r <oldRef> <newRef>
+```
+
+Example with commit SHAs:
+
+```bash
+node dist/src/cli/index.js -r a1b2c3d e4f5g6h
+```
+
+### 5) Analyze snapshot only
 
 Create and persist a graph snapshot for a reference label:
 
