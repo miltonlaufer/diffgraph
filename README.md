@@ -1,4 +1,4 @@
-# DiffGraph (AKA "Tell WTF the LLM did to my code")
+# DiffGraph (AKA "Tell me WTF the LLM did to my code")
 
 DiffGraph is a CLI + browser app that compares code changes as **interactive graphs** instead of only line-by-line diffs.
 
