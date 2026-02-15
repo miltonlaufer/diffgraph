@@ -1,6 +1,7 @@
 import { useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
+  type Edge,
   type EdgeMouseHandler,
   type Node,
   type NodeMouseHandler,
@@ -43,6 +44,7 @@ const SEARCH_FLASH_STYLE = {
 const EDGE_TOOLTIP_OFFSET_X = 12;
 const EDGE_TOOLTIP_OFFSET_Y = 14;
 const EDGE_CLICK_HIGHLIGHT_MS = 5000;
+const GROUP_BLOCK_GAP = 22;
 
 const labelIdentity = (label: string): string =>
   label
@@ -80,6 +82,127 @@ const isGroupHeaderTarget = (event: unknown): boolean => {
   const maybeTarget = (event as { target?: EventTarget | null } | null)?.target;
   if (!(maybeTarget instanceof Element)) return false;
   return Boolean(maybeTarget.closest("[data-group-header='true']"));
+};
+
+const nodeSize = (node: Node): { width: number; height: number } => {
+  const styleWidth = typeof node.style?.width === "number" ? node.style.width : undefined;
+  const styleHeight = typeof node.style?.height === "number" ? node.style.height : undefined;
+  const initialWidth = typeof node.initialWidth === "number" ? node.initialWidth : undefined;
+  const initialHeight = typeof node.initialHeight === "number" ? node.initialHeight : undefined;
+  return {
+    width: styleWidth ?? initialWidth ?? LEAF_W,
+    height: styleHeight ?? initialHeight ?? LEAF_H,
+  };
+};
+
+const hasHorizontalOverlap = (
+  aX: number,
+  aWidth: number,
+  bX: number,
+  bWidth: number,
+): boolean => {
+  const margin = 4;
+  return aX + aWidth - margin > bX && bX + bWidth - margin > aX;
+};
+
+interface LayoutElements {
+  nodes: Node[];
+  edges: Edge[];
+}
+
+const resolveScopeBlockOverlaps = (layoutResult: LayoutElements): LayoutElements => {
+  if (layoutResult.nodes.length < 2) return layoutResult;
+
+  const nodes = layoutResult.nodes.map((node) => ({
+    ...node,
+    position: { ...node.position },
+  }));
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const scopeChildrenByParent = new Map<string, Node[]>();
+  const rootParentKey = "__root__";
+
+  for (const node of nodes) {
+    if (node.type !== "scope") continue;
+    const parentKey = node.parentId ?? rootParentKey;
+    const siblings = scopeChildrenByParent.get(parentKey) ?? [];
+    siblings.push(node);
+    scopeChildrenByParent.set(parentKey, siblings);
+  }
+
+  if (scopeChildrenByParent.size === 0) {
+    return { nodes, edges: layoutResult.edges };
+  }
+
+  const depthByNodeId = new Map<string, number>();
+  const getDepth = (nodeId: string): number => {
+    const cached = depthByNodeId.get(nodeId);
+    if (cached !== undefined) return cached;
+    const node = nodeById.get(nodeId);
+    if (!node?.parentId) {
+      depthByNodeId.set(nodeId, 0);
+      return 0;
+    }
+    const depth = getDepth(node.parentId) + 1;
+    depthByNodeId.set(nodeId, depth);
+    return depth;
+  };
+
+  const parentKeys = [...scopeChildrenByParent.keys()].sort((a, b) => {
+    if (a === rootParentKey) return -1;
+    if (b === rootParentKey) return 1;
+    const depthA = getDepth(a);
+    const depthB = getDepth(b);
+    if (depthA !== depthB) return depthA - depthB;
+    return a.localeCompare(b);
+  });
+
+  for (const parentKey of parentKeys) {
+    const siblings = scopeChildrenByParent.get(parentKey);
+    if (!siblings || siblings.length < 2) continue;
+
+    const ordered = siblings.slice().sort((a, b) => {
+      const aAbs = computeNodeAbsolutePosition(a, nodeById);
+      const bAbs = computeNodeAbsolutePosition(b, nodeById);
+      const yDelta = aAbs.y - bAbs.y;
+      if (Math.abs(yDelta) > 0.5) return yDelta;
+      return aAbs.x - bAbs.x;
+    });
+
+    const placed: Array<{ x: number; y: number; width: number; height: number }> = [];
+    for (const node of ordered) {
+      const abs = computeNodeAbsolutePosition(node, nodeById);
+      const size = nodeSize(node);
+      let nextAbsY = abs.y;
+      for (const prev of placed) {
+        if (!hasHorizontalOverlap(abs.x, size.width, prev.x, prev.width)) continue;
+        const minY = prev.y + prev.height + GROUP_BLOCK_GAP;
+        if (nextAbsY < minY) {
+          nextAbsY = minY;
+        }
+      }
+
+      if (nextAbsY > abs.y + 0.5) {
+        if (node.parentId) {
+          const parent = nodeById.get(node.parentId);
+          if (parent) {
+            const parentAbs = computeNodeAbsolutePosition(parent, nodeById);
+            node.position.y = nextAbsY - parentAbs.y;
+          }
+        } else {
+          node.position.y = nextAbsY;
+        }
+      }
+
+      placed.push({
+        x: abs.x,
+        y: nextAbsY,
+        width: size.width,
+        height: size.height,
+      });
+    }
+  }
+
+  return { nodes, edges: layoutResult.edges };
 };
 
 export const SplitGraphPanel = observer(({
@@ -262,7 +385,7 @@ export const SplitGraphPanel = observer(({
       || Object.keys(alignmentBreakpoints).length === 0
       || topAlignedLayoutResult.nodes.length === 0
     ) {
-      return topAlignedLayoutResult;
+      return resolveScopeBlockOverlaps(topAlignedLayoutResult);
     }
 
     const nodeById = new Map(topAlignedLayoutResult.nodes.map((node) => [node.id, node]));
@@ -337,7 +460,7 @@ export const SplitGraphPanel = observer(({
       return { ...node, position: { ...node.position, y: nextRelativeY } };
     });
 
-    return { nodes, edges: topAlignedLayoutResult.edges };
+    return resolveScopeBlockOverlaps({ nodes, edges: topAlignedLayoutResult.edges });
   }, [alignmentBreakpoints, isLogic, side, topAlignedLayoutResult, topKeyByNodeId]);
 
   const positionedNodeById = useMemo(
