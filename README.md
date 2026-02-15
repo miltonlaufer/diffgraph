@@ -1,6 +1,7 @@
 # ~Diff~Graph (AKA "Tell me WTF the LLM did to my code")
 
 DiffGraph is a CLI + browser app that compares code changes as **interactive graphs** instead of only line-by-line diffs.
+It is optimized for **large diffs** where plain patch views become hard to reason about quickly.
 
 It supports:
 - logic-flow change view
@@ -254,10 +255,15 @@ If the default port (4177) is busy, the server automatically finds the next avai
 - Controls appear only on the New panel; MiniMap appears on both Old and New panels
 - Both panels share synchronized pan/zoom
 - In logic view, dragging the canvas works from node areas too (you are not limited to empty background)
+- In logic view, top-level alignment keeps Old/New function blocks comparable while preserving nested hierarchy
+- Parent/scope blocks run overlap resolution to reduce block collisions in dense graphs
 
 ### Interactions
 
 - **Click a node** -- highlights it (cyan border + glow), selects its file below, and scrolls the code diff to that line
+- **Click a connector/edge** (Logic tab) -- first click focuses the source node; clicking the same connector again focuses the target node
+- **Clicked connector highlight** -- the selected connector remains emphasized for ~5 seconds
+- **Hover a connector/edge** -- shows a source/target tooltip for faster graph tracing
 - **Click a file pill** -- selects the file, scrolls graphs to related nodes, shows its code diff
 - **Risk-ranked file list** -- changed files are sorted by `R` score:
   - **graph connectivity** = how many other symbols call into changed symbols (high fan-in => wider impact)
@@ -267,10 +273,11 @@ If the default port (4177) is busy, the server automatically finds the next avai
 - **Escape** -- deselects node and file
 - **Changes Only** (on by default) -- keeps changed nodes plus required context (hierarchy ancestors and relevant invoke neighbors in Logic view). Toggle off to show full graph.
 - **Show calls** (Logic tab) -- show/hide invoke edges to reduce visual noise
-- **Graph diff navigation** (Logic tab, up/down arrows) -- jumps across graph-level changes (added/removed/modified nodes) and temporarily highlights the focused node
-- **Graph search** (per panel) -- search nodes by text, use up/down arrows to jump matches; matched node is focused and highlighted
+- **Graph diff navigation** (Logic tab, up/down arrows) -- jumps across graph-level changes (added/removed/modified nodes) and highlights the focused node for ~5 seconds
+- **Graph search** (per panel) -- search nodes by text, use up/down arrows to jump matches; matched node is focused and highlighted, and related connections are emphasized during the flash window
 - **Hover function/group headers** -- tooltip includes documentation (JSDoc/docstring), parameters with types, return type, and class/file metadata when available
 - **Risk-ranked symbols** -- functions/methods/classes inside a file are sorted by deterministic risk score to prioritize review order
+- **Code line -> graph focus** -- clicking a code line finds the best matching graph node, highlights it for ~4.2 seconds, and keeps the graph area in view
 
 ### Risk score (`Rxx`) details
 
@@ -306,13 +313,21 @@ Symbol-level score (used by `symbolRisk`) is also computed in `src/server/app.ts
 
 - Side-by-side view: Old code on the left, New code on the right
 - Line-level change highlighting: green for added lines, red for removed lines
+- Hovering a line highlights that row for easier scanning
 - Synchronized scrolling between left and right
 - Each side is fixed at 50% width and supports horizontal scrolling for long lines
 - New files show "File did not exist" on the old side; deleted files show "File was deleted" on the new side
 - Clicking a logic node scrolls the diff to the corresponding line number and scrolls the page to the code viewer
-- Clicking a code line can navigate back to the best matching node in the graph
+- Clicking a code line can navigate back to the best matching node in the graph (including full-file add/remove views)
 - Fullscreen toggle (top-right icon in code diff panel; `Esc` exits fullscreen)
 - Whitespace-only/blank-line-only changes are ignored for semantic change detection to reduce false modified markers
+
+### Performance and responsiveness
+
+- Layout and large graph transforms are processed in Web Workers with guarded fallbacks
+- Derived computations (view filtering, search matching, hover neighborhoods, and diff stats) run off the main thread when available
+- Expensive interactions trigger an immediate local "Updating graph..." overlay before updates apply
+- The default review flow and graph interactions are tuned for large, multi-file diffs
 
 ### Suggested workflow
 
