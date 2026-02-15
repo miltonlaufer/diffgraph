@@ -1,5 +1,6 @@
 import { Handle, Position } from "@xyflow/react";
 import { memo, useMemo, useState, useCallback } from "react";
+import AskLlmButton from "./AskLlmButton";
 import CodeTooltip from "./CodeTooltip";
 
 interface KnowledgeNodeData {
@@ -14,6 +15,8 @@ interface KnowledgeNodeData {
   selected: boolean;
   codeContext?: unknown;
   language?: string;
+  askLlmNodeId?: string;
+  onAskLlmForNode?: (nodeId: string) => Promise<boolean> | boolean;
 }
 
 const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
@@ -33,6 +36,7 @@ const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
       overflow: "hidden" as const,
       boxShadow: data.selected ? "0 0 0 2px rgba(56, 189, 248, 0.95), 0 0 22px rgba(56, 189, 248, 0.85)" : "none",
       cursor: "pointer",
+      position: "relative" as const,
     }),
     [data.bgColor, data.textColor, data.selected],
   );
@@ -40,6 +44,11 @@ const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
   /******************* FUNCTIONS ***********************/
   const onEnter = useCallback(() => setHovered(true), []);
   const onLeave = useCallback(() => setHovered(false), []);
+  const handleAskLlm = useCallback(() => {
+    if (!data.askLlmNodeId || !data.onAskLlmForNode) return false;
+    return data.onAskLlmForNode(data.askLlmNodeId);
+  }, [data.askLlmNodeId, data.onAskLlmForNode]);
+  const hasAskLlm = Boolean(data.askLlmNodeId && data.onAskLlmForNode);
 
   return (
     <div style={style} title={`${data.label}\n${data.fullPath}`} onMouseEnter={onEnter} onMouseLeave={onLeave}>
@@ -49,6 +58,10 @@ const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
       <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 10, opacity: 0.7 }}>
         {data.shortPath}
       </div>
+      <AskLlmButton
+        visible={hovered}
+        onAskLlm={hasAskLlm ? handleAskLlm : undefined}
+      />
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
       <CodeTooltip

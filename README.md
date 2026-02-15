@@ -277,6 +277,7 @@ If the default port (4177) is busy, the server automatically finds the next avai
 
 ### Interactions
 
+- **NEW: ASK LLM from any hovered node** -- hover a node and click `ASK LLM` to copy a ready-to-send prompt that includes: (1) the node’s code context, (2) connected-node context, and (3) graph relation details. This is designed to accelerate intent/risk analysis for **large diffs**. After copy, DiffGraph shows a temporary confirmation message so you can paste directly into your LLM of choice.
 - **Click a node** -- highlights it (cyan border + glow), selects its file below, and scrolls the code diff to that line
 - **Changed Files auto-collapse on node click** -- selecting a node collapses the Changed Files block; when collapsed it shows `Selected: <filename>` in the header
 - **Click a connector/edge** (Logic tab) -- first click focuses the source node; clicking the same connector again focuses the target node

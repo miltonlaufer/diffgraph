@@ -1,6 +1,7 @@
 import { Handle, Position } from "@xyflow/react";
 import { memo, useMemo, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
+import AskLlmButton from "./AskLlmButton";
 
 interface GroupNodeData {
   label: string;
@@ -16,6 +17,8 @@ interface GroupNodeData {
   functionParams?: string;
   returnType?: string;
   documentation?: string;
+  askLlmNodeId?: string;
+  onAskLlmForNode?: (nodeId: string) => Promise<boolean> | boolean;
 }
 
 const GroupNode = ({ data }: { data: GroupNodeData }) => {
@@ -146,11 +149,21 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
   }, []);
   const onHeaderLeave = useCallback(() => setHovered(false), []);
   const onNodeLeave = useCallback(() => setHovered(false), []);
+  const handleAskLlm = useCallback(() => {
+    if (!data.askLlmNodeId || !data.onAskLlmForNode) return false;
+    return data.onAskLlmForNode(data.askLlmNodeId);
+  }, [data.askLlmNodeId, data.onAskLlmForNode]);
+  const hasAskLlm = Boolean(data.askLlmNodeId && data.onAskLlmForNode);
 
   return (
     <div style={style} onMouseLeave={onNodeLeave}>
       <Handle type="target" position={Position.Top} style={{ opacity: 0, pointerEvents: "none" }} />
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0, pointerEvents: "none" }} />
+      <AskLlmButton
+        visible={hovered}
+        onAskLlm={hasAskLlm ? handleAskLlm : undefined}
+        style={{ top: 8, right: 8 }}
+      />
       <div
         data-group-header="true"
         style={headerStyle}

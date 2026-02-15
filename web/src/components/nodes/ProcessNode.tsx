@@ -1,5 +1,6 @@
 import { Handle, Position } from "@xyflow/react";
 import { memo, useMemo, useState, useCallback } from "react";
+import AskLlmButton from "./AskLlmButton";
 import CodeTooltip from "./CodeTooltip";
 
 const splitLabel = (label: string): { title: string; code: string } => {
@@ -18,6 +19,8 @@ interface ProcessNodeData {
   functionName?: string;
   symbolName?: string;
   filePath?: string;
+  askLlmNodeId?: string;
+  onAskLlmForNode?: (nodeId: string) => Promise<boolean> | boolean;
 }
 
 const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
@@ -37,6 +40,7 @@ const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
       width: 220,
       boxSizing: "border-box" as const,
       wordBreak: "break-word" as const,
+      position: "relative" as const,
     }),
     [data.bgColor, data.selected],
   );
@@ -44,6 +48,11 @@ const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
   /******************* FUNCTIONS ***********************/
   const onEnter = useCallback(() => setHovered(true), []);
   const onLeave = useCallback(() => setHovered(false), []);
+  const handleAskLlm = useCallback(() => {
+    if (!data.askLlmNodeId || !data.onAskLlmForNode) return false;
+    return data.onAskLlmForNode(data.askLlmNodeId);
+  }, [data.askLlmNodeId, data.onAskLlmForNode]);
+  const hasAskLlm = Boolean(data.askLlmNodeId && data.onAskLlmForNode);
 
   return (
     <div style={style} onMouseEnter={onEnter} onMouseLeave={onLeave}>
@@ -53,6 +62,10 @@ const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
           {parts.code}
         </div>
       )}
+      <AskLlmButton
+        visible={hovered}
+        onAskLlm={hasAskLlm ? handleAskLlm : undefined}
+      />
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
       <CodeTooltip
