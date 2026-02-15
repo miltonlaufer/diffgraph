@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { fetchDiffFiles, fetchView } from "../api";
 import { CodeDiffDrawer } from "../components/CodeDiffDrawer";
 import { FileListPanel } from "../components/FileListPanel";
-import { SplitGraphPanel, type GraphDiffTarget } from "../components/SplitGraphPanel";
+import { SplitGraphPanel, type GraphDiffTarget, type TopLevelAnchor } from "../components/SplitGraphPanel";
 import { SymbolListPanel } from "../components/SymbolListPanel";
 import type { FileDiffEntry, FileSymbol, ViewGraph, ViewportState } from "../types/graph";
 
@@ -89,8 +89,8 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const [showCalls, setShowCalls] = useState(true);
   const [oldDiffTargets, setOldDiffTargets] = useState<GraphDiffTarget[]>([]);
   const [newDiffTargets, setNewDiffTargets] = useState<GraphDiffTarget[]>([]);
-  const [oldTopAnchors, setOldTopAnchors] = useState<Record<string, { x: number; y: number }>>({});
-  const [newTopAnchors, setNewTopAnchors] = useState<Record<string, { x: number; y: number }>>({});
+  const [oldTopAnchors, setOldTopAnchors] = useState<Record<string, TopLevelAnchor>>({});
+  const [newTopAnchors, setNewTopAnchors] = useState<Record<string, TopLevelAnchor>>({});
   const [graphDiffIdx, setGraphDiffIdx] = useState(0);
   const [highlightedNodeId, setHighlightedNodeId] = useState<string>("");
   const [focusNodeId, setFocusNodeId] = useState<string>("");
@@ -104,6 +104,8 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const didAutoViewportRef = useRef(false);
   const startRafRef = useRef<number | null>(null);
   const endRafRef = useRef<number | null>(null);
+  const autoViewportRafRef = useRef<number | null>(null);
+  const graphDiffIdxRafRef = useRef<number | null>(null);
 
   /******************* COMPUTED ***********************/
   const filteredOldGraph = useMemo(() => {
@@ -271,6 +273,63 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
       y: sumY / count,
     };
   }, [oldTopAnchors, newTopAnchors, viewType]);
+  const alignedTopAnchors = useMemo(() => {
+    if (viewType !== "logic") {
+      return { old: undefined, new: undefined } as const;
+    }
+    const sharedKeys = Object.keys(oldTopAnchors).filter((key) => newTopAnchors[key] !== undefined);
+    if (sharedKeys.length === 0) {
+      return { old: undefined, new: undefined } as const;
+    }
+
+    const sortedKeys = [...sharedKeys].sort((a, b) => {
+      const oldA = oldTopAnchors[a];
+      const oldB = oldTopAnchors[b];
+      const yDelta = (oldA?.y ?? 0) - (oldB?.y ?? 0);
+      if (yDelta !== 0) return yDelta;
+      return (oldA?.x ?? 0) - (oldB?.x ?? 0);
+    });
+
+    const canonicalY = new Map<string, number>();
+    const rowGap = 28;
+    for (let idx = 0; idx < sortedKeys.length; idx += 1) {
+      const key = sortedKeys[idx];
+      const oldAnchor = oldTopAnchors[key];
+      const newAnchor = newTopAnchors[key];
+      if (!oldAnchor || !newAnchor) continue;
+
+      const naturalY = Math.max(oldAnchor.y, newAnchor.y);
+      if (idx === 0) {
+        canonicalY.set(key, naturalY);
+        continue;
+      }
+
+      const prevKey = sortedKeys[idx - 1];
+      const prevOld = oldTopAnchors[prevKey];
+      const prevNew = newTopAnchors[prevKey];
+      const prevY = canonicalY.get(prevKey);
+      if (!prevOld || !prevNew || prevY === undefined) {
+        canonicalY.set(key, naturalY);
+        continue;
+      }
+      const prevRowHeight = Math.max(prevOld.height, prevNew.height);
+      const minY = prevY + prevRowHeight + rowGap;
+      canonicalY.set(key, Math.max(naturalY, minY));
+    }
+
+    const oldAligned: Record<string, TopLevelAnchor> = {};
+    const newAligned: Record<string, TopLevelAnchor> = {};
+    for (const key of sortedKeys) {
+      const oldAnchor = oldTopAnchors[key];
+      const newAnchor = newTopAnchors[key];
+      const y = canonicalY.get(key);
+      if (!oldAnchor || !newAnchor || y === undefined) continue;
+      oldAligned[key] = { ...oldAnchor, y };
+      newAligned[key] = { ...newAnchor, x: oldAnchor.x, y };
+    }
+
+    return { old: oldAligned, new: newAligned } as const;
+  }, [oldTopAnchors, newTopAnchors, viewType]);
 
   const oldFileContentMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -366,7 +425,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     }
     setNewDiffTargets(targets);
   }, []);
-  const handleTopLevelAnchorsChange = useCallback((side: "old" | "new", anchors: Record<string, { x: number; y: number }>) => {
+  const handleTopLevelAnchorsChange = useCallback((side: "old" | "new", anchors: Record<string, TopLevelAnchor>) => {
     if (side === "old") {
       setOldTopAnchors(anchors);
       return;
@@ -482,16 +541,38 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   }, [scrollTick, selectedFile]);
 
   useEffect(() => {
+    if (graphDiffIdxRafRef.current !== null) {
+      window.cancelAnimationFrame(graphDiffIdxRafRef.current);
+      graphDiffIdxRafRef.current = null;
+    }
     if (graphDiffTargets.length === 0) {
-      if (graphDiffIdx !== 0) setGraphDiffIdx(0);
+      if (graphDiffIdx !== 0) {
+        graphDiffIdxRafRef.current = window.requestAnimationFrame(() => {
+          graphDiffIdxRafRef.current = null;
+          setGraphDiffIdx(0);
+        });
+      }
       return;
     }
     if (graphDiffIdx >= graphDiffTargets.length) {
-      setGraphDiffIdx(0);
+      graphDiffIdxRafRef.current = window.requestAnimationFrame(() => {
+        graphDiffIdxRafRef.current = null;
+        setGraphDiffIdx(0);
+      });
     }
+    return () => {
+      if (graphDiffIdxRafRef.current !== null) {
+        window.cancelAnimationFrame(graphDiffIdxRafRef.current);
+        graphDiffIdxRafRef.current = null;
+      }
+    };
   }, [graphDiffTargets.length, graphDiffIdx]);
 
   useEffect(() => {
+    if (autoViewportRafRef.current !== null) {
+      window.cancelAnimationFrame(autoViewportRafRef.current);
+      autoViewportRafRef.current = null;
+    }
     if (loading || didAutoViewportRef.current) return;
     if (viewType === "logic") {
       const oldKeys = Object.keys(oldTopAnchors);
@@ -504,15 +585,32 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     const preferredTarget = oldDiffTargets[0] ?? newDiffTargets[0] ?? graphDiffTargets[0];
     if (!preferredTarget) return;
     didAutoViewportRef.current = true;
-    setSharedViewport({
-      x: preferredTarget.viewportX,
-      y: preferredTarget.viewportY,
-      zoom: preferredTarget.viewportZoom,
+    autoViewportRafRef.current = window.requestAnimationFrame(() => {
+      autoViewportRafRef.current = null;
+      setSharedViewport({
+        x: preferredTarget.viewportX,
+        y: preferredTarget.viewportY,
+        zoom: preferredTarget.viewportZoom,
+      });
     });
+    return () => {
+      if (autoViewportRafRef.current !== null) {
+        window.cancelAnimationFrame(autoViewportRafRef.current);
+        autoViewportRafRef.current = null;
+      }
+    };
   }, [loading, newDiffTargets, oldDiffTargets, graphDiffTargets, viewType, oldTopAnchors, newTopAnchors, newAlignmentOffset]);
 
   useEffect(() => () => {
     cancelPendingFrames();
+    if (autoViewportRafRef.current !== null) {
+      window.cancelAnimationFrame(autoViewportRafRef.current);
+      autoViewportRafRef.current = null;
+    }
+    if (graphDiffIdxRafRef.current !== null) {
+      window.cancelAnimationFrame(graphDiffIdxRafRef.current);
+      graphDiffIdxRafRef.current = null;
+    }
     if (highlightTimerRef.current !== null) {
       window.clearTimeout(highlightTimerRef.current);
     }
@@ -578,6 +676,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
           focusFilePath={selectedFilePath}
           fileContentMap={oldFileContentMap}
           onDiffTargetsChange={handleDiffTargetsChange}
+          alignmentAnchors={alignedTopAnchors.old}
           onTopLevelAnchorsChange={handleTopLevelAnchorsChange}
         />
         <SplitGraphPanel
@@ -598,7 +697,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
           fileContentMap={newFileContentMap}
           onDiffTargetsChange={handleDiffTargetsChange}
           alignmentOffset={newAlignmentOffset}
-          alignmentAnchors={oldTopAnchors}
+          alignmentAnchors={alignedTopAnchors.new}
           onTopLevelAnchorsChange={handleTopLevelAnchorsChange}
         />
       </div>

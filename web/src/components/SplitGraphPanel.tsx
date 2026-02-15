@@ -41,6 +41,13 @@ export interface GraphDiffTarget {
   diffStatus: "added" | "removed" | "modified";
 }
 
+export interface TopLevelAnchor {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface SplitGraphPanelProps {
   title: string;
   side: "old" | "new";
@@ -59,8 +66,8 @@ interface SplitGraphPanelProps {
   fileContentMap: Map<string, string>;
   onDiffTargetsChange?: (side: "old" | "new", targets: GraphDiffTarget[]) => void;
   alignmentOffset?: { x: number; y: number };
-  alignmentAnchors?: Record<string, { x: number; y: number }>;
-  onTopLevelAnchorsChange?: (side: "old" | "new", anchors: Record<string, { x: number; y: number }>) => void;
+  alignmentAnchors?: Record<string, TopLevelAnchor>;
+  onTopLevelAnchorsChange?: (side: "old" | "new", anchors: Record<string, TopLevelAnchor>) => void;
 }
 
 const statusColor: Record<string, string> = {
@@ -906,12 +913,14 @@ export const SplitGraphPanel = ({
   useEffect(() => {
     if (!onTopLevelAnchorsChange) return;
     const graphNodeById = new Map(graph.nodes.map((n) => [n.id, n]));
-    const anchors: Record<string, { x: number; y: number }> = {};
+    const anchors: Record<string, TopLevelAnchor> = {};
     for (const node of layoutResult.nodes) {
       if (node.parentId) continue;
       const gn = graphNodeById.get(node.id);
       if (!gn || gn.kind !== "group") continue;
-      anchors[stableNodeKey(gn)] = { x: node.position.x, y: node.position.y };
+      const width = typeof node.style?.width === "number" ? node.style.width : LEAF_W;
+      const height = typeof node.style?.height === "number" ? node.style.height : LEAF_H;
+      anchors[stableNodeKey(gn)] = { x: node.position.x, y: node.position.y, width, height };
     }
     onTopLevelAnchorsChange(side, anchors);
   }, [graph.nodes, layoutResult.nodes, onTopLevelAnchorsChange, side]);
