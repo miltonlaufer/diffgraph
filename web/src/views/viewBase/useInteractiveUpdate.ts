@@ -16,6 +16,7 @@ export const useInteractiveUpdate = (
 ): UseInteractiveUpdateResult => {
   const [isUiPending, startUiTransition] = useTransition();
   const startRafRef = useRef<number | null>(null);
+  const updateRafRef = useRef<number | null>(null);
   const endRafRef = useRef<number | null>(null);
   const recoveryTimerRef = useRef<number | null>(null);
   const interactionTokenRef = useRef(0);
@@ -31,6 +32,10 @@ export const useInteractiveUpdate = (
     if (startRafRef.current !== null) {
       window.cancelAnimationFrame(startRafRef.current);
       startRafRef.current = null;
+    }
+    if (updateRafRef.current !== null) {
+      window.cancelAnimationFrame(updateRafRef.current);
+      updateRafRef.current = null;
     }
     if (endRafRef.current !== null) {
       window.cancelAnimationFrame(endRafRef.current);
@@ -49,25 +54,32 @@ export const useInteractiveUpdate = (
       store.setInteractionBusy(false);
       recoveryTimerRef.current = null;
     }, 2500);
+
     startRafRef.current = window.requestAnimationFrame(() => {
       startRafRef.current = null;
-      try {
-        startUiTransition(() => {
-          update();
+
+      // Let the overlay paint first, then run expensive updates.
+      updateRafRef.current = window.requestAnimationFrame(() => {
+        updateRafRef.current = null;
+        try {
+          startUiTransition(() => {
+            update();
+          });
+        } catch {
+          if (interactionTokenRef.current === token) {
+            store.setInteractionBusy(false);
+          }
+          clearRecoveryTimer();
+          return;
+        }
+
+        endRafRef.current = window.requestAnimationFrame(() => {
+          endRafRef.current = null;
+          if (interactionTokenRef.current === token) {
+            store.setInteractionBusy(false);
+          }
+          clearRecoveryTimer();
         });
-      } catch {
-        if (interactionTokenRef.current === token) {
-          store.setInteractionBusy(false);
-        }
-        clearRecoveryTimer();
-        return;
-      }
-      endRafRef.current = window.requestAnimationFrame(() => {
-        endRafRef.current = null;
-        if (interactionTokenRef.current === token) {
-          store.setInteractionBusy(false);
-        }
-        clearRecoveryTimer();
       });
     });
   }, [cancelPendingFrames, clearRecoveryTimer, startUiTransition, store]);

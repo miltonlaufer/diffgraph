@@ -7,7 +7,6 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import { observer, useLocalObservable } from "mobx-react-lite";
-import { buildCrossGraphNodeMatchKey } from "#/lib/nodeIdentity";
 import { GraphCanvas } from "./splitGraph/GraphCanvas";
 import { useSplitGraphRuntime } from "./splitGraph/context";
 import { GraphPanelHeader } from "./splitGraph/GraphPanelHeader";
@@ -22,6 +21,7 @@ import {
   stableNodeKey,
 } from "./splitGraph/layout";
 import { SplitGraphPanelStore } from "./splitGraph/store";
+import { useSplitGraphDerivedWorker } from "./splitGraph/useSplitGraphDerivedWorker";
 import { useFlowContainerSize } from "./splitGraph/useFlowContainerSize";
 import { useSplitGraphLayoutWorker } from "./splitGraph/useSplitGraphLayoutWorker";
 import {
@@ -42,6 +42,7 @@ const SEARCH_FLASH_STYLE = {
 };
 const EDGE_TOOLTIP_OFFSET_X = 12;
 const EDGE_TOOLTIP_OFFSET_Y = 14;
+const EDGE_CLICK_HIGHLIGHT_MS = 5000;
 
 const labelIdentity = (label: string): string =>
   label
@@ -108,6 +109,8 @@ export const SplitGraphPanel = observer(({
     hoveredNodeMatchKey,
   } = runtimeState;
   const {
+    onInteractionClick,
+    onGraphNodeFocus,
     onNodeSelect,
     onNodeHoverChange,
     onViewportChange,
@@ -118,7 +121,9 @@ export const SplitGraphPanel = observer(({
   } = runtimeActions;
   const store = useLocalObservable(() => new SplitGraphPanelStore());
   const searchHighlightTimerRef = useRef<number | null>(null);
+  const edgeClickHighlightTimerRef = useRef<number | null>(null);
   const flowContainerRef = useRef<HTMLDivElement>(null);
+  const lastEdgeNavigationRef = useRef<{ edgeId: string; lastEndpoint: "source" | "target" } | null>(null);
   const lastAppliedFocusNodeTickRef = useRef(0);
   const lastAppliedFocusFileTickRef = useRef(0);
   const lastViewportRecoveryKeyRef = useRef("");
@@ -143,14 +148,6 @@ export const SplitGraphPanel = observer(({
     () => new Map(graph.nodes.map((node) => [node.id, node])),
     [graph.nodes],
   );
-
-  const nodeMatchKeyById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const node of graph.nodes) {
-      map.set(node.id, buildCrossGraphNodeMatchKey(node));
-    }
-    return map;
-  }, [graph.nodes]);
 
   const topKeyByNodeId = useMemo(() => {
     const resolved = new Map<string, string>();
@@ -348,17 +345,32 @@ export const SplitGraphPanel = observer(({
     [positionedLayoutResult.nodes],
   );
 
-  const nodeIdsByMatchKey = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const node of positionedLayoutResult.nodes) {
-      const matchKey = nodeMatchKeyById.get(node.id);
-      if (!matchKey) continue;
-      const list = map.get(matchKey) ?? [];
-      list.push(node.id);
-      map.set(matchKey, list);
-    }
-    return map;
-  }, [nodeMatchKeyById, positionedLayoutResult.nodes]);
+  const splitGraphDerivedInput = useMemo(
+    () => ({
+      graphNodes: graph.nodes,
+      positionedNodeIds: positionedLayoutResult.nodes.map((node) => node.id),
+      positionedEdges: positionedLayoutResult.edges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+      })),
+      searchQuery: store.searchQuery,
+      searchExclude: store.searchExclude,
+    }),
+    [graph.nodes, positionedLayoutResult.edges, positionedLayoutResult.nodes, store.searchExclude, store.searchQuery],
+  );
+
+  const splitGraphDerived = useSplitGraphDerivedWorker(splitGraphDerivedInput);
+
+  const nodeMatchKeyById = useMemo(
+    () => new Map(splitGraphDerived.nodeMatchKeyByIdEntries),
+    [splitGraphDerived.nodeMatchKeyByIdEntries],
+  );
+
+  const nodeIdsByMatchKey = useMemo(
+    () => new Map(splitGraphDerived.nodeIdsByMatchKeyEntries),
+    [splitGraphDerived.nodeIdsByMatchKeyEntries],
+  );
 
   const hoveredNodeIdForPanel = useMemo(() => {
     if (!hoveredNodeId && !hoveredNodeMatchKey) return "";
@@ -380,51 +392,15 @@ export const SplitGraphPanel = observer(({
   }, [graphNodeById, hoveredNodeId, hoveredNodeMatchKey, nodeIdsByMatchKey, positionedNodeById]);
 
   const hoverNeighborhoodByNodeId = useMemo(() => {
-    const neighborNodeIdsByNode = new Map<string, Set<string>>();
-    const incidentEdgeIdsByNode = new Map<string, Set<string>>();
-    for (const node of positionedLayoutResult.nodes) {
-      if (!nodeMatchKeyById.has(node.id)) continue;
-      neighborNodeIdsByNode.set(node.id, new Set());
-      incidentEdgeIdsByNode.set(node.id, new Set());
+    const map = new Map<string, { keepNodeIds: Set<string>; keepEdgeIds: Set<string> }>();
+    for (const entry of splitGraphDerived.hoverNeighborhoodByNodeIdEntries) {
+      map.set(entry.nodeId, {
+        keepNodeIds: new Set(entry.keepNodeIds),
+        keepEdgeIds: new Set(entry.keepEdgeIds),
+      });
     }
-
-    for (const edge of positionedLayoutResult.edges) {
-      if (neighborNodeIdsByNode.has(edge.source)) {
-        neighborNodeIdsByNode.get(edge.source)?.add(edge.target);
-        incidentEdgeIdsByNode.get(edge.source)?.add(edge.id);
-      }
-      if (neighborNodeIdsByNode.has(edge.target)) {
-        neighborNodeIdsByNode.get(edge.target)?.add(edge.source);
-        incidentEdgeIdsByNode.get(edge.target)?.add(edge.id);
-      }
-    }
-
-    const index = new Map<string, { keepNodeIds: Set<string>; keepEdgeIds: Set<string> }>();
-    for (const nodeId of neighborNodeIdsByNode.keys()) {
-      const graphNode = graphNodeById.get(nodeId);
-      if (graphNode?.kind === "group") {
-        index.set(nodeId, {
-          keepNodeIds: new Set([nodeId]),
-          keepEdgeIds: new Set(incidentEdgeIdsByNode.get(nodeId) ?? []),
-        });
-        continue;
-      }
-      const keepNodeIds = new Set<string>([nodeId]);
-      for (const neighborId of neighborNodeIdsByNode.get(nodeId) ?? []) {
-        if (nodeMatchKeyById.has(neighborId)) {
-          keepNodeIds.add(neighborId);
-        }
-      }
-      const keepEdgeIds = new Set<string>();
-      for (const edge of positionedLayoutResult.edges) {
-        if (keepNodeIds.has(edge.source) && keepNodeIds.has(edge.target)) {
-          keepEdgeIds.add(edge.id);
-        }
-      }
-      index.set(nodeId, { keepNodeIds, keepEdgeIds });
-    }
-    return index;
-  }, [graphNodeById, nodeMatchKeyById, positionedLayoutResult.edges, positionedLayoutResult.nodes]);
+    return map;
+  }, [splitGraphDerived.hoverNeighborhoodByNodeIdEntries]);
 
   const hoverNeighborhood = useMemo(() => {
     if (!hoveredNodeIdForPanel) return null;
@@ -434,8 +410,8 @@ export const SplitGraphPanel = observer(({
   const flowElements = useMemo(() => {
     const hasNodeHighlights = Boolean(selectedNodeId || highlightedNodeId || store.searchHighlightedNodeId);
     const hasHoverNeighborhood = hoverNeighborhood !== null;
-    const hasEdgeHover = store.hoveredEdgeId.length > 0;
-    if (!hasNodeHighlights && !hasEdgeHover && !hasHoverNeighborhood) return positionedLayoutResult;
+    const hasEdgeEmphasis = store.hoveredEdgeId.length > 0 || store.clickedEdgeId.length > 0;
+    if (!hasNodeHighlights && !hasEdgeEmphasis && !hasHoverNeighborhood) return positionedLayoutResult;
 
     const nodes = (hasNodeHighlights || hasHoverNeighborhood)
       ? positionedLayoutResult.nodes.map((node) => {
@@ -484,11 +460,13 @@ export const SplitGraphPanel = observer(({
       })
       : positionedLayoutResult.nodes;
 
-    const edges = (hasEdgeHover || hasHoverNeighborhood)
+    const edges = (hasEdgeEmphasis || hasHoverNeighborhood)
       ? positionedLayoutResult.edges.map((edge) => {
         const isHovered = edge.id === store.hoveredEdgeId;
+        const isClicked = edge.id === store.clickedEdgeId;
+        const isPrimaryEdge = isHovered || isClicked;
         const isInHoverNeighborhood = Boolean(hasHoverNeighborhood && hoverNeighborhood?.keepEdgeIds.has(edge.id));
-        if (!isHovered && !isInHoverNeighborhood && !hasEdgeHover) return edge;
+        if (!isPrimaryEdge && !isInHoverNeighborhood && !hasEdgeEmphasis) return edge;
         const baseStyle = edge.style ?? {};
         const baseLabelStyle = edge.labelStyle ?? {};
         const baseLabelBgStyle = edge.labelBgStyle ?? {};
@@ -496,22 +474,22 @@ export const SplitGraphPanel = observer(({
           typeof baseStyle.strokeWidth === "number"
             ? baseStyle.strokeWidth
             : Number(baseStyle.strokeWidth ?? 1.5);
-        const nextStrokeWidth = isHovered
+        const nextStrokeWidth = isPrimaryEdge
           ? Math.max(baseStrokeWidth + 2.6, 4.2)
           : isInHoverNeighborhood
             ? Math.max(baseStrokeWidth + 1.8, 3.2)
             : baseStrokeWidth;
-        const nextStrokeOpacity = isHovered
+        const nextStrokeOpacity = isPrimaryEdge
           ? 1
           : isInHoverNeighborhood
             ? 1
             : 0.24;
-        const nextLabelOpacity = isHovered
+        const nextLabelOpacity = isPrimaryEdge
           ? 1
           : isInHoverNeighborhood
             ? 1
             : 0.35;
-        const nextStroke = isHovered
+        const nextStroke = isPrimaryEdge
           ? "#f8fafc"
           : isInHoverNeighborhood
             ? "#c084fc"
@@ -523,7 +501,7 @@ export const SplitGraphPanel = observer(({
             stroke: nextStroke,
             strokeWidth: nextStrokeWidth,
             strokeOpacity: nextStrokeOpacity,
-            filter: isHovered
+            filter: isPrimaryEdge
               ? "drop-shadow(0 0 8px rgba(248,250,252,0.95))"
               : isInHoverNeighborhood
                 ? "drop-shadow(0 0 7px rgba(192,132,252,0.9))"
@@ -531,13 +509,13 @@ export const SplitGraphPanel = observer(({
           },
           labelStyle: {
             ...baseLabelStyle,
-            fill: isHovered ? "#ffffff" : isInHoverNeighborhood ? "#f3e8ff" : baseLabelStyle.fill,
+            fill: isPrimaryEdge ? "#ffffff" : isInHoverNeighborhood ? "#f3e8ff" : baseLabelStyle.fill,
             opacity: nextLabelOpacity,
           },
           labelBgStyle: {
             ...baseLabelBgStyle,
-            fillOpacity: isHovered ? 0.98 : isInHoverNeighborhood ? 0.68 : 0.5,
-            stroke: isHovered ? "#f8fafc" : isInHoverNeighborhood ? "#c084fc" : baseLabelBgStyle.stroke,
+            fillOpacity: isPrimaryEdge ? 0.98 : isInHoverNeighborhood ? 0.68 : 0.5,
+            stroke: isPrimaryEdge ? "#f8fafc" : isInHoverNeighborhood ? "#c084fc" : baseLabelBgStyle.stroke,
           },
         };
       })
@@ -551,20 +529,21 @@ export const SplitGraphPanel = observer(({
     highlightedNodeId,
     positionedLayoutResult,
     selectedNodeId,
+    store.clickedEdgeId,
     store.hoveredEdgeId,
     store.searchHighlightedNodeId,
   ]);
 
+  const flowElementsNodeById = useMemo(
+    () => new Map(flowElements.nodes.map((node) => [node.id, node])),
+    [flowElements.nodes],
+  );
+
   const searchMatches = useMemo(() => {
-    if (!store.searchQuery || store.searchQuery.length < 2) return [];
-    const q = store.searchQuery.toLowerCase();
-    return flowElements.nodes.filter((n) => {
-      const gn = graph.nodes.find((g) => g.id === n.id);
-      const text = `${gn?.label ?? ""} ${gn?.filePath ?? ""} ${gn?.kind ?? ""}`.toLowerCase();
-      const matches = text.includes(q);
-      return store.searchExclude ? !matches : matches;
-    });
-  }, [store.searchQuery, store.searchExclude, flowElements.nodes, graph.nodes]);
+    return splitGraphDerived.searchMatchIds
+      .map((nodeId) => flowElementsNodeById.get(nodeId))
+      .filter((node): node is Node => node !== undefined);
+  }, [flowElementsNodeById, splitGraphDerived.searchMatchIds]);
 
   const searchResultNodes = useMemo(() => {
     if (!store.searchQuery || store.searchQuery.length < 2) return flowElements;
@@ -706,6 +685,7 @@ export const SplitGraphPanel = observer(({
   }, [store]);
 
   const handleSearchNext = useCallback(() => {
+    onInteractionClick?.();
     if (searchMatches.length === 0) return;
     const next = (store.searchIdx + 1) % searchMatches.length;
     store.setSearchIdx(next);
@@ -714,9 +694,10 @@ export const SplitGraphPanel = observer(({
       flashSearchTarget(target.id);
       onViewportChange(viewportForNode(target));
     }
-  }, [searchMatches, store, flashSearchTarget, onViewportChange, viewportForNode]);
+  }, [searchMatches, store, flashSearchTarget, onInteractionClick, onViewportChange, viewportForNode]);
 
   const handleSearchPrev = useCallback(() => {
+    onInteractionClick?.();
     if (searchMatches.length === 0) return;
     const prev = (store.searchIdx - 1 + searchMatches.length) % searchMatches.length;
     store.setSearchIdx(prev);
@@ -725,7 +706,7 @@ export const SplitGraphPanel = observer(({
       flashSearchTarget(target.id);
       onViewportChange(viewportForNode(target));
     }
-  }, [searchMatches, store, flashSearchTarget, onViewportChange, viewportForNode]);
+  }, [searchMatches, store, flashSearchTarget, onInteractionClick, onViewportChange, viewportForNode]);
 
   const handleNodeClick = useCallback<NodeMouseHandler>((_event, node) => {
     onNodeSelect(node.id, side);
@@ -772,6 +753,28 @@ export const SplitGraphPanel = observer(({
   const handleEdgeMouseLeave = useCallback<EdgeMouseHandler>(() => {
     store.clearHoveredEdge();
   }, [store]);
+
+  const handleEdgeClick = useCallback<EdgeMouseHandler>((_event, edge) => {
+    const navigateToTarget = lastEdgeNavigationRef.current?.edgeId === edge.id
+      && lastEdgeNavigationRef.current?.lastEndpoint === "source";
+    const endpoint: "source" | "target" = navigateToTarget ? "target" : "source";
+    const nodeId = endpoint === "source" ? edge.source : edge.target;
+    if (!nodeId || !graphNodeById.has(nodeId)) return;
+    store.setClickedEdgeId(edge.id);
+    if (edgeClickHighlightTimerRef.current !== null) {
+      window.clearTimeout(edgeClickHighlightTimerRef.current);
+    }
+    edgeClickHighlightTimerRef.current = window.setTimeout(() => {
+      store.clearClickedEdge();
+      edgeClickHighlightTimerRef.current = null;
+    }, EDGE_CLICK_HIGHLIGHT_MS);
+    if (onGraphNodeFocus) {
+      onGraphNodeFocus(nodeId, side);
+    } else {
+      onNodeSelect(nodeId, side);
+    }
+    lastEdgeNavigationRef.current = { edgeId: edge.id, lastEndpoint: endpoint };
+  }, [graphNodeById, onGraphNodeFocus, onNodeSelect, side, store]);
 
   const handlePaneMouseLeave = useCallback(() => {
     store.clearHoveredEdge();
@@ -858,6 +861,9 @@ export const SplitGraphPanel = observer(({
     if (searchHighlightTimerRef.current !== null) {
       window.clearTimeout(searchHighlightTimerRef.current);
     }
+    if (edgeClickHighlightTimerRef.current !== null) {
+      window.clearTimeout(edgeClickHighlightTimerRef.current);
+    }
   }, []);
 
   useEffect(() => {
@@ -942,6 +948,12 @@ export const SplitGraphPanel = observer(({
 
   useEffect(() => {
     store.clearHoveredEdge();
+    store.clearClickedEdge();
+    lastEdgeNavigationRef.current = null;
+    if (edgeClickHighlightTimerRef.current !== null) {
+      window.clearTimeout(edgeClickHighlightTimerRef.current);
+      edgeClickHighlightTimerRef.current = null;
+    }
   }, [graph.nodes, graph.edges, viewType, showCalls, store]);
 
   return (
@@ -986,6 +998,7 @@ export const SplitGraphPanel = observer(({
         onNodeMouseEnter={handleNodeMouseEnter}
         onNodeMouseMove={handleNodeMouseMove}
         onNodeMouseLeave={handleNodeMouseLeave}
+        onEdgeClick={handleEdgeClick}
         onEdgeMouseEnter={handleEdgeMouseEnter}
         onEdgeMouseMove={handleEdgeMouseMove}
         onEdgeMouseLeave={handleEdgeMouseLeave}

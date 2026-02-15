@@ -9,6 +9,7 @@ import type { FileSymbol, ViewportState } from "../types/graph";
 import { LogicToolbar } from "./viewBase/LogicToolbar";
 import {
   commandCodeLineClick,
+  commandFocusGraphNode,
   commandGoToGraphDiff,
   commandSelectFile,
   commandSelectNode,
@@ -23,19 +24,11 @@ import {
 import { ViewBaseStore } from "./viewBase/store";
 import { ViewBaseRuntimeProvider, type ViewBaseRuntimeContextValue } from "./viewBase/runtime";
 import type { ViewType } from "./viewBase/types";
+import { useViewBaseDerivedWorker } from "./viewBase/useViewBaseDerivedWorker";
 import { useInteractiveUpdate } from "./viewBase/useInteractiveUpdate";
 import { useViewBaseEffects } from "./viewBase/useViewBaseEffects";
 import {
   buildFileContentMap,
-  computeAlignmentBreakpoints,
-  computeAlignedTopAnchors,
-  computeChangedNodeCount,
-  computeDiffStats,
-  computeDisplayGraph,
-  computeFilteredNewGraph,
-  computeFilteredOldGraph,
-  computeNewAlignmentOffset,
-  computeVisibleGraph,
   normalizePath,
 } from "./viewBase/selectors";
 
@@ -51,40 +44,41 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
   const highlightTimerRef = useRef<number | null>(null);
   const { isUiPending, commandContext } = useInteractiveUpdate(store);
 
-  const filteredOldGraph = useMemo(
-    () => computeFilteredOldGraph(store.oldGraph),
-    [store.oldGraph],
+  const derivedInput = useMemo(
+    () => ({
+      oldGraph: store.oldGraph,
+      newGraph: store.newGraph,
+      selectedFilePath: store.selectedFilePath,
+      showChangesOnly,
+      viewType,
+      oldTopAnchors: store.oldTopAnchors,
+      newTopAnchors: store.newTopAnchors,
+      oldNodeAnchors: store.oldNodeAnchors,
+      newNodeAnchors: store.newNodeAnchors,
+    }),
+    [
+      showChangesOnly,
+      store.newGraph,
+      store.newNodeAnchors,
+      store.newTopAnchors,
+      store.oldGraph,
+      store.oldNodeAnchors,
+      store.oldTopAnchors,
+      store.selectedFilePath,
+      viewType,
+    ],
   );
 
-  const filteredNewGraph = useMemo(
-    () => computeFilteredNewGraph(store.newGraph),
-    [store.newGraph],
-  );
-
-  const visibleOldGraph = useMemo(
-    () => computeVisibleGraph(filteredOldGraph, filteredNewGraph, showChangesOnly, viewType),
-    [filteredOldGraph, filteredNewGraph, showChangesOnly, viewType],
-  );
-
-  const visibleNewGraph = useMemo(
-    () => computeVisibleGraph(filteredNewGraph, filteredOldGraph, showChangesOnly, viewType),
-    [filteredOldGraph, filteredNewGraph, showChangesOnly, viewType],
-  );
-
-  const diffStats = useMemo(
-    () => computeDiffStats(store.oldGraph, store.newGraph, store.selectedFilePath),
-    [store.oldGraph, store.newGraph, store.selectedFilePath],
-  );
-
-  const displayOldGraph = useMemo(
-    () => computeDisplayGraph(visibleOldGraph, store.selectedFilePath, viewType),
-    [visibleOldGraph, store.selectedFilePath, viewType],
-  );
-
-  const displayNewGraph = useMemo(
-    () => computeDisplayGraph(visibleNewGraph, store.selectedFilePath, viewType),
-    [visibleNewGraph, store.selectedFilePath, viewType],
-  );
+  const {
+    displayOldGraph,
+    displayNewGraph,
+    diffStats,
+    displayOldChangedCount,
+    displayNewChangedCount,
+    newAlignmentOffset,
+    alignedTopAnchors,
+    alignmentBreakpoints,
+  } = useViewBaseDerivedWorker(derivedInput);
 
   const isEmptyView = useMemo(
     () => displayOldGraph.nodes.length === 0 && displayNewGraph.nodes.length === 0,
@@ -107,31 +101,6 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     return merged.sort((a, b) => (a.y - b.y) || (a.x - b.x));
   }, [store.oldDiffTargets, store.newDiffTargets]);
 
-  const displayOldChangedCount = useMemo(
-    () => computeChangedNodeCount(displayOldGraph),
-    [displayOldGraph],
-  );
-
-  const displayNewChangedCount = useMemo(
-    () => computeChangedNodeCount(displayNewGraph),
-    [displayNewGraph],
-  );
-
-  const newAlignmentOffset = useMemo(
-    () => computeNewAlignmentOffset(viewType, store.oldTopAnchors, store.newTopAnchors),
-    [viewType, store.oldTopAnchors, store.newTopAnchors],
-  );
-
-  const alignedTopAnchors = useMemo(
-    () => computeAlignedTopAnchors(viewType, store.oldTopAnchors, store.newTopAnchors),
-    [viewType, store.oldTopAnchors, store.newTopAnchors],
-  );
-
-  const alignmentBreakpoints = useMemo(
-    () => computeAlignmentBreakpoints(viewType, store.oldNodeAnchors, store.newNodeAnchors),
-    [viewType, store.oldNodeAnchors, store.newNodeAnchors],
-  );
-
   const oldFileContentMap = useMemo(
     () => buildFileContentMap(store.fileDiffs, "old"),
     [store.fileDiffs],
@@ -145,6 +114,13 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
   const handleNodeSelect = useCallback(
     (nodeId: string, sourceSide: "old" | "new") => {
       commandSelectNode(commandContext, nodeId, sourceSide);
+    },
+    [commandContext],
+  );
+
+  const handleGraphNodeFocus = useCallback(
+    (nodeId: string, sourceSide: "old" | "new") => {
+      commandFocusGraphNode(commandContext, nodeId, sourceSide);
     },
     [commandContext],
   );
@@ -212,6 +188,10 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     [commandContext],
   );
 
+  const handleInteractionClick = useCallback(() => {
+    commandContext.runInteractiveUpdate(() => {});
+  }, [commandContext]);
+
   const splitGraphRuntime = useMemo<SplitGraphRuntimeContextValue>(() => ({
     state: {
       viewport: store.sharedViewport,
@@ -219,13 +199,15 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
       highlightedNodeId: store.highlightedNodeId,
       focusNodeId: store.focusNodeId,
       focusNodeTick: store.focusNodeTick,
-      focusSourceSide: store.targetSide,
+      focusSourceSide: store.focusSourceSide,
       focusFilePath: store.selectedFilePath,
       focusFileTick: store.focusFileTick,
       hoveredNodeId: store.hoveredNodeId,
       hoveredNodeMatchKey: store.hoveredNodeMatchKey,
     },
     actions: {
+      onInteractionClick: handleInteractionClick,
+      onGraphNodeFocus: handleGraphNodeFocus,
       onNodeSelect: handleNodeSelect,
       onNodeHoverChange: handleNodeHoverChange,
       onViewportChange: handleViewportChange,
@@ -236,6 +218,8 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     },
   }), [
     handleDiffTargetsChange,
+    handleGraphNodeFocus,
+    handleInteractionClick,
     handleLayoutPendingChange,
     handleNodeHoverChange,
     handleNodeSelect,
@@ -244,6 +228,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     handleViewportChange,
     store.focusFileTick,
     store.focusNodeId,
+    store.focusSourceSide,
     store.focusNodeTick,
     store.hoveredNodeId,
     store.hoveredNodeMatchKey,
@@ -251,7 +236,6 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     store.selectedFilePath,
     store.selectedNodeId,
     store.sharedViewport,
-    store.targetSide,
   ]);
 
   const handleCodeLineClick = useCallback(

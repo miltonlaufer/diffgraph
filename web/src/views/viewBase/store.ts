@@ -24,6 +24,7 @@ export class ViewBaseStore {
   graphDiffIdx = 0;
   highlightedNodeId = "";
   focusNodeId = "";
+  focusSourceSide: "old" | "new" = "new";
   focusNodeTick = 0;
   focusFileTick = 0;
   hoveredNodeId = "";
@@ -71,6 +72,7 @@ export class ViewBaseStore {
     this.fileDiffs = fileDiffs;
     this.selectedFilePath = "";
     this.sharedViewport = { x: 20, y: 20, zoom: 0.5 };
+    this.focusSourceSide = "new";
     this.loading = false;
     this.error = "";
   }
@@ -132,8 +134,9 @@ export class ViewBaseStore {
     this.selectedNodeId = nodeId;
   }
 
-  focusNode(nodeId: string): void {
+  focusNode(nodeId: string, sourceSide: "old" | "new"): void {
     this.focusNodeId = nodeId;
+    this.focusSourceSide = sourceSide;
     this.focusNodeTick += 1;
   }
 

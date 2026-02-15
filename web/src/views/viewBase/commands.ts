@@ -18,7 +18,7 @@ export const commandSelectNode = (
   const { store, runInteractiveUpdate } = context;
   runInteractiveUpdate(() => {
     store.setSelectedNodeId(nodeId);
-    store.focusNode(nodeId);
+    store.focusNode(nodeId, sourceSide);
     const matchedOld = store.oldGraph.nodes.find((node) => node.id === nodeId);
     const matchedNew = store.newGraph.nodes.find((node) => node.id === nodeId);
     const primary = sourceSide === "old" ? matchedOld : matchedNew;
@@ -30,6 +30,18 @@ export const commandSelectNode = (
     const line = primary?.startLine ?? fallback?.startLine ?? 0;
     store.setTarget(line, sourceSide);
     store.bumpScrollTick();
+  });
+};
+
+export const commandFocusGraphNode = (
+  context: CommandContext,
+  nodeId: string,
+  sourceSide: "old" | "new",
+): void => {
+  const { store, runInteractiveUpdate } = context;
+  runInteractiveUpdate(() => {
+    store.setSelectedNodeId(nodeId);
+    store.focusNode(nodeId, sourceSide);
   });
 };
 
@@ -54,9 +66,11 @@ export const commandSelectSymbol = (
   context: CommandContext,
   startLine: number,
 ): void => {
-  const { store } = context;
-  store.setTarget(startLine, "new");
-  store.bumpScrollTick();
+  const { store, runInteractiveUpdate } = context;
+  runInteractiveUpdate(() => {
+    store.setTarget(startLine, "new");
+    store.bumpScrollTick();
+  });
 };
 
 export const commandSetViewport = (context: CommandContext, viewport: ViewportState): void => {
@@ -133,44 +147,47 @@ export const commandCodeLineClick = (
   line: number,
   side: "old" | "new",
 ): void => {
-  const filePath = normalizePath(context.selectedFilePath);
-  if (!filePath) return;
+  const { runInteractiveUpdate } = context;
+  runInteractiveUpdate(() => {
+    const filePath = normalizePath(context.selectedFilePath);
+    if (!filePath) return;
 
-  const sideGraph = side === "old" ? context.displayOldGraph : context.displayNewGraph;
-  const inFile = sideGraph.nodes.filter((node) => normalizePath(node.filePath) === filePath);
-  if (inFile.length === 0) return;
+    const sideGraph = side === "old" ? context.displayOldGraph : context.displayNewGraph;
+    const inFile = sideGraph.nodes.filter((node) => normalizePath(node.filePath) === filePath);
+    if (inFile.length === 0) return;
 
-  const withRange = inFile.filter(
-    (node) =>
-      (node.startLine ?? 0) > 0
-      && (node.endLine ?? node.startLine ?? 0) >= (node.startLine ?? 0),
-  );
+    const withRange = inFile.filter(
+      (node) =>
+        (node.startLine ?? 0) > 0
+        && (node.endLine ?? node.startLine ?? 0) >= (node.startLine ?? 0),
+    );
 
-  const containing = withRange.filter((node) => {
-    const start = node.startLine ?? 0;
-    const end = node.endLine ?? start;
-    return line >= start && line <= end;
+    const containing = withRange.filter((node) => {
+      const start = node.startLine ?? 0;
+      const end = node.endLine ?? start;
+      return line >= start && line <= end;
+    });
+
+    const candidates = containing.length > 0 ? containing : withRange;
+    if (candidates.length === 0) return;
+
+    candidates.sort((a, b) => {
+      const aStart = a.startLine ?? 0;
+      const aEnd = a.endLine ?? aStart;
+      const bStart = b.startLine ?? 0;
+      const bEnd = b.endLine ?? bStart;
+      const aSpan = Math.max(1, aEnd - aStart + 1);
+      const bSpan = Math.max(1, bEnd - bStart + 1);
+      if (aSpan !== bSpan) return aSpan - bSpan;
+      if (a.kind === "Branch" && b.kind !== "Branch") return -1;
+      if (b.kind === "Branch" && a.kind !== "Branch") return 1;
+      return Math.abs(aStart - line) - Math.abs(bStart - line);
+    });
+
+    const target = candidates[0];
+    context.store.setSelectedNodeId(target.id);
+    context.store.focusNode(target.id, side);
   });
-
-  const candidates = containing.length > 0 ? containing : withRange;
-  if (candidates.length === 0) return;
-
-  candidates.sort((a, b) => {
-    const aStart = a.startLine ?? 0;
-    const aEnd = a.endLine ?? aStart;
-    const bStart = b.startLine ?? 0;
-    const bEnd = b.endLine ?? bStart;
-    const aSpan = Math.max(1, aEnd - aStart + 1);
-    const bSpan = Math.max(1, bEnd - bStart + 1);
-    if (aSpan !== bSpan) return aSpan - bSpan;
-    if (a.kind === "Branch" && b.kind !== "Branch") return -1;
-    if (b.kind === "Branch" && a.kind !== "Branch") return 1;
-    return Math.abs(aStart - line) - Math.abs(bStart - line);
-  });
-
-  const target = candidates[0];
-  context.store.setSelectedNodeId(target.id);
-  context.store.focusNode(target.id);
 };
 
 interface DiffNavigationContext extends CommandContext {
@@ -182,21 +199,23 @@ export const commandGoToGraphDiff = (
   context: DiffNavigationContext,
   idx: number,
 ): void => {
-  const { graphDiffTargets, store, highlightTimerRef } = context;
-  if (graphDiffTargets.length === 0) return;
+  const { graphDiffTargets, store, highlightTimerRef, runInteractiveUpdate } = context;
+  runInteractiveUpdate(() => {
+    if (graphDiffTargets.length === 0) return;
 
-  const normalized = ((idx % graphDiffTargets.length) + graphDiffTargets.length) % graphDiffTargets.length;
-  store.setGraphDiffIdx(normalized);
-  const target = graphDiffTargets[normalized];
-  store.setHighlightedNodeId(target.id);
+    const normalized = ((idx % graphDiffTargets.length) + graphDiffTargets.length) % graphDiffTargets.length;
+    store.setGraphDiffIdx(normalized);
+    const target = graphDiffTargets[normalized];
+    store.setHighlightedNodeId(target.id);
 
-  if (highlightTimerRef.current !== null) {
-    window.clearTimeout(highlightTimerRef.current);
-  }
-  highlightTimerRef.current = window.setTimeout(() => {
-    store.clearHighlightedNode();
-    highlightTimerRef.current = null;
-  }, 1400);
+    if (highlightTimerRef.current !== null) {
+      window.clearTimeout(highlightTimerRef.current);
+    }
+    highlightTimerRef.current = window.setTimeout(() => {
+      store.clearHighlightedNode();
+      highlightTimerRef.current = null;
+    }, 1400);
 
-  store.setSharedViewport({ x: target.viewportX, y: target.viewportY, zoom: target.viewportZoom });
+    store.setSharedViewport({ x: target.viewportX, y: target.viewportY, zoom: target.viewportZoom });
+  });
 };

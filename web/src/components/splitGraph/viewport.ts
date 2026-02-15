@@ -8,7 +8,8 @@ interface FlowSize {
 }
 
 const NODE_CENTER_ZOOM = 0.9;
-const LARGE_NODE_TOP_PADDING = 24;
+const VIEWPORT_FOCUS_TOP_RATIO = 0.2;
+const VIEWPORT_FOCUS_LEFT_RATIO = 0.2;
 
 export const resolveNodeSize = (node: Node): { width: number; height: number } => {
   const styleWidth = typeof node.style?.width === "number" ? node.style.width : undefined;
@@ -44,26 +45,9 @@ export const computeViewportForNode = (
 ): ViewportState => {
   const zoom = NODE_CENTER_ZOOM;
   const abs = computeNodeAbsolutePosition(node, nodeById);
-  const size = resolveNodeSize(node);
-  const worldVisibleW = flowSize.width / zoom;
-  const worldVisibleH = flowSize.height / zoom;
-  const tooLarge = size.width > worldVisibleW * 0.8 || size.height > worldVisibleH * 0.8;
-
-  if (tooLarge) {
-    const centerX = abs.x + size.width / 2;
-    const anchorWorldY = abs.y - LARGE_NODE_TOP_PADDING;
-    return {
-      x: flowSize.width / 2 - centerX * zoom,
-      y: LARGE_NODE_TOP_PADDING - anchorWorldY * zoom,
-      zoom,
-    };
-  }
-
-  const centerX = abs.x + size.width / 2;
-  const centerY = abs.y + size.height / 2;
   return {
-    x: flowSize.width / 2 - centerX * zoom,
-    y: flowSize.height / 2 - centerY * zoom,
+    x: flowSize.width * VIEWPORT_FOCUS_LEFT_RATIO - abs.x * zoom,
+    y: flowSize.height * VIEWPORT_FOCUS_TOP_RATIO - abs.y * zoom,
     zoom,
   };
 };

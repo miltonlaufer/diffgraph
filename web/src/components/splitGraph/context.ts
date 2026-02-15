@@ -16,6 +16,8 @@ interface SplitGraphRuntimeState {
 }
 
 interface SplitGraphRuntimeActions {
+  onInteractionClick?: () => void;
+  onGraphNodeFocus?: (nodeId: string, side: "old" | "new") => void;
   onNodeSelect: (nodeId: string, side: "old" | "new") => void;
   onNodeHoverChange: (side: "old" | "new", nodeId: string, matchKey: string) => void;
   onViewportChange: (viewport: ViewportState) => void;

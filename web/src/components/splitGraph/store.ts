@@ -17,6 +17,7 @@ export class SplitGraphPanelStore {
   searchIdx = 0;
   searchHighlightedNodeId = "";
   hoveredEdgeId = "";
+  clickedEdgeId = "";
   hoveredEdgePointerX = 0;
   hoveredEdgePointerY = 0;
   flowSize: FlowSize = { width: 800, height: 500 };
@@ -55,6 +56,10 @@ export class SplitGraphPanelStore {
     this.hoveredEdgeId = edgeId;
   }
 
+  setClickedEdgeId(edgeId: string): void {
+    this.clickedEdgeId = edgeId;
+  }
+
   setHoveredEdge(edgeId: string, pointerX: number, pointerY: number): void {
     this.hoveredEdgeId = edgeId;
     this.hoveredEdgePointerX = pointerX;
@@ -72,6 +77,10 @@ export class SplitGraphPanelStore {
 
   clearHoveredEdge(): void {
     this.hoveredEdgeId = "";
+  }
+
+  clearClickedEdge(): void {
+    this.clickedEdgeId = "";
   }
 
   setFlowSize(flowSize: FlowSize): void {

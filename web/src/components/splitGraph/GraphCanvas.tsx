@@ -27,6 +27,7 @@ interface GraphCanvasProps {
   onNodeMouseEnter: NodeMouseHandler;
   onNodeMouseMove: NodeMouseHandler;
   onNodeMouseLeave: NodeMouseHandler;
+  onEdgeClick: EdgeMouseHandler;
   onEdgeMouseEnter: EdgeMouseHandler;
   onEdgeMouseMove: EdgeMouseHandler;
   onEdgeMouseLeave: EdgeMouseHandler;
@@ -48,6 +49,7 @@ export const GraphCanvas = ({
   onNodeMouseEnter,
   onNodeMouseMove,
   onNodeMouseLeave,
+  onEdgeClick,
   onEdgeMouseEnter,
   onEdgeMouseMove,
   onEdgeMouseLeave,
@@ -64,6 +66,7 @@ export const GraphCanvas = ({
       onNodeMouseEnter={onNodeMouseEnter}
       onNodeMouseMove={onNodeMouseMove}
       onNodeMouseLeave={onNodeMouseLeave}
+      onEdgeClick={onEdgeClick}
       onEdgeMouseEnter={onEdgeMouseEnter}
       onEdgeMouseMove={onEdgeMouseMove}
       onEdgeMouseLeave={onEdgeMouseLeave}
