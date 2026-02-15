@@ -30,6 +30,7 @@ import {
   computeViewportForNode,
   isNodeVisibleInViewport as computeIsNodeVisibleInViewport,
 } from "./splitGraph/viewport";
+import { buildCrossGraphNodeMatchKey } from "../lib/nodeIdentity";
 import type { ViewGraphNode } from "../types/graph";
 import type { GraphDiffTarget, InternalNodeAnchor, SplitGraphPanelProps, TopLevelAnchor } from "./splitGraph/types";
 
@@ -80,6 +81,36 @@ const lineRangeText = (startLine?: number, endLine?: number): string => {
   if (!startLine || startLine < 1) return "unknown";
   if (!endLine || endLine < startLine) return `${startLine}`;
   return `${startLine}-${endLine}`;
+};
+
+const buildIndexedMatchKeyByNodeId = (nodes: ViewGraphNode[]): Map<string, string> => {
+  const baseKeyNodeIds = new Map<string, string[]>();
+  for (const node of nodes) {
+    const baseKey = buildCrossGraphNodeMatchKey(node);
+    const list = baseKeyNodeIds.get(baseKey) ?? [];
+    list.push(node.id);
+    baseKeyNodeIds.set(baseKey, list);
+  }
+
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const indexedMatchKeyByNodeId = new Map<string, string>();
+  for (const [baseKey, nodeIds] of baseKeyNodeIds.entries()) {
+    const sortedNodeIds = nodeIds.slice().sort((a, b) => {
+      const nodeA = nodeById.get(a);
+      const nodeB = nodeById.get(b);
+      const startA = nodeA?.startLine ?? Number.MAX_SAFE_INTEGER;
+      const startB = nodeB?.startLine ?? Number.MAX_SAFE_INTEGER;
+      if (startA !== startB) return startA - startB;
+      const endA = nodeA?.endLine ?? startA;
+      const endB = nodeB?.endLine ?? startB;
+      if (endA !== endB) return endA - endB;
+      return a.localeCompare(b);
+    });
+    for (const [idx, nodeId] of sortedNodeIds.entries()) {
+      indexedMatchKeyByNodeId.set(nodeId, `${baseKey}#${idx + 1}`);
+    }
+  }
+  return indexedMatchKeyByNodeId;
 };
 
 const isGroupHeaderTarget = (event: unknown): boolean => {
@@ -256,10 +287,12 @@ export const SplitGraphPanel = observer(({
   title,
   side,
   graph,
+  counterpartGraph,
   viewType,
   showCalls = true,
   diffStats,
   fileContentMap,
+  counterpartFileContentMap,
   alignmentOffset,
   alignmentAnchors,
   alignmentBreakpoints,
@@ -302,6 +335,7 @@ export const SplitGraphPanel = observer(({
   const edgeClickHighlightTimerRef = useRef<number | null>(null);
   const flowContainerRef = useRef<HTMLDivElement>(null);
   const fileLinesCacheRef = useRef<Map<string, string[]>>(new Map());
+  const counterpartFileLinesCacheRef = useRef<Map<string, string[]>>(new Map());
   const lastEdgeNavigationRef = useRef<{ edgeId: string; lastEndpoint: "source" | "target" } | null>(null);
   const lastAppliedFocusNodeKeyRef = useRef("");
   const lastAppliedFocusFileTickRef = useRef(0);
@@ -315,11 +349,15 @@ export const SplitGraphPanel = observer(({
 
   const isLogic = viewType === "logic";
   const isOld = side === "old";
+  const oppositeSide: "old" | "new" = isOld ? "new" : "old";
   const fileEntries = useMemo(() => Array.from(fileContentMap.entries()), [fileContentMap]);
 
   useEffect(() => {
     fileLinesCacheRef.current.clear();
   }, [fileContentMap]);
+  useEffect(() => {
+    counterpartFileLinesCacheRef.current.clear();
+  }, [counterpartFileContentMap]);
 
   const computeLayoutSync = useCallback(
     () => computeLayoutByView(viewType, graph, "", fileContentMap, showCalls),
@@ -335,29 +373,55 @@ export const SplitGraphPanel = observer(({
     () => new Map(graph.nodes.map((node) => [node.id, node])),
     [graph.nodes],
   );
+  const counterpartNodes = counterpartGraph?.nodes ?? [];
+  const counterpartNodeById = useMemo(
+    () => new Map(counterpartNodes.map((node) => [node.id, node])),
+    [counterpartNodes],
+  );
+  const indexedMatchKeyByNodeId = useMemo(
+    () => buildIndexedMatchKeyByNodeId(graph.nodes),
+    [graph.nodes],
+  );
+  const counterpartNodeIdByIndexedMatchKey = useMemo(() => {
+    const indexedById = buildIndexedMatchKeyByNodeId(counterpartNodes);
+    const map = new Map<string, string>();
+    for (const [nodeId, indexedKey] of indexedById.entries()) {
+      map.set(indexedKey, nodeId);
+    }
+    return map;
+  }, [counterpartNodes]);
 
-  const nodeCodeLines = useCallback((node: ViewGraphNode): string[] => {
+  const nodeCodeLinesFromMap = useCallback((
+    contentMap: Map<string, string> | undefined,
+    cache: Map<string, string[]>,
+    node: ViewGraphNode,
+  ): string[] => {
     const start = node.startLine ?? 0;
     if (start < 1) return [];
     const end = node.endLine && node.endLine >= start ? node.endLine : start;
     const from = Math.max(1, start - ASK_LLM_CONTEXT_RADIUS);
     const to = Math.min(start + ASK_LLM_MAX_NODE_LINES - 1, end + ASK_LLM_CONTEXT_RADIUS);
+    if (!contentMap) return [];
     const normalizedPath = normPath(node.filePath);
     const cacheKey = `${normalizedPath}:${node.filePath}`;
-    let lines = fileLinesCacheRef.current.get(cacheKey);
+    let lines = cache.get(cacheKey);
     if (!lines) {
-      const content = fileContentMap.get(normalizedPath) ?? fileContentMap.get(node.filePath) ?? "";
+      const content = contentMap.get(normalizedPath) ?? contentMap.get(node.filePath) ?? "";
       lines = content.length > 0 ? content.split("\n") : [];
-      fileLinesCacheRef.current.set(cacheKey, lines);
+      cache.set(cacheKey, lines);
     }
     if (lines.length === 0) return [];
     const sliceFrom = Math.max(0, from - 1);
     const sliceTo = Math.min(lines.length, to);
     return lines.slice(sliceFrom, sliceTo).map((text, idx) => `${from + idx}: ${text}`);
-  }, [fileContentMap]);
+  }, []);
 
-  const nodePromptBlock = useCallback((node: ViewGraphNode): string[] => {
-    const lines = nodeCodeLines(node);
+  const nodePromptBlock = useCallback((
+    node: ViewGraphNode,
+    contentMap: Map<string, string> | undefined,
+    cache: Map<string, string[]>,
+  ): string[] => {
+    const lines = nodeCodeLinesFromMap(contentMap, cache, node);
     const rangeText = lineRangeText(node.startLine, node.endLine);
     const block = [
       `Label: ${oneLine(node.label)}`,
@@ -373,7 +437,7 @@ export const SplitGraphPanel = observer(({
       block.push(...lines.map((line) => `  ${line}`));
     }
     return block;
-  }, [nodeCodeLines]);
+  }, [nodeCodeLinesFromMap]);
 
   const copyTextToClipboard = useCallback(async (text: string): Promise<boolean> => {
     if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
@@ -405,6 +469,29 @@ export const SplitGraphPanel = observer(({
     if (!node) {
       return `${ASK_LLM_MESSAGE}\n\nNode context is unavailable.`;
     }
+    const appendNodeWithVersions = (lines: string[], currentNode: ViewGraphNode): void => {
+      lines.push(`${side.toUpperCase()} code:`);
+      lines.push(
+        ...nodePromptBlock(
+          currentNode,
+          fileContentMap,
+          fileLinesCacheRef.current,
+        ),
+      );
+      const indexedKey = indexedMatchKeyByNodeId.get(currentNode.id);
+      const counterpartNodeId = indexedKey ? counterpartNodeIdByIndexedMatchKey.get(indexedKey) : undefined;
+      const counterpartNode = counterpartNodeId ? counterpartNodeById.get(counterpartNodeId) : undefined;
+      if (!counterpartNode) return;
+      lines.push("");
+      lines.push(`${oppositeSide.toUpperCase()} code:`);
+      lines.push(
+        ...nodePromptBlock(
+          counterpartNode,
+          counterpartFileContentMap,
+          counterpartFileLinesCacheRef.current,
+        ),
+      );
+    };
 
     const edges = graph.edges.filter((edge) => edge.source === nodeId || edge.target === nodeId);
     const connectedIds: string[] = [];
@@ -430,10 +517,10 @@ export const SplitGraphPanel = observer(({
       `Graph side: ${side}`,
       "",
       "Primary node:",
-      ...nodePromptBlock(node),
-      "",
-      `Connected nodes (${selectedConnectedIds.length}${omittedCount > 0 ? ` of ${connectedIds.length}` : ""}):`,
     ];
+    appendNodeWithVersions(promptLines, node);
+    promptLines.push("");
+    promptLines.push(`Connected nodes (${selectedConnectedIds.length}${omittedCount > 0 ? ` of ${connectedIds.length}` : ""}):`);
 
     if (selectedConnectedIds.length === 0) {
       promptLines.push("  (none)");
@@ -445,7 +532,7 @@ export const SplitGraphPanel = observer(({
         promptLines.push("");
         promptLines.push(`${idx + 1}. ${oneLine(relatedNode.label)}`);
         promptLines.push(`Connections: ${edgesSummary}`);
-        promptLines.push(...nodePromptBlock(relatedNode));
+        appendNodeWithVersions(promptLines, relatedNode);
       }
     }
     if (omittedCount > 0) {
@@ -454,7 +541,18 @@ export const SplitGraphPanel = observer(({
     }
 
     return promptLines.join("\n");
-  }, [graph.edges, graphNodeById, nodePromptBlock, side]);
+  }, [
+    counterpartFileContentMap,
+    counterpartNodeById,
+    counterpartNodeIdByIndexedMatchKey,
+    fileContentMap,
+    graph.edges,
+    graphNodeById,
+    indexedMatchKeyByNodeId,
+    nodePromptBlock,
+    oppositeSide,
+    side,
+  ]);
 
   const handleAskLlmForNode = useCallback(async (nodeId: string): Promise<boolean> => {
     const prompt = buildAskLlmPrompt(nodeId);

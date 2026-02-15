@@ -494,9 +494,11 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
               title="Old"
               side="old"
               graph={displayOldGraph}
+              counterpartGraph={displayNewGraph}
               viewType={viewType}
               showCalls={viewType === "logic" ? store.showCalls : true}
               fileContentMap={oldFileContentMap}
+              counterpartFileContentMap={newFileContentMap}
               alignmentAnchors={alignedTopAnchors.old}
               isViewportPrimary={false}
             />
@@ -505,10 +507,12 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
               title="New"
               side="new"
               graph={displayNewGraph}
+              counterpartGraph={displayOldGraph}
               viewType={viewType}
               showCalls={viewType === "logic" ? store.showCalls : true}
               diffStats={diffStats}
               fileContentMap={newFileContentMap}
+              counterpartFileContentMap={oldFileContentMap}
               alignmentOffset={newAlignmentOffset}
               alignmentAnchors={alignedTopAnchors.new}
               alignmentBreakpoints={alignmentBreakpoints}
