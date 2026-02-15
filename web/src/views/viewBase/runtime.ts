@@ -5,6 +5,8 @@ interface ViewBaseRuntimeState {
   files: FileDiffEntry[];
   selectedFilePath: string;
   fileListCollapsed: boolean;
+  hoveredCodeLine: number;
+  hoveredCodeSide: "old" | "new";
   selectedFile: FileDiffEntry | null;
   targetLine: number;
   targetSide: "old" | "new";
@@ -17,6 +19,8 @@ interface ViewBaseRuntimeActions {
   onFileSelect: (filePath: string) => void;
   onToggleFileListCollapsed: () => void;
   onCodeLineClick: (line: number, side: "old" | "new") => void;
+  onCodeLineHover: (line: number, side: "old" | "new") => void;
+  onCodeLineHoverClear: () => void;
   onCodeLineDoubleClick: (line: number, side: "old" | "new", word: string) => void;
   onCodeSearchStateChange: (active: boolean) => void;
 }

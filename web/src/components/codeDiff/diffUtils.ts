@@ -2,6 +2,14 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import type { DiffLine, DiffMatrixRow } from "./types";
 
 const GRAPH_SELECTED_ROW_CLASS = "lineSelectedFromGraph";
+const GRAPH_PREVIEW_ROW_CLASS = "linePreviewFromGraphHover";
+
+const clearRowHighlightClass = (container: HTMLDivElement | null, className: string): void => {
+  if (!container) return;
+  container.querySelectorAll(`tr.${className}`).forEach((candidate) => {
+    candidate.classList.remove(className);
+  });
+};
 
 export const computeSideBySide = (
   oldContent: string,
@@ -274,9 +282,7 @@ export const scrollToSourceLine = (
   targetSide: "old" | "new",
 ): void => {
   if (!container || targetLine <= 0) return;
-  container.querySelectorAll(`tr.${GRAPH_SELECTED_ROW_CLASS}`).forEach((candidate) => {
-    candidate.classList.remove(GRAPH_SELECTED_ROW_CLASS);
-  });
+  clearRowHighlightClass(container, GRAPH_SELECTED_ROW_CLASS);
   const preferredSelector = targetSide === "old" ? `tr[data-old-line="${targetLine}"]` : `tr[data-new-line="${targetLine}"]`;
   const fallbackSelector = targetSide === "old" ? `tr[data-new-line="${targetLine}"]` : `tr[data-old-line="${targetLine}"]`;
   const row =
@@ -290,4 +296,31 @@ export const scrollToSourceLine = (
   const rowOffsetInContainer = rowRect.top - containerRect.top + currentScroll;
   container.scrollTop = Math.max(0, rowOffsetInContainer - containerRect.height / 2);
   row.classList.add(GRAPH_SELECTED_ROW_CLASS);
+};
+
+export const clearPreviewSourceLine = (
+  container: HTMLDivElement | null,
+): void => {
+  clearRowHighlightClass(container, GRAPH_PREVIEW_ROW_CLASS);
+};
+
+export const scrollToPreviewSourceLine = (
+  container: HTMLDivElement | null,
+  targetLine: number,
+  targetSide: "old" | "new",
+): void => {
+  if (!container || targetLine <= 0) return;
+  clearPreviewSourceLine(container);
+  const preferredSelector = targetSide === "old" ? `tr[data-old-line="${targetLine}"]` : `tr[data-new-line="${targetLine}"]`;
+  const fallbackSelector = targetSide === "old" ? `tr[data-new-line="${targetLine}"]` : `tr[data-old-line="${targetLine}"]`;
+  const row =
+    (container.querySelector(preferredSelector) as HTMLElement | null)
+    ?? (container.querySelector(fallbackSelector) as HTMLElement | null);
+  if (!row) return;
+  const containerRect = container.getBoundingClientRect();
+  const rowRect = row.getBoundingClientRect();
+  const currentScroll = container.scrollTop;
+  const rowOffsetInContainer = rowRect.top - containerRect.top + currentScroll;
+  container.scrollTop = Math.max(0, rowOffsetInContainer - containerRect.height / 2);
+  row.classList.add(GRAPH_PREVIEW_ROW_CLASS);
 };

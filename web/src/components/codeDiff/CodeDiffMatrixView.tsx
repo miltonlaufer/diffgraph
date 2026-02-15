@@ -12,6 +12,8 @@ interface CodeDiffMatrixViewProps {
   onOldScroll: () => void;
   onNewScroll: () => void;
   onLineClick?: (line: number, side: "old" | "new") => void;
+  onLineHover?: (line: number, side: "old" | "new") => void;
+  onLineHoverLeave?: () => void;
   onLineDoubleClick?: (line: number, side: "old" | "new", word: string) => void;
 }
 
@@ -24,6 +26,8 @@ export const CodeDiffMatrixView = ({
   onOldScroll,
   onNewScroll,
   onLineClick,
+  onLineHover,
+  onLineHoverLeave,
   onLineDoubleClick,
 }: CodeDiffMatrixViewProps) => (
   <div className="splitCodeLayout">
@@ -41,6 +45,10 @@ export const CodeDiffMatrixView = ({
                 onClick={() => {
                   if (row.old.lineNumber) onLineClick?.(row.old.lineNumber, "old");
                 }}
+                onMouseEnter={() => {
+                  if (row.old.lineNumber) onLineHover?.(row.old.lineNumber, "old");
+                }}
+                onMouseLeave={() => onLineHoverLeave?.()}
                 onDoubleClick={(event) => {
                   if (!row.old.lineNumber) return;
                   const word = extractSearchWordFromDoubleClick(event);
@@ -74,6 +82,10 @@ export const CodeDiffMatrixView = ({
                 onClick={() => {
                   if (row.new.lineNumber) onLineClick?.(row.new.lineNumber, "new");
                 }}
+                onMouseEnter={() => {
+                  if (row.new.lineNumber) onLineHover?.(row.new.lineNumber, "new");
+                }}
+                onMouseLeave={() => onLineHoverLeave?.()}
                 onDoubleClick={(event) => {
                   if (!row.new.lineNumber) return;
                   const word = extractSearchWordFromDoubleClick(event);

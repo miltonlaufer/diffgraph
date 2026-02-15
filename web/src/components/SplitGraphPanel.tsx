@@ -1160,6 +1160,12 @@ export const SplitGraphPanel = observer(({
   }, [graphSearchQuery, graphSearchSide, graphSearchTick, side, store]);
 
   useEffect(() => {
+    store.setSearch("", false);
+    store.setLastAutoFocusSearchKey("");
+    store.clearSearchHighlight();
+  }, [focusFilePath, store]);
+
+  useEffect(() => {
     onSearchStateChange?.(side, store.searchQuery.trim().length > 0 && !store.searchExclude);
   }, [onSearchStateChange, side, store.searchExclude, store.searchQuery]);
 

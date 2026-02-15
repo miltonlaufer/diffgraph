@@ -638,6 +638,15 @@
   outline-offset: -2px;
 }
 
+.diffTable tr.linePreviewFromGraphHover {
+  outline: 2px solid rgba(56, 189, 248, 0.92);
+  outline-offset: -2px;
+}
+
+.diffTable tr.linePreviewFromGraphHover td {
+  box-shadow: inset 0 0 0 9999px rgba(56, 189, 248, 0.14);
+}
+
 .diffTable tr:hover {
   outline: 2px solid rgba(56, 189, 248, 0.92);
   outline-offset: -2px;

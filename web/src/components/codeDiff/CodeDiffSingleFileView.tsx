@@ -11,6 +11,8 @@ interface SimpleRowProps {
   language: string;
   searchQuery: string;
   onLineClick?: (line: number, side: "old" | "new") => void;
+  onLineHover?: (line: number, side: "old" | "new") => void;
+  onLineHoverLeave?: () => void;
   onLineDoubleClick?: (line: number, side: "old" | "new", word: string) => void;
 }
 
@@ -22,6 +24,8 @@ const SimpleRow = memo(({
   language,
   searchQuery,
   onLineClick,
+  onLineHover,
+  onLineHoverLeave,
   onLineDoubleClick,
 }: SimpleRowProps) => (
   <tr
@@ -30,6 +34,8 @@ const SimpleRow = memo(({
     data-new-line={side === "new" ? lineNum : undefined}
     style={{ ...lineStyle(type), cursor: onLineClick ? "pointer" : "default" }}
     onClick={() => onLineClick?.(lineNum, side)}
+    onMouseEnter={() => onLineHover?.(lineNum, side)}
+    onMouseLeave={() => onLineHoverLeave?.()}
     onDoubleClick={(event) => {
       const word = extractSearchWordFromDoubleClick(event);
       if (!word) return;
@@ -50,6 +56,8 @@ interface CodeDiffSingleFileViewProps {
   oldCodeScrollRef: MutableRefObject<HTMLDivElement | null>;
   newCodeScrollRef: MutableRefObject<HTMLDivElement | null>;
   onLineClick?: (line: number, side: "old" | "new") => void;
+  onLineHover?: (line: number, side: "old" | "new") => void;
+  onLineHoverLeave?: () => void;
   onLineDoubleClick?: (line: number, side: "old" | "new", word: string) => void;
 }
 
@@ -62,6 +70,8 @@ export const CodeDiffSingleFileView = ({
   oldCodeScrollRef,
   newCodeScrollRef,
   onLineClick,
+  onLineHover,
+  onLineHoverLeave,
   onLineDoubleClick,
 }: CodeDiffSingleFileViewProps) => {
   const isAdded = mode === "added";
@@ -89,6 +99,8 @@ export const CodeDiffSingleFileView = ({
                       language={language}
                       searchQuery={searchQuery}
                       onLineClick={onLineClick}
+                      onLineHover={onLineHover}
+                      onLineHoverLeave={onLineHoverLeave}
                       onLineDoubleClick={onLineDoubleClick}
                     />
                   ))}
@@ -113,6 +125,8 @@ export const CodeDiffSingleFileView = ({
                       language={language}
                       searchQuery={searchQuery}
                       onLineClick={onLineClick}
+                      onLineHover={onLineHover}
+                      onLineHoverLeave={onLineHoverLeave}
                       onLineDoubleClick={onLineDoubleClick}
                     />
                   ))}

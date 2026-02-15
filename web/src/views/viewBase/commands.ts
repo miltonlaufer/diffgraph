@@ -122,20 +122,24 @@ export const commandSetHoveredNode = (
   const { store } = context;
   if (!nodeId) {
     store.clearHoveredNode();
-    return;
-  }
-  if (matchKey) {
-    store.setHoveredNode(side, nodeId, matchKey);
+    store.clearHoveredCodeTarget();
     return;
   }
   const sourceGraph = side === "old" ? store.oldGraph : store.newGraph;
   const sourceNode = sourceGraph.nodes.find((node) => node.id === nodeId);
   if (!sourceNode) {
     store.clearHoveredNode();
+    store.clearHoveredCodeTarget();
     return;
   }
-  const fallbackMatchKey = buildCrossGraphNodeMatchKey(sourceNode);
-  store.setHoveredNode(side, nodeId, fallbackMatchKey);
+  const resolvedMatchKey = matchKey || buildCrossGraphNodeMatchKey(sourceNode);
+  store.setHoveredNode(side, nodeId, resolvedMatchKey);
+  const sourceLine = sourceNode.startLine ?? 0;
+  if (sourceLine > 0) {
+    store.setHoveredCodeTarget(sourceLine, side);
+  } else {
+    store.clearHoveredCodeTarget();
+  }
 };
 
 interface LineClickContext extends CommandContext {
@@ -220,6 +224,39 @@ export const commandCodeLineClick = (
       context.highlightTimerRef.current = null;
     }, NODE_HIGHLIGHT_MS);
   });
+};
+
+export const commandCodeLineHover = (
+  context: Omit<LineClickContext, "highlightTimerRef">,
+  line: number,
+  side: "old" | "new",
+): void => {
+  const target = resolveBestNodeForLine(
+    context.selectedFilePath,
+    context.displayOldGraph,
+    context.displayNewGraph,
+    line,
+    side,
+  );
+  if (!target) {
+    context.store.clearHoveredNode();
+    context.store.clearHoveredCodeTarget();
+    return;
+  }
+  context.store.setHoveredCodeTarget(line, side);
+  context.store.setHoveredNode(side, target.id, buildCrossGraphNodeMatchKey(target));
+  context.store.focusNode(target.id, side);
+};
+
+export const commandCodeLineHoverClear = (
+  context: CommandContext,
+): void => {
+  const { store } = context;
+  store.clearHoveredNode();
+  store.clearHoveredCodeTarget();
+  if (store.selectedNodeId) {
+    store.focusNode(store.selectedNodeId, store.targetSide);
+  }
 };
 
 export const commandCodeLineDoubleClick = (

@@ -11,6 +11,8 @@ export class ViewBaseStore {
   selectedFilePath = "";
   selectedNodeId = "";
   fileListCollapsed = false;
+  hoveredCodeLine = 0;
+  hoveredCodeSide: "old" | "new" = "new";
   targetLine = 0;
   targetSide: "old" | "new" = "new";
   scrollTick = 0;
@@ -87,6 +89,8 @@ export class ViewBaseStore {
     this.fileDiffs = fileDiffs;
     this.selectedFilePath = "";
     this.fileListCollapsed = false;
+    this.hoveredCodeLine = 0;
+    this.hoveredCodeSide = "new";
     this.sharedViewport = { x: 20, y: 20, zoom: 0.5 };
     this.focusSourceSide = "new";
     this.graphSearchSide = "new";
@@ -156,6 +160,15 @@ export class ViewBaseStore {
 
   setSelectedFilePath(path: string): void {
     this.selectedFilePath = path;
+  }
+
+  setHoveredCodeTarget(line: number, side: "old" | "new"): void {
+    this.hoveredCodeLine = line;
+    this.hoveredCodeSide = side;
+  }
+
+  clearHoveredCodeTarget(): void {
+    this.hoveredCodeLine = 0;
   }
 
   setSelectedNodeId(nodeId: string): void {

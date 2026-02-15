@@ -9,6 +9,8 @@ import type { FileSymbol, ViewportState } from "../types/graph";
 import { LogicToolbar } from "./viewBase/LogicToolbar";
 import {
   commandCodeLineClick,
+  commandCodeLineHover,
+  commandCodeLineHoverClear,
   commandCodeLineDoubleClick,
   commandFocusGraphNode,
   commandGoToGraphDiff,
@@ -305,11 +307,33 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     [store],
   );
 
+  const handleCodeLineHover = useCallback(
+    (line: number, side: "old" | "new") => {
+      commandCodeLineHover(
+        {
+          ...commandContext,
+          selectedFilePath: selectedFile?.path ?? store.selectedFilePath,
+          displayOldGraph,
+          displayNewGraph,
+        },
+        line,
+        side,
+      );
+    },
+    [commandContext, selectedFile?.path, store.selectedFilePath, displayOldGraph, displayNewGraph],
+  );
+
+  const handleCodeLineHoverClear = useCallback(() => {
+    commandCodeLineHoverClear(commandContext);
+  }, [commandContext]);
+
   const viewBaseRuntime = useMemo<ViewBaseRuntimeContextValue>(() => ({
     state: {
       files: store.fileDiffs,
       selectedFilePath: store.selectedFilePath,
       fileListCollapsed: store.fileListCollapsed,
+      hoveredCodeLine: store.hoveredCodeLine,
+      hoveredCodeSide: store.hoveredCodeSide,
       selectedFile,
       targetLine: store.targetLine,
       targetSide: store.targetSide,
@@ -321,11 +345,15 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
       onFileSelect: handleFileSelect,
       onToggleFileListCollapsed: handleToggleFileListCollapsed,
       onCodeLineClick: handleCodeLineClick,
+      onCodeLineHover: handleCodeLineHover,
+      onCodeLineHoverClear: handleCodeLineHoverClear,
       onCodeLineDoubleClick: handleCodeLineDoubleClick,
       onCodeSearchStateChange: handleCodeSearchStateChange,
     },
   }), [
     handleCodeLineClick,
+    handleCodeLineHover,
+    handleCodeLineHoverClear,
     handleCodeLineDoubleClick,
     handleCodeSearchStateChange,
     handleFileSelect,
@@ -333,6 +361,8 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     store.codeSearchNavDirection,
     store.codeSearchNavTick,
     store.fileListCollapsed,
+    store.hoveredCodeLine,
+    store.hoveredCodeSide,
     selectedFile,
     store.fileDiffs,
     store.scrollTick,

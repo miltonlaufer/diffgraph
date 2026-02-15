@@ -15,6 +15,8 @@ import {
   findDiffHunkStarts,
   langFromPath,
   scrollToRowIndex,
+  clearPreviewSourceLine,
+  scrollToPreviewSourceLine,
   scrollToSourceLine,
 } from "./codeDiff/diffUtils";
 import { CodeDiffDrawerStore } from "./codeDiff/store";
@@ -25,6 +27,8 @@ export const CodeDiffDrawer = observer(() => {
   const { state, actions } = useViewBaseRuntime();
   const {
     selectedFile: file,
+    hoveredCodeLine,
+    hoveredCodeSide,
     targetLine,
     targetSide,
     scrollTick,
@@ -38,6 +42,7 @@ export const CodeDiffDrawer = observer(() => {
   const syncingScrollRef = useRef(false);
   const pendingLineClickTimerRef = useRef<number | null>(null);
   const lastAppliedCodeSearchNavTickRef = useRef(0);
+  const prevHoveredCodeLineRef = useRef(0);
   const SINGLE_CLICK_DELAY_MS = 450;
 
   const lang = useMemo(() => langFromPath(file?.path ?? ""), [file?.path]);
@@ -181,6 +186,7 @@ export const CodeDiffDrawer = observer(() => {
 
   useEffect(() => {
     store.resetHunkIdx();
+    store.setTextSearch("");
   }, [file?.path, store]);
 
   useEffect(() => {
@@ -195,6 +201,23 @@ export const CodeDiffDrawer = observer(() => {
     }, 100);
     return () => window.clearTimeout(timerId);
   }, [targetLine, targetSide, scrollTick]);
+
+  useEffect(() => {
+    const prevHovered = prevHoveredCodeLineRef.current;
+    if (hoveredCodeLine > 0) {
+      scrollToPreviewSourceLine(newCodeScrollRef.current, hoveredCodeLine, hoveredCodeSide);
+      scrollToPreviewSourceLine(oldCodeScrollRef.current, hoveredCodeLine, hoveredCodeSide);
+      prevHoveredCodeLineRef.current = hoveredCodeLine;
+      return;
+    }
+    clearPreviewSourceLine(newCodeScrollRef.current);
+    clearPreviewSourceLine(oldCodeScrollRef.current);
+    if (prevHovered > 0 && targetLine > 0) {
+      scrollToSourceLine(newCodeScrollRef.current, targetLine, targetSide);
+      scrollToSourceLine(oldCodeScrollRef.current, targetLine, targetSide);
+    }
+    prevHoveredCodeLineRef.current = hoveredCodeLine;
+  }, [hoveredCodeLine, hoveredCodeSide, targetLine, targetSide]);
 
   useEffect(() => {
     if (!store.isFullscreen) return;
