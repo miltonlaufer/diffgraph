@@ -37,18 +37,53 @@ export const computeSplitGraphDerived = ({
 }: SplitGraphDerivedInput): SplitGraphDerivedResult => {
   const graphNodeById = new Map(graphNodes.map((node) => [node.id, node]));
 
-  const nodeMatchKeyById = new Map<string, string>();
+  const baseMatchKeyById = new Map<string, string>();
   for (const node of graphNodes) {
-    nodeMatchKeyById.set(node.id, buildCrossGraphNodeMatchKey(node));
+    baseMatchKeyById.set(node.id, buildCrossGraphNodeMatchKey(node));
+  }
+
+  const baseKeyNodeIds = new Map<string, string[]>();
+  for (const node of graphNodes) {
+    const baseKey = baseMatchKeyById.get(node.id);
+    if (!baseKey) continue;
+    const list = baseKeyNodeIds.get(baseKey) ?? [];
+    list.push(node.id);
+    baseKeyNodeIds.set(baseKey, list);
+  }
+
+  const nodeMatchKeyById = new Map<string, string>();
+  for (const [baseKey, nodeIds] of baseKeyNodeIds.entries()) {
+    const sortedNodeIds = nodeIds.slice().sort((a, b) => {
+      const nodeA = graphNodeById.get(a);
+      const nodeB = graphNodeById.get(b);
+      const startA = nodeA?.startLine ?? Number.MAX_SAFE_INTEGER;
+      const startB = nodeB?.startLine ?? Number.MAX_SAFE_INTEGER;
+      if (startA !== startB) return startA - startB;
+      const endA = nodeA?.endLine ?? startA;
+      const endB = nodeB?.endLine ?? startB;
+      if (endA !== endB) return endA - endB;
+      return a.localeCompare(b);
+    });
+    for (const [idx, nodeId] of sortedNodeIds.entries()) {
+      nodeMatchKeyById.set(nodeId, `${baseKey}#${idx + 1}`);
+    }
   }
 
   const nodeIdsByMatchKey = new Map<string, string[]>();
-  for (const nodeId of positionedNodeIds) {
-    const matchKey = nodeMatchKeyById.get(nodeId);
-    if (!matchKey) continue;
+  const appendMatchKeyNode = (matchKey: string, nodeId: string): void => {
     const list = nodeIdsByMatchKey.get(matchKey) ?? [];
     list.push(nodeId);
     nodeIdsByMatchKey.set(matchKey, list);
+  };
+  for (const nodeId of positionedNodeIds) {
+    const matchKey = nodeMatchKeyById.get(nodeId);
+    if (matchKey) {
+      appendMatchKeyNode(matchKey, nodeId);
+    }
+    const baseKey = baseMatchKeyById.get(nodeId);
+    if (baseKey) {
+      appendMatchKeyNode(baseKey, nodeId);
+    }
   }
 
   const neighborNodeIdsByNode = new Map<string, Set<string>>();
@@ -123,4 +158,3 @@ export const computeSplitGraphDerived = ({
     searchMatchIds,
   };
 };
-
