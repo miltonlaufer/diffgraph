@@ -153,4 +153,39 @@ describe("TsAnalyzer control flow", () => {
     expect(hasEdge(if2!, if5!, "next")).toBe(true);
     expect(hasEdge(call3!, if5!, "next")).toBe(false);
   });
+
+  it("keeps branch node ids unique across repeated deep functions (e.g. multiple useMemo blocks)", async () => {
+    const analyzer = new TsAnalyzer();
+    const graph = await analyzer.analyze("repo", "snap", "ref", [
+      {
+        path: "sample.tsx",
+        content: [
+          "function Panel(a: boolean, b: boolean) {",
+          "  useMemo(() => {",
+          "    if (a) {",
+          "      return 1;",
+          "    }",
+          "    return 2;",
+          "  }, [a]);",
+          "",
+          "  useMemo(() => {",
+          "    if (b) {",
+          "      return 3;",
+          "    }",
+          "    return 4;",
+          "  }, [b]);",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ]);
+
+    const branchNodes = graph.nodes.filter((node) => node.kind === "Branch");
+    const branchIds = branchNodes.map((node) => node.id);
+    expect(new Set(branchIds).size).toBe(branchIds.length);
+
+    const branchStarts = new Set(branchNodes.map((node) => node.startLine));
+    expect(branchStarts.has(3)).toBe(true);
+    expect(branchStarts.has(10)).toBe(true);
+  });
 });

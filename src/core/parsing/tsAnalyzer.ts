@@ -690,7 +690,9 @@ export class TsAnalyzer {
           })()
         : null;
       return {
-        id: stableHash(`${snapshotId}:branch:${stableQualifiedName}`),
+        id: stableHash(
+          `${snapshotId}:branch:${stableQualifiedName}:${ownerNode.startLine ?? 0}:${ownerNode.endLine ?? 0}`,
+        ),
         kind: "Branch",
         name: `${branchKind}@${line}`,
         qualifiedName: stableQualifiedName,
