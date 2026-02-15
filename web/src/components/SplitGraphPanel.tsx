@@ -82,24 +82,6 @@ const lineRangeText = (startLine?: number, endLine?: number): string => {
   return `${startLine}-${endLine}`;
 };
 
-const resolveBreakpointDelta = (
-  breakpoints: Array<{ sourceY: number; deltaY: number }> | undefined,
-  sourceY: number,
-): number => {
-  if (!breakpoints || breakpoints.length === 0) return 0;
-  // Keep a stable baseline before the first matched anchor, so newly inserted
-  // nodes above it move with the same block shift instead of being overlapped.
-  let delta = breakpoints[0]?.deltaY ?? 0;
-  for (const bp of breakpoints) {
-    if (sourceY + 0.5 >= bp.sourceY) {
-      delta = bp.deltaY;
-      continue;
-    }
-    break;
-  }
-  return delta;
-};
-
 const isGroupHeaderTarget = (event: unknown): boolean => {
   const maybeTarget = (event as { target?: EventTarget | null } | null)?.target;
   if (!(maybeTarget instanceof Element)) return false;
@@ -131,16 +113,6 @@ const hasHorizontalOverlap = (
 ): boolean => {
   const margin = 4;
   return aX + aWidth - margin > bX && bX + bWidth - margin > aX;
-};
-
-const hasVerticalOverlap = (
-  aY: number,
-  aHeight: number,
-  bY: number,
-  bHeight: number,
-): boolean => {
-  const margin = 4;
-  return aY + aHeight - margin > bY && bY + bHeight - margin > aY;
 };
 
 const hasActivePointerEvent = (event: MouseEvent | TouchEvent | null): boolean => {
@@ -250,75 +222,6 @@ const resolveSiblingBlockOverlaps = (layoutResult: LayoutElements): LayoutElemen
       let nextAbsY = abs.y;
       for (const prev of placed) {
         if (!hasHorizontalOverlap(abs.x, size.width, prev.x, prev.width)) continue;
-        const minY = prev.y + prev.height + GROUP_BLOCK_GAP;
-        if (nextAbsY < minY) {
-          nextAbsY = minY;
-        }
-      }
-
-      if (nextAbsY > abs.y + 0.5) {
-        if (node.parentId) {
-          const parent = nodeById.get(node.parentId);
-          if (parent) {
-            const parentAbs = computeNodeAbsolutePosition(parent, nodeById);
-            node.position.y = nextAbsY - parentAbs.y;
-          }
-        } else {
-          node.position.y = nextAbsY;
-        }
-      }
-
-      placed.push({
-        x: abs.x,
-        y: nextAbsY,
-        width: size.width,
-        height: size.height,
-      });
-    }
-  }
-
-  const topRootByNodeId = new Map<string, string>();
-  const resolveTopRoot = (node: Node): string => {
-    const cached = topRootByNodeId.get(node.id);
-    if (cached) return cached;
-    let current: Node | undefined = node;
-    while (current?.parentId) {
-      const parent = nodeById.get(current.parentId);
-      if (!parent) break;
-      current = parent;
-    }
-    const rootId = current?.id ?? node.id;
-    topRootByNodeId.set(node.id, rootId);
-    return rootId;
-  };
-
-  const nodesByTopRoot = new Map<string, Node[]>();
-  for (const node of nodes) {
-    if (node.type === "scope") continue;
-    const topRoot = resolveTopRoot(node);
-    const siblings = nodesByTopRoot.get(topRoot) ?? [];
-    siblings.push(node);
-    nodesByTopRoot.set(topRoot, siblings);
-  }
-
-  for (const siblings of nodesByTopRoot.values()) {
-    if (siblings.length < 2) continue;
-    const ordered = siblings.slice().sort((a, b) => {
-      const aAbs = computeNodeAbsolutePosition(a, nodeById);
-      const bAbs = computeNodeAbsolutePosition(b, nodeById);
-      const yDelta = aAbs.y - bAbs.y;
-      if (Math.abs(yDelta) > 0.5) return yDelta;
-      return aAbs.x - bAbs.x;
-    });
-
-    const placed: Array<{ x: number; y: number; width: number; height: number }> = [];
-    for (const node of ordered) {
-      const abs = computeNodeAbsolutePosition(node, nodeById);
-      const size = nodeSize(node);
-      let nextAbsY = abs.y;
-      for (const prev of placed) {
-        if (!hasHorizontalOverlap(abs.x, size.width, prev.x, prev.width)) continue;
-        if (!hasVerticalOverlap(nextAbsY, size.height, prev.y, prev.height)) continue;
         const minY = prev.y + prev.height + GROUP_BLOCK_GAP;
         if (nextAbsY < minY) {
           nextAbsY = minY;
@@ -664,89 +567,20 @@ export const SplitGraphPanel = observer(({
   }, [graphNodeById, isLogic, topAlignedLayoutResult.nodes, topKeyByNodeId]);
 
   const positionedLayoutResult = useMemo(() => {
-    if (
-      !isLogic
-      || side !== "new"
-      || !alignmentBreakpoints
-      || Object.keys(alignmentBreakpoints).length === 0
-      || topAlignedLayoutResult.nodes.length === 0
-    ) {
+    const hasInternalAlignmentData = Boolean(
+      isLogic
+      && side === "new"
+      && alignmentBreakpoints
+      && Object.keys(alignmentBreakpoints).length > 0
+      && topAlignedLayoutResult.nodes.length > 0,
+    );
+    // Internal breakpoint-based descendant shifting can push nodes out of parent
+    // scope blocks on dense graphs. Keep top-level old/new alignment, but keep
+    // descendants in their original local layout.
+    if (!hasInternalAlignmentData) {
       return resolveSiblingBlockOverlaps(topAlignedLayoutResult);
     }
-
-    const nodeById = new Map(topAlignedLayoutResult.nodes.map((node) => [node.id, node]));
-    const absoluteById = new Map<string, { x: number; y: number }>();
-    for (const node of topAlignedLayoutResult.nodes) {
-      absoluteById.set(node.id, computeNodeAbsolutePosition(node, nodeById));
-    }
-
-    const adjustedAbsYById = new Map<string, number>();
-    for (const node of topAlignedLayoutResult.nodes) {
-      const abs = absoluteById.get(node.id);
-      if (!node.parentId) {
-        adjustedAbsYById.set(node.id, abs?.y ?? node.position.y);
-        continue;
-      }
-      const topKey = topKeyByNodeId.get(node.id);
-      if (!abs || !topKey) {
-        adjustedAbsYById.set(node.id, abs?.y ?? node.position.y);
-        continue;
-      }
-      const breakpoints = alignmentBreakpoints[topKey];
-      const deltaY = resolveBreakpointDelta(breakpoints, abs.y);
-      adjustedAbsYById.set(node.id, abs.y + deltaY);
-    }
-
-    // Prevent upward drift that places inner nodes above their original top-content area.
-    // We keep top-level group headers aligned and shift only descendants of that top group.
-    const originalMinByTopKey = new Map<string, number>();
-    const adjustedMinByTopKey = new Map<string, number>();
-    for (const node of topAlignedLayoutResult.nodes) {
-      if (!node.parentId) continue;
-      const topKey = topKeyByNodeId.get(node.id);
-      const originalAbs = absoluteById.get(node.id);
-      const adjustedAbs = adjustedAbsYById.get(node.id);
-      if (!topKey || originalAbs === undefined || adjustedAbs === undefined) continue;
-      const originalMin = originalMinByTopKey.get(topKey);
-      const adjustedMin = adjustedMinByTopKey.get(topKey);
-      originalMinByTopKey.set(topKey, originalMin === undefined ? originalAbs.y : Math.min(originalMin, originalAbs.y));
-      adjustedMinByTopKey.set(topKey, adjustedMin === undefined ? adjustedAbs : Math.min(adjustedMin, adjustedAbs));
-    }
-
-    const topCorrectionByTopKey = new Map<string, number>();
-    for (const [topKey, originalMin] of originalMinByTopKey.entries()) {
-      const adjustedMin = adjustedMinByTopKey.get(topKey);
-      if (adjustedMin === undefined) continue;
-      if (adjustedMin < originalMin - 0.5) {
-        topCorrectionByTopKey.set(topKey, originalMin - adjustedMin);
-      }
-    }
-
-    if (topCorrectionByTopKey.size > 0) {
-      for (const node of topAlignedLayoutResult.nodes) {
-        if (!node.parentId) continue;
-        const topKey = topKeyByNodeId.get(node.id);
-        if (!topKey) continue;
-        const correction = topCorrectionByTopKey.get(topKey);
-        if (!correction) continue;
-        const prev = adjustedAbsYById.get(node.id);
-        if (prev === undefined) continue;
-        adjustedAbsYById.set(node.id, prev + correction);
-      }
-    }
-
-    const nodes = topAlignedLayoutResult.nodes.map((node) => {
-      const adjustedAbsY = adjustedAbsYById.get(node.id);
-      if (adjustedAbsY === undefined) return node;
-      if (!node.parentId) return node;
-      const adjustedParentAbsY = adjustedAbsYById.get(node.parentId);
-      if (adjustedParentAbsY === undefined) return node;
-      const nextRelativeY = adjustedAbsY - adjustedParentAbsY;
-      if (Math.abs(nextRelativeY - node.position.y) < 0.5) return node;
-      return { ...node, position: { ...node.position, y: nextRelativeY } };
-    });
-
-    return resolveSiblingBlockOverlaps({ nodes, edges: topAlignedLayoutResult.edges });
+    return resolveSiblingBlockOverlaps(topAlignedLayoutResult);
   }, [alignmentBreakpoints, isLogic, side, topAlignedLayoutResult, topKeyByNodeId]);
 
   const positionedNodeById = useMemo(
