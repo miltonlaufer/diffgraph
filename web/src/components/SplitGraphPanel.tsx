@@ -1017,7 +1017,11 @@ export const SplitGraphPanel = observer(({
     }
   }, [graphNodeById, hoveredNodeId, hoveredNodeMatchKey, nodeMatchKeyById, onNodeHoverChange, side]);
 
-  const handleNodeMouseLeave = useCallback<NodeMouseHandler>(() => {
+  const handleNodeMouseLeave = useCallback<NodeMouseHandler>((event) => {
+    const related = (event as { relatedTarget?: EventTarget | null }).relatedTarget ?? null;
+    if (related instanceof Element && related.closest(".react-flow__node")) {
+      return;
+    }
     onNodeHoverChange(side, "", "");
   }, [onNodeHoverChange, side]);
 

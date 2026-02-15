@@ -3,7 +3,11 @@ import { Command } from "commander";
 import { runDiff } from "./commands/diff.js";
 import { runAnalyze } from "./commands/analyze.js";
 
-const normalizedArgv = process.argv.map((arg) => (arg === "-ff" ? "--file-file" : arg));
+const normalizedArgv = process.argv.map((arg) => {
+  if (arg === "-ff") return "--file-file";
+  if (arg === "-pr") return "--pull-request";
+  return arg;
+});
 
 const program = new Command();
 program.name("diffgraph").description("Graph-aware diff explorer").version("0.1.0");
@@ -40,6 +44,7 @@ program
   .option("--file-file <files...>", "Compare two files: -ff <oldFile> <newFile>")
   .option("-b, --branches <branches...>", "Compare two branches: -b <base> <target>")
   .option("-r, --refs <refs...>", "Compare two refs (commit/tag/branch): -r <oldRef> <newRef>")
+  .option("--pull-request <number>", "Compare GitHub pull request from origin: -pr <number>")
   .option("--repo <path>", "Repository path", process.cwd())
   .option("--no-open", "Do not open browser", false)
   .option("--port <port>", "Server port", "4177")
@@ -89,7 +94,21 @@ program
       return;
     }
 
-    console.error("Use `staged`, `-ff <oldFile> <newFile>`, `-b <baseBranch> <targetBranch>`, or `-r <oldRef> <newRef>`.");
+    if (typeof options.pullRequest === "string" && options.pullRequest.trim().length > 0) {
+      const result = await runDiff({
+        mode: {
+          type: "pullRequest",
+          prNumber: options.pullRequest.trim(),
+        },
+        repoPath: options.repo,
+        openBrowser: options.open !== false,
+        port: Number(options.port),
+      });
+      console.log(`Diff ready at ${result.url}`);
+      return;
+    }
+
+    console.error("Use `staged`, `-ff <oldFile> <newFile>`, `-b <baseBranch> <targetBranch>`, `-r <oldRef> <newRef>`, or `-pr <number>`.");
     process.exitCode = 1;
   });
 

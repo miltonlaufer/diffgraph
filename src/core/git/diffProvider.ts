@@ -10,7 +10,8 @@ export type DiffMode =
   | { type: "staged"; includeUnstaged?: boolean }
   | { type: "files"; oldFile: string; newFile: string }
   | { type: "branches"; baseBranch: string; targetBranch: string }
-  | { type: "refs"; oldRef: string; newRef: string };
+  | { type: "refs"; oldRef: string; newRef: string }
+  | { type: "pullRequest"; prNumber: string };
 
 export type DiffFileStatus = "added" | "deleted" | "modified" | "renamed" | "copied" | "type-changed" | "unknown";
 
@@ -56,6 +57,10 @@ export class DiffProvider {
 
     if (mode.type === "refs") {
       return this.fromRefs(mode.oldRef, mode.newRef, repoPath);
+    }
+
+    if (mode.type === "pullRequest") {
+      return this.fromPullRequest(mode.prNumber, repoPath);
     }
 
     return this.fromStaged(repoPath, Boolean(mode.includeUnstaged));
@@ -142,6 +147,62 @@ export class DiffProvider {
       newFiles,
       hunksByPath: this.extractHunks(diffText),
     };
+  }
+
+  private async fromPullRequest(prNumber: string, repoPath: string): Promise<DiffPayload> {
+    const normalizedPr = prNumber.trim();
+    if (!/^\d+$/.test(normalizedPr)) {
+      throw new Error(`Invalid PR number '${prNumber}'. Expected a numeric value.`);
+    }
+
+    const prRef = `refs/diffgraph/pr-${normalizedPr}`;
+    try {
+      await textFromGit(["fetch", "--quiet", "origin", `pull/${normalizedPr}/head:${prRef}`], repoPath);
+    } catch {
+      throw new Error(
+        `Failed to fetch PR #${normalizedPr} from origin. Ensure this is a GitHub repo and PR exists.`,
+      );
+    }
+
+    const preferredBase = await this.resolvePreferredBaseRef(repoPath);
+    const mergeBase = (await textFromGit(["merge-base", preferredBase, prRef], repoPath)).trim();
+    if (!mergeBase) {
+      throw new Error(`Unable to compute merge-base between '${preferredBase}' and PR #${normalizedPr}.`);
+    }
+
+    return this.fromRefs(mergeBase, prRef, repoPath);
+  }
+
+  private async resolvePreferredBaseRef(repoPath: string): Promise<string> {
+    const candidates: string[] = [];
+    try {
+      const upstreamDefault = (await textFromGit(
+        ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+        repoPath,
+      )).trim();
+      if (upstreamDefault) {
+        candidates.push(upstreamDefault);
+      }
+    } catch {
+      // ignore and fall back to common defaults
+    }
+    candidates.push("origin/main", "origin/master", "main", "master", "HEAD");
+
+    for (const ref of candidates) {
+      if (await this.refExists(repoPath, ref)) {
+        return ref;
+      }
+    }
+    return "HEAD";
+  }
+
+  private async refExists(repoPath: string, ref: string): Promise<boolean> {
+    try {
+      await textFromGit(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], repoPath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async fromStaged(repoPath: string, includeUnstaged: boolean): Promise<DiffPayload> {

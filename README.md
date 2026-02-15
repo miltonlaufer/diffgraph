@@ -26,6 +26,7 @@ cd /path/to/your-repo
 diffgraph staged
 diffgraph -b main feature/your-feature-branch
 diffgraph -r <oldCommit> <newCommit>
+diffgraph -pr <number>
 diffgraph staged --staged-only
 ```
 
@@ -123,6 +124,7 @@ You can use this project as a central tool to analyze any repository on your mac
 ```bash
 node dist/src/cli/index.js staged --repo /path/to/other-repo
 node dist/src/cli/index.js -b main feature --repo /path/to/other-repo
+node dist/src/cli/index.js -pr 123 --repo /path/to/other-repo
 node dist/src/cli/index.js analyze --repo /path/to/other-repo --ref WORKTREE
 ```
 
@@ -145,6 +147,7 @@ Then run from anywhere:
 ```bash
 diffgraph staged --repo /path/to/other-repo
 diffgraph -b main feature --repo /path/to/other-repo
+diffgraph -pr 123 --repo /path/to/other-repo
 ```
 
 If you are already inside the target repo, `--repo` is optional:
@@ -157,7 +160,7 @@ diffgraph staged
 ### Option 3: Run directly with `npx tsx` (development mode)
 
 ```bash
-npx tsx /home/milton-laufer/diffgraph/src/cli/index.ts staged --repo /path/to/other-repo --no-open
+npx tsx /path/to/diffgraph/src/cli/index.ts staged --repo /path/to/other-repo --no-open
 ```
 
 This is useful while developing, but the built CLI is preferred for normal usage.
@@ -224,7 +227,21 @@ Example with commit SHAs:
 node dist/src/cli/index.js -r a1b2c3d e4f5g6h
 ```
 
-### 5) Analyze snapshot only
+### 5) Pull request mode (`-pr`)
+
+Compare a GitHub pull request by number (fetched from `origin` as `pull/<number>/head`):
+
+```bash
+node dist/src/cli/index.js -pr 123
+```
+
+With repo path:
+
+```bash
+node dist/src/cli/index.js -pr 123 --repo /path/to/repo
+```
+
+### 6) Analyze snapshot only
 
 Create and persist a graph snapshot for a reference label:
 
@@ -253,7 +270,7 @@ If the default port (4177) is busy, the server automatically finds the next avai
 - Old graph shows only nodes that existed before; New graph shows only nodes that exist after
 - Added/Removed/Modified legend appears only on the New panel
 - Controls appear only on the New panel; MiniMap appears on both Old and New panels
-- Both panels share synchronized pan/zoom
+- Both panels share synchronized pan/zoom (with temporary hover-focus adjustments when needed)
 - In logic view, dragging the canvas works from node areas too (you are not limited to empty background)
 - In logic view, top-level alignment keeps Old/New function blocks comparable while preserving nested hierarchy
 - Parent/scope blocks run overlap resolution to reduce block collisions in dense graphs
@@ -261,10 +278,12 @@ If the default port (4177) is busy, the server automatically finds the next avai
 ### Interactions
 
 - **Click a node** -- highlights it (cyan border + glow), selects its file below, and scrolls the code diff to that line
+- **Changed Files auto-collapse on node click** -- selecting a node collapses the Changed Files block; when collapsed it shows `Selected: <filename>` in the header
 - **Click a connector/edge** (Logic tab) -- first click focuses the source node; clicking the same connector again focuses the target node
 - **Clicked connector highlight** -- the selected connector remains emphasized for ~5 seconds
 - **Hover a connector/edge** -- shows a source/target tooltip for faster graph tracing
 - **Click a file pill** -- selects the file, scrolls graphs to related nodes, shows its code diff
+- **File switch resets searches** -- changing or clearing the selected file clears graph search and code search
 - **Risk-ranked file list** -- changed files are sorted by `R` score:
   - **graph connectivity** = how many other symbols call into changed symbols (high fan-in => wider impact)
   - **change type** = rename/add/delete/type-changed adds extra risk boost
@@ -277,6 +296,7 @@ If the default port (4177) is busy, the server automatically finds the next avai
 - **Graph search** (per panel) -- search nodes by text, use up/down arrows to jump matches; matched node is focused and highlighted, and related connections are emphasized during the flash window
 - **Arrow keys behavior** -- `ArrowUp`/`ArrowDown` follow this priority: (1) if `Search code...` is filled, navigate code-search matches, (2) else if graph search is filled and `exclude` is off, navigate graph-search matches, (3) else navigate graph differences in Logic view (same as the up/down diff buttons)
 - **Hover function/group headers** -- tooltip includes documentation (JSDoc/docstring), parameters with types, return type, and class/file metadata when available
+- **Node hover -> code preview** -- when code diff is open, hovering a graph node previews the corresponding code line; leaving hover restores the selected line
 - **Risk-ranked symbols** -- functions/methods/classes inside a file are sorted by deterministic risk score to prioritize review order
 - **Code line -> graph focus** -- clicking a code line finds the best matching graph node, highlights it for ~4.2 seconds, and keeps the graph area in view
 - **Double-click code word -> code search** -- double-clicking a word in the diff fills `Search code...` and jumps to the first textual match
@@ -316,6 +336,7 @@ Symbol-level score (used by `symbolRisk`) is also computed in `src/server/app.ts
 - Side-by-side view: Old code on the left, New code on the right
 - Line-level change highlighting: green for added lines, red for removed lines
 - Hovering a line highlights that row for easier scanning
+- Graph-selected line uses a persistent white border; hover preview uses a blue border
 - Active code search highlights matching words inline inside code lines
 - Synchronized scrolling between left and right
 - Each side is fixed at 50% width and supports horizontal scrolling for long lines
