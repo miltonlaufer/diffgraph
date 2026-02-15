@@ -1,0 +1,83 @@
+import {
+  Background,
+  Controls,
+  MiniMap,
+  ReactFlow,
+  type Edge,
+  type EdgeMouseHandler,
+  type Node,
+  type NodeMouseHandler,
+  type NodeTypes,
+  type Viewport,
+} from "@xyflow/react";
+import type { MutableRefObject } from "react";
+import type { ViewportState } from "../../types/graph";
+
+interface GraphCanvasProps {
+  side: "old" | "new";
+  isOld: boolean;
+  nodes: Node[];
+  edges: Edge[];
+  nodeTypes: NodeTypes;
+  viewport: ViewportState;
+  flowContainerRef: MutableRefObject<HTMLDivElement | null>;
+  minimapNodeColor: (node: Node) => string;
+  minimapNodeStrokeColor: (node: Node) => string;
+  onNodeClick: NodeMouseHandler;
+  onEdgeMouseEnter: EdgeMouseHandler;
+  onEdgeMouseLeave: EdgeMouseHandler;
+  onPaneMouseLeave: () => void;
+  onMove: (event: MouseEvent | TouchEvent | null, viewport: Viewport) => void;
+}
+
+export const GraphCanvas = ({
+  side,
+  isOld,
+  nodes,
+  edges,
+  nodeTypes,
+  viewport,
+  flowContainerRef,
+  minimapNodeColor,
+  minimapNodeStrokeColor,
+  onNodeClick,
+  onEdgeMouseEnter,
+  onEdgeMouseLeave,
+  onPaneMouseLeave,
+  onMove,
+}: GraphCanvasProps) => (
+  <div className="flowContainer" ref={flowContainerRef}>
+    <ReactFlow
+      id={`reactflow-${side}`}
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={nodeTypes}
+      onNodeClick={onNodeClick}
+      onEdgeMouseEnter={onEdgeMouseEnter}
+      onEdgeMouseLeave={onEdgeMouseLeave}
+      onPaneMouseLeave={onPaneMouseLeave}
+      viewport={viewport}
+      onMove={onMove}
+      style={{ width: "100%", height: "100%" }}
+      onlyRenderVisibleElements
+      minZoom={0.05}
+      maxZoom={2}
+      nodesDraggable={false}
+      panOnDrag
+      selectionOnDrag={false}
+    >
+      <Background />
+      {!isOld && <Controls />}
+      <MiniMap
+        pannable
+        zoomable
+        bgColor="#0b1120"
+        maskColor="rgba(148, 163, 184, 0.2)"
+        maskStrokeColor="#cbd5e1"
+        nodeColor={minimapNodeColor}
+        nodeStrokeColor={minimapNodeStrokeColor}
+        nodeStrokeWidth={2}
+      />
+    </ReactFlow>
+  </div>
+);
