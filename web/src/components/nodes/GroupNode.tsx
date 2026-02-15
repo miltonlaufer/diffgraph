@@ -1,5 +1,6 @@
-import { Handle, NodeToolbar, Position } from "@xyflow/react";
+import { Handle, Position } from "@xyflow/react";
 import { memo, useMemo, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 
 interface GroupNodeData {
   label: string;
@@ -20,6 +21,7 @@ interface GroupNodeData {
 const GroupNode = ({ data }: { data: GroupNodeData }) => {
   /******************* STORE ***********************/
   const [hovered, setHovered] = useState(false);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
   /******************* COMPUTED ***********************/
   const style = useMemo(
@@ -116,7 +118,7 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
       border: "1px solid #334155",
       borderRadius: 8,
       padding: "8px 10px",
-      maxWidth: 560,
+      maxWidth: "min(560px, calc(100vw - 24px))",
       zIndex: 1000,
       color: "#e2e8f0",
       boxShadow: "0 10px 24px rgba(2, 6, 23, 0.7)",
@@ -124,23 +126,41 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
       fontSize: 11,
       lineHeight: 1.45,
       whiteSpace: "pre-wrap" as const,
+      position: "fixed" as const,
+      left: `${tooltipPos.x}px`,
+      top: `${tooltipPos.y - 12}px`,
+      transform: "translate(-50%, -100%)",
+      pointerEvents: "none" as const,
     }),
-    [],
+    [tooltipPos.x, tooltipPos.y],
   );
 
   /******************* FUNCTIONS ***********************/
-  const onHeaderEnter = useCallback(() => setHovered(true), []);
+  const onHeaderEnter = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    setHovered(true);
+    setTooltipPos({ x: event.clientX, y: event.clientY });
+  }, []);
+  const onHeaderMove = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    setTooltipPos({ x: event.clientX, y: event.clientY });
+  }, []);
+  const onHeaderLeave = useCallback(() => setHovered(false), []);
   const onNodeLeave = useCallback(() => setHovered(false), []);
 
   return (
     <div style={style} onMouseLeave={onNodeLeave}>
       <Handle type="target" position={Position.Top} style={{ opacity: 0, pointerEvents: "none" }} />
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0, pointerEvents: "none" }} />
-      <div style={headerStyle} onMouseEnter={onHeaderEnter}>
+      <div
+        data-group-header="true"
+        style={headerStyle}
+        onMouseEnter={onHeaderEnter}
+        onMouseMove={onHeaderMove}
+        onMouseLeave={onHeaderLeave}
+      >
         <div style={titleStyle}>{data.label}</div>
         {headerMeta && <div style={metaStyle}>{headerMeta}</div>}
       </div>
-      <NodeToolbar isVisible={hovered && hasFunctionDetails} position={Position.Top} offset={8}>
+      {hovered && hasFunctionDetails && typeof document !== "undefined" && createPortal(
         <div style={tooltipStyle}>
           {showFunctionName && (
             <div><strong>Function:</strong> {functionNameDisplay}</div>
@@ -160,8 +180,9 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
               <div>{data.documentation}</div>
             </div>
           )}
-        </div>
-      </NodeToolbar>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 };

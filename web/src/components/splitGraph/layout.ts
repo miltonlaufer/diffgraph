@@ -356,7 +356,10 @@ const computeLogicLayout = (
       let nodeBg = bg;
       let nodeTxt = txt;
       if ((node.branchType ?? "") === "return") {
-        if (node.diffStatus === "unchanged") {
+        if (node.diffStatus === "added") {
+          nodeBg = "#86efac";
+          nodeTxt = "#14532d";
+        } else if (node.diffStatus === "unchanged") {
           nodeBg = "#6d28d9";
           nodeTxt = "#f5f3ff";
         } else if (node.diffStatus === "modified") {

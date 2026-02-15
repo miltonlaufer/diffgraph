@@ -25,8 +25,10 @@ interface GraphCanvasProps {
   minimapNodeStrokeColor: (node: Node) => string;
   onNodeClick: NodeMouseHandler;
   onNodeMouseEnter: NodeMouseHandler;
+  onNodeMouseMove: NodeMouseHandler;
   onNodeMouseLeave: NodeMouseHandler;
   onEdgeMouseEnter: EdgeMouseHandler;
+  onEdgeMouseMove: EdgeMouseHandler;
   onEdgeMouseLeave: EdgeMouseHandler;
   onPaneMouseLeave: () => void;
   onMove: (event: MouseEvent | TouchEvent | null, viewport: Viewport) => void;
@@ -44,8 +46,10 @@ export const GraphCanvas = ({
   minimapNodeStrokeColor,
   onNodeClick,
   onNodeMouseEnter,
+  onNodeMouseMove,
   onNodeMouseLeave,
   onEdgeMouseEnter,
+  onEdgeMouseMove,
   onEdgeMouseLeave,
   onPaneMouseLeave,
   onMove,
@@ -58,8 +62,10 @@ export const GraphCanvas = ({
       nodeTypes={nodeTypes}
       onNodeClick={onNodeClick}
       onNodeMouseEnter={onNodeMouseEnter}
+      onNodeMouseMove={onNodeMouseMove}
       onNodeMouseLeave={onNodeMouseLeave}
       onEdgeMouseEnter={onEdgeMouseEnter}
+      onEdgeMouseMove={onEdgeMouseMove}
       onEdgeMouseLeave={onEdgeMouseLeave}
       onPaneMouseLeave={onPaneMouseLeave}
       viewport={viewport}

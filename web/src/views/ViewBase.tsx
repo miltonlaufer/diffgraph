@@ -343,7 +343,8 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     );
   }
 
-  const isInteractionPending = store.interactionBusy || isUiPending;
+  const isGraphLayoutPending = store.oldLayoutPending || store.newLayoutPending;
+  const isInteractionPending = store.interactionBusy || isUiPending || isGraphLayoutPending;
 
   return (
     <ViewBaseRuntimeProvider value={viewBaseRuntime}>

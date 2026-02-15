@@ -1,4 +1,5 @@
 import { useMemo, useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   type EdgeMouseHandler,
   type Node,
@@ -39,6 +40,8 @@ const SEARCH_FLASH_STYLE = {
   boxShadow: "0 0 0 2px rgba(255,255,255,0.95), 0 0 28px rgba(255,255,255,0.92)",
   zIndex: 1000,
 };
+const EDGE_TOOLTIP_OFFSET_X = 12;
+const EDGE_TOOLTIP_OFFSET_Y = 14;
 
 const labelIdentity = (label: string): string =>
   label
@@ -51,6 +54,8 @@ const labelIdentity = (label: string): string =>
 
 const structuralAnchorKey = (topKey: string, kind: string, filePath: string, className: string | undefined, label: string, branchType: string | undefined): string =>
   `${topKey}:${kind}:${normPath(filePath)}:${(className ?? "").trim().toLowerCase()}:${labelIdentity(label)}:${(branchType ?? "").trim().toLowerCase()}`;
+
+const oneLine = (value: string): string => value.replace(/\s+/g, " ").trim();
 
 const resolveBreakpointDelta = (
   breakpoints: Array<{ sourceY: number; deltaY: number }> | undefined,
@@ -68,6 +73,12 @@ const resolveBreakpointDelta = (
     break;
   }
   return delta;
+};
+
+const isGroupHeaderTarget = (event: unknown): boolean => {
+  const maybeTarget = (event as { target?: EventTarget | null } | null)?.target;
+  if (!(maybeTarget instanceof Element)) return false;
+  return Boolean(maybeTarget.closest("[data-group-header='true']"));
 };
 
 export const SplitGraphPanel = observer(({
@@ -136,7 +147,6 @@ export const SplitGraphPanel = observer(({
   const nodeMatchKeyById = useMemo(() => {
     const map = new Map<string, string>();
     for (const node of graph.nodes) {
-      if (node.kind === "group") continue;
       map.set(node.id, buildCrossGraphNodeMatchKey(node));
     }
     return map;
@@ -366,7 +376,6 @@ export const SplitGraphPanel = observer(({
 
     const graphNode = graphNodeById.get(candidateId);
     if (!graphNode) return "";
-    if (graphNode.kind === "group") return "";
     return candidateId;
   }, [graphNodeById, hoveredNodeId, hoveredNodeMatchKey, nodeIdsByMatchKey, positionedNodeById]);
 
@@ -392,6 +401,14 @@ export const SplitGraphPanel = observer(({
 
     const index = new Map<string, { keepNodeIds: Set<string>; keepEdgeIds: Set<string> }>();
     for (const nodeId of neighborNodeIdsByNode.keys()) {
+      const graphNode = graphNodeById.get(nodeId);
+      if (graphNode?.kind === "group") {
+        index.set(nodeId, {
+          keepNodeIds: new Set([nodeId]),
+          keepEdgeIds: new Set(incidentEdgeIdsByNode.get(nodeId) ?? []),
+        });
+        continue;
+      }
       const keepNodeIds = new Set<string>([nodeId]);
       for (const neighborId of neighborNodeIdsByNode.get(nodeId) ?? []) {
         if (nodeMatchKeyById.has(neighborId)) {
@@ -407,7 +424,7 @@ export const SplitGraphPanel = observer(({
       index.set(nodeId, { keepNodeIds, keepEdgeIds });
     }
     return index;
-  }, [nodeMatchKeyById, positionedLayoutResult.edges, positionedLayoutResult.nodes]);
+  }, [graphNodeById, nodeMatchKeyById, positionedLayoutResult.edges, positionedLayoutResult.nodes]);
 
   const hoverNeighborhood = useMemo(() => {
     if (!hoveredNodeIdForPanel) return null;
@@ -480,9 +497,9 @@ export const SplitGraphPanel = observer(({
             ? baseStyle.strokeWidth
             : Number(baseStyle.strokeWidth ?? 1.5);
         const nextStrokeWidth = isHovered
-          ? Math.max(baseStrokeWidth + 1.8, 3)
+          ? Math.max(baseStrokeWidth + 2.6, 4.2)
           : isInHoverNeighborhood
-            ? Math.max(baseStrokeWidth + 0.8, 2.2)
+            ? Math.max(baseStrokeWidth + 1.8, 3.2)
             : baseStrokeWidth;
         const nextStrokeOpacity = isHovered
           ? 1
@@ -507,9 +524,9 @@ export const SplitGraphPanel = observer(({
             strokeWidth: nextStrokeWidth,
             strokeOpacity: nextStrokeOpacity,
             filter: isHovered
-              ? "drop-shadow(0 0 6px rgba(248,250,252,0.9))"
+              ? "drop-shadow(0 0 8px rgba(248,250,252,0.95))"
               : isInHoverNeighborhood
-                ? "drop-shadow(0 0 6px rgba(192,132,252,0.8))"
+                ? "drop-shadow(0 0 7px rgba(192,132,252,0.9))"
                 : baseStyle.filter,
           },
           labelStyle: {
@@ -601,10 +618,51 @@ export const SplitGraphPanel = observer(({
     };
   }, [diffStats, graph.nodes]);
 
+  const hoveredEdgeTooltip = useMemo(() => {
+    if (!store.hoveredEdgeId) return null;
+    const edge = flowElements.edges.find((candidate) => candidate.id === store.hoveredEdgeId);
+    if (!edge) return null;
+
+    const sourceGraphNode = graphNodeById.get(edge.source);
+    const targetGraphNode = graphNodeById.get(edge.target);
+    const sourceLabel = sourceGraphNode ? oneLine(sourceGraphNode.label) : edge.source;
+    const targetLabel = targetGraphNode ? oneLine(targetGraphNode.label) : edge.target;
+    const sourceKind = sourceGraphNode?.kind ? `[${sourceGraphNode.kind}] ` : "";
+    const targetKind = targetGraphNode?.kind ? `[${targetGraphNode.kind}] ` : "";
+
+    return {
+      sourceText: `${sourceKind}${sourceLabel}`,
+      targetText: `${targetKind}${targetLabel}`,
+    };
+  }, [flowElements.edges, graphNodeById, store.hoveredEdgeId]);
+
+  const edgeTooltipStyle = useMemo(
+    () => ({
+      position: "fixed" as const,
+      left: `${store.hoveredEdgePointerX + EDGE_TOOLTIP_OFFSET_X}px`,
+      top: `${store.hoveredEdgePointerY + EDGE_TOOLTIP_OFFSET_Y}px`,
+      zIndex: 1200,
+      pointerEvents: "none" as const,
+      background: "#0f172a",
+      border: "1px solid #334155",
+      borderRadius: 8,
+      padding: "8px 10px",
+      maxWidth: "min(560px, calc(100vw - 24px))",
+      boxShadow: "0 8px 22px rgba(2, 6, 23, 0.75)",
+      color: "#e2e8f0",
+      fontSize: 11,
+      lineHeight: 1.35,
+      fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace",
+      whiteSpace: "pre-wrap" as const,
+    }),
+    [store.hoveredEdgePointerX, store.hoveredEdgePointerY],
+  );
+
   const nodeTypesForFlow = isLogic ? logicNodeTypes : knowledgeNodeTypes;
   const hasInputNodes = graph.nodes.length > 0;
   const hasRenderedNodes = positionedLayoutResult.nodes.length > 0;
-  const showLayoutStatus = hasInputNodes && !hasRenderedNodes && store.layoutPending;
+  const showLayoutStatus = hasInputNodes && store.layoutPending;
+  const layoutStatusLabel = hasRenderedNodes ? "Updating graph layout..." : "Building graph layout...";
 
   useEffect(() => {
     if (!onLayoutPendingChange) return;
@@ -675,24 +733,48 @@ export const SplitGraphPanel = observer(({
 
   const handleNodeMouseEnter = useCallback<NodeMouseHandler>((_event, node) => {
     const graphNode = graphNodeById.get(node.id);
-    if (!graphNode || graphNode.kind === "group") return;
+    if (!graphNode) return;
+    if (graphNode.kind === "group" && !isGroupHeaderTarget(_event)) return;
     onNodeHoverChange(side, node.id, nodeMatchKeyById.get(node.id) ?? "");
   }, [graphNodeById, nodeMatchKeyById, onNodeHoverChange, side]);
+
+  const handleNodeMouseMove = useCallback<NodeMouseHandler>((event, node) => {
+    const graphNode = graphNodeById.get(node.id);
+    if (!graphNode || graphNode.kind !== "group") return;
+    const matchKey = nodeMatchKeyById.get(node.id) ?? "";
+    const onHeader = isGroupHeaderTarget(event);
+    if (onHeader) {
+      if (hoveredNodeId === node.id && hoveredNodeMatchKey === matchKey) return;
+      onNodeHoverChange(side, node.id, matchKey);
+      return;
+    }
+    if (hoveredNodeId === node.id) {
+      onNodeHoverChange(side, "", "");
+    }
+  }, [graphNodeById, hoveredNodeId, hoveredNodeMatchKey, nodeMatchKeyById, onNodeHoverChange, side]);
 
   const handleNodeMouseLeave = useCallback<NodeMouseHandler>(() => {
     onNodeHoverChange(side, "", "");
   }, [onNodeHoverChange, side]);
 
   const handleEdgeMouseEnter = useCallback<EdgeMouseHandler>((_event, edge) => {
-    store.setHoveredEdgeId(edge.id);
+    store.setHoveredEdge(edge.id, _event.clientX, _event.clientY);
+  }, [store]);
+
+  const handleEdgeMouseMove = useCallback<EdgeMouseHandler>((event, edge) => {
+    if (store.hoveredEdgeId !== edge.id) {
+      store.setHoveredEdge(edge.id, event.clientX, event.clientY);
+      return;
+    }
+    store.setHoveredEdgePointer(event.clientX, event.clientY);
   }, [store]);
 
   const handleEdgeMouseLeave = useCallback<EdgeMouseHandler>(() => {
-    store.setHoveredEdgeId("");
+    store.clearHoveredEdge();
   }, [store]);
 
   const handlePaneMouseLeave = useCallback(() => {
-    store.setHoveredEdgeId("");
+    store.clearHoveredEdge();
     onNodeHoverChange(side, "", "");
   }, [onNodeHoverChange, side, store]);
 
@@ -859,7 +941,7 @@ export const SplitGraphPanel = observer(({
   ]);
 
   useEffect(() => {
-    store.setHoveredEdgeId("");
+    store.clearHoveredEdge();
   }, [graph.nodes, graph.edges, viewType, showCalls, store]);
 
   return (
@@ -877,11 +959,18 @@ export const SplitGraphPanel = observer(({
       {showLayoutStatus && (
         <div className="layoutStatusBanner" role="status" aria-live="polite">
           <div className="spinner layoutStatusSpinner" />
-          <span className="dimText">Building graph layout...</span>
+          <span className="dimText">{layoutStatusLabel}</span>
         </div>
       )}
       {!showLayoutStatus && !hasInputNodes && (
         <p className="dimText" style={{ marginTop: 6, marginBottom: 0 }}>No nodes for current file/filters.</p>
+      )}
+      {hoveredEdgeTooltip && typeof document !== "undefined" && createPortal(
+        <div style={edgeTooltipStyle}>
+          <div><strong>Source:</strong> {hoveredEdgeTooltip.sourceText}</div>
+          <div><strong>Target:</strong> {hoveredEdgeTooltip.targetText}</div>
+        </div>,
+        document.body,
       )}
       <GraphCanvas
         side={side}
@@ -895,8 +984,10 @@ export const SplitGraphPanel = observer(({
         minimapNodeStrokeColor={minimapNodeStrokeColor}
         onNodeClick={handleNodeClick}
         onNodeMouseEnter={handleNodeMouseEnter}
+        onNodeMouseMove={handleNodeMouseMove}
         onNodeMouseLeave={handleNodeMouseLeave}
         onEdgeMouseEnter={handleEdgeMouseEnter}
+        onEdgeMouseMove={handleEdgeMouseMove}
         onEdgeMouseLeave={handleEdgeMouseLeave}
         onPaneMouseLeave={handlePaneMouseLeave}
         onMove={handleMove}
