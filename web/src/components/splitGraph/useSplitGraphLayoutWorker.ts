@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Edge, Node } from "@xyflow/react";
-import type { ViewGraph } from "../../types/graph";
-import type { LayoutWorkerRequest, LayoutWorkerResponse } from "../../workers/layoutTypes";
+import type { ViewGraph } from "#/types/graph";
+import type { LayoutWorkerRequest, LayoutWorkerResponse } from "#/workers/layoutTypes";
 import { SplitGraphPanelStore } from "./store";
 
 interface LayoutResult {

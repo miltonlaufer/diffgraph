@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { ViewportState } from "../../types/graph";
+import type { ViewportState } from "#/types/graph";
 import type { GraphDiffTarget, TopLevelAnchor } from "./types";
 
 interface SplitGraphRuntimeState {

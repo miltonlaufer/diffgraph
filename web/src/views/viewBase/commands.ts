@@ -1,6 +1,6 @@
 import type { MutableRefObject } from "react";
-import type { GraphDiffTarget, TopLevelAnchor } from "../../components/SplitGraphPanel";
-import type { ViewGraph, ViewportState } from "../../types/graph";
+import type { GraphDiffTarget, TopLevelAnchor } from "#/components/SplitGraphPanel";
+import type { ViewGraph, ViewportState } from "#/types/graph";
 import { ViewBaseStore } from "./store";
 import { normalizePath } from "./selectors";
 
@@ -38,6 +38,12 @@ export const commandSelectFile = (
 ): void => {
   const { store, runInteractiveUpdate } = context;
   runInteractiveUpdate(() => {
+    const current = normalizePath(store.selectedFilePath);
+    const next = normalizePath(filePath);
+    if (current.length > 0 && current === next) {
+      store.setSelectedFilePath("");
+      return;
+    }
     store.setSelectedFilePath(filePath);
     store.bumpFocusFileTick();
   });

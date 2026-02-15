@@ -119,9 +119,10 @@ const computeLogicLayout = (
     for (const g of groupNodes) {
       if (emptyIds.has(g.id)) continue;
       const kids = childrenOf.get(g.id) ?? [];
-      const hasLeaf = kids.some((c) => c.kind === "Branch");
+      const hasLeaf = kids.some((c) => c.kind !== "group");
       const hasSubGroup = kids.some((c) => c.kind === "group" && !emptyIds.has(c.id));
-      if (!hasLeaf && !hasSubGroup) {
+      // Keep changed empty groups visible (common in new/removed minimal functions).
+      if (!hasLeaf && !hasSubGroup && g.diffStatus === "unchanged") {
         emptyIds.add(g.id);
         changed = true;
       }
@@ -150,7 +151,14 @@ const computeLogicLayout = (
   for (const group of sortedGroups) {
     const kids = (childrenOf.get(group.id) ?? []).filter((c) => !emptyIds.has(c.id));
     if (kids.length === 0) {
-      emptyIds.add(group.id);
+      if (group.diffStatus === "unchanged") {
+        emptyIds.add(group.id);
+      } else {
+        groupSize.set(group.id, {
+          w: LEAF_W + PAD_X * 2,
+          h: LEAF_H + PAD_TOP + PAD_BOTTOM,
+        });
+      }
       continue;
     }
 

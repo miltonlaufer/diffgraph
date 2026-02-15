@@ -1,5 +1,5 @@
-import type { FileDiffEntry, ViewGraph } from "../../types/graph";
-import type { TopLevelAnchor } from "../../components/SplitGraphPanel";
+import type { FileDiffEntry, ViewGraph } from "#/types/graph";
+import type { TopLevelAnchor } from "#/components/SplitGraphPanel";
 import type { ViewType } from "./types";
 
 export const normalizePath = (value: string): string =>

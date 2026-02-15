@@ -1,6 +1,6 @@
 import { makeAutoObservable, observable } from "mobx";
-import type { FileDiffEntry, ViewGraph, ViewportState } from "../../types/graph";
-import type { GraphDiffTarget, TopLevelAnchor } from "../../components/SplitGraphPanel";
+import type { FileDiffEntry, ViewGraph, ViewportState } from "#/types/graph";
+import type { GraphDiffTarget, TopLevelAnchor } from "#/components/SplitGraphPanel";
 
 const EMPTY_GRAPH: ViewGraph = { nodes: [], edges: [] };
 

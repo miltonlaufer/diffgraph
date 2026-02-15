@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { FileDiffEntry } from "../../types/graph";
+import type { FileDiffEntry } from "#/types/graph";
 
 interface ViewBaseRuntimeState {
   files: FileDiffEntry[];

@@ -1,6 +1,6 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
-import { fetchDiffFiles, fetchView } from "../../api";
-import type { GraphDiffTarget } from "../../components/splitGraph/types";
+import { fetchDiffFiles, fetchView } from "#/api";
+import type { GraphDiffTarget } from "#/components/splitGraph/types";
 import { ViewBaseStore } from "./store";
 import type { ViewType } from "./types";
 
