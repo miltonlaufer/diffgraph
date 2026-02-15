@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useTransition } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { observer, useLocalObservable } from "mobx-react-lite";
-import { fetchDiffFiles, fetchView } from "../api";
 import { CodeDiffDrawer } from "../components/CodeDiffDrawer";
 import { FileListPanel } from "../components/FileListPanel";
 import { SplitGraphPanel, type GraphDiffTarget, type TopLevelAnchor } from "../components/SplitGraphPanel";
+import { SplitGraphRuntimeProvider, type SplitGraphRuntimeContextValue } from "../components/splitGraph/context";
 import { SymbolListPanel } from "../components/SymbolListPanel";
 import type { FileSymbol, ViewportState } from "../types/graph";
 import { LogicToolbar } from "./viewBase/LogicToolbar";
@@ -19,7 +19,10 @@ import {
   commandToggleShowCalls,
 } from "./viewBase/commands";
 import { ViewBaseStore } from "./viewBase/store";
+import { ViewBaseRuntimeProvider, type ViewBaseRuntimeContextValue } from "./viewBase/runtime";
 import type { ViewType } from "./viewBase/types";
+import { useInteractiveUpdate } from "./viewBase/useInteractiveUpdate";
+import { useViewBaseEffects } from "./viewBase/useViewBaseEffects";
 import {
   buildFileContentMap,
   computeAlignedTopAnchors,
@@ -41,14 +44,9 @@ interface ViewBaseProps {
 
 export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBaseProps) => {
   const store = useLocalObservable(() => new ViewBaseStore());
-  const [isUiPending, startUiTransition] = useTransition();
   const codeDiffSectionRef = useRef<HTMLDivElement>(null);
   const highlightTimerRef = useRef<number | null>(null);
-  const didAutoViewportRef = useRef(false);
-  const startRafRef = useRef<number | null>(null);
-  const endRafRef = useRef<number | null>(null);
-  const autoViewportRafRef = useRef<number | null>(null);
-  const graphDiffIdxRafRef = useRef<number | null>(null);
+  const { isUiPending, commandContext } = useInteractiveUpdate(store);
 
   const filteredOldGraph = useMemo(
     () => computeFilteredOldGraph(store.oldGraph),
@@ -136,37 +134,6 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     [store.fileDiffs],
   );
 
-  const cancelPendingFrames = useCallback(() => {
-    if (startRafRef.current !== null) {
-      window.cancelAnimationFrame(startRafRef.current);
-      startRafRef.current = null;
-    }
-    if (endRafRef.current !== null) {
-      window.cancelAnimationFrame(endRafRef.current);
-      endRafRef.current = null;
-    }
-  }, []);
-
-  const runInteractiveUpdate = useCallback((update: () => void) => {
-    store.setInteractionBusy(true);
-    cancelPendingFrames();
-    startRafRef.current = window.requestAnimationFrame(() => {
-      startRafRef.current = null;
-      startUiTransition(() => {
-        update();
-      });
-      endRafRef.current = window.requestAnimationFrame(() => {
-        endRafRef.current = null;
-        store.setInteractionBusy(false);
-      });
-    });
-  }, [cancelPendingFrames, startUiTransition, store]);
-
-  const commandContext = useMemo(
-    () => ({ store, runInteractiveUpdate }),
-    [store, runInteractiveUpdate],
-  );
-
   const handleNodeSelect = useCallback(
     (nodeId: string, sourceSide: "old" | "new") => {
       commandSelectNode(commandContext, nodeId, sourceSide);
@@ -216,6 +183,47 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     [commandContext],
   );
 
+  const handleLayoutPendingChange = useCallback(
+    (side: "old" | "new", pending: boolean) => {
+      store.setLayoutPending(side, pending);
+    },
+    [store],
+  );
+
+  const splitGraphRuntime = useMemo<SplitGraphRuntimeContextValue>(() => ({
+    state: {
+      viewport: store.sharedViewport,
+      selectedNodeId: store.selectedNodeId,
+      highlightedNodeId: store.highlightedNodeId,
+      focusNodeId: store.focusNodeId,
+      focusNodeTick: store.focusNodeTick,
+      focusSourceSide: store.targetSide,
+      focusFilePath: store.selectedFilePath,
+      focusFileTick: store.focusFileTick,
+    },
+    actions: {
+      onNodeSelect: handleNodeSelect,
+      onViewportChange: handleViewportChange,
+      onDiffTargetsChange: handleDiffTargetsChange,
+      onTopLevelAnchorsChange: handleTopLevelAnchorsChange,
+      onLayoutPendingChange: handleLayoutPendingChange,
+    },
+  }), [
+    handleDiffTargetsChange,
+    handleLayoutPendingChange,
+    handleNodeSelect,
+    handleTopLevelAnchorsChange,
+    handleViewportChange,
+    store.focusFileTick,
+    store.focusNodeId,
+    store.focusNodeTick,
+    store.highlightedNodeId,
+    store.selectedFilePath,
+    store.selectedNodeId,
+    store.sharedViewport,
+    store.targetSide,
+  ]);
+
   const handleCodeLineClick = useCallback(
     (line: number, side: "old" | "new") => {
       commandCodeLineClick(
@@ -231,6 +239,30 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     },
     [commandContext, selectedFile?.path, store.selectedFilePath, displayOldGraph, displayNewGraph],
   );
+
+  const viewBaseRuntime = useMemo<ViewBaseRuntimeContextValue>(() => ({
+    state: {
+      files: store.fileDiffs,
+      selectedFilePath: store.selectedFilePath,
+      selectedFile,
+      targetLine: store.targetLine,
+      targetSide: store.targetSide,
+      scrollTick: store.scrollTick,
+    },
+    actions: {
+      onFileSelect: handleFileSelect,
+      onCodeLineClick: handleCodeLineClick,
+    },
+  }), [
+    handleCodeLineClick,
+    handleFileSelect,
+    selectedFile,
+    store.fileDiffs,
+    store.scrollTick,
+    store.selectedFilePath,
+    store.targetLine,
+    store.targetSide,
+  ]);
 
   const goToGraphDiff = useCallback(
     (idx: number) => {
@@ -254,147 +286,17 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     goToGraphDiff(store.graphDiffIdx + 1);
   }, [goToGraphDiff, store.graphDiffIdx]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        store.clearSelection();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [store]);
-
-  useEffect(() => {
-    let mounted = true;
-    store.beginLoading();
-    didAutoViewportRef.current = false;
-
-    Promise.all([fetchView(diffId, viewType), fetchDiffFiles(diffId)])
-      .then(([payload, files]) => {
-        if (!mounted) return;
-        store.applyFetchedData(payload.oldGraph, payload.newGraph, files);
-      })
-      .catch((reason: unknown) => {
-        if (!mounted) return;
-        store.setError(String(reason));
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, [diffId, viewType, store]);
-
-  useEffect(() => {
-    if (store.scrollTick <= 0 || !selectedFile) return;
-    requestAnimationFrame(() => {
-      codeDiffSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }, [store.scrollTick, selectedFile]);
-
-  useEffect(() => {
-    if (graphDiffIdxRafRef.current !== null) {
-      window.cancelAnimationFrame(graphDiffIdxRafRef.current);
-      graphDiffIdxRafRef.current = null;
-    }
-
-    if (graphDiffTargets.length === 0) {
-      if (store.graphDiffIdx !== 0) {
-        graphDiffIdxRafRef.current = window.requestAnimationFrame(() => {
-          graphDiffIdxRafRef.current = null;
-          store.setGraphDiffIdx(0);
-        });
-      }
-      return;
-    }
-
-    if (store.graphDiffIdx >= graphDiffTargets.length) {
-      graphDiffIdxRafRef.current = window.requestAnimationFrame(() => {
-        graphDiffIdxRafRef.current = null;
-        store.setGraphDiffIdx(0);
-      });
-    }
-
-    return () => {
-      if (graphDiffIdxRafRef.current !== null) {
-        window.cancelAnimationFrame(graphDiffIdxRafRef.current);
-        graphDiffIdxRafRef.current = null;
-      }
-    };
-  }, [graphDiffTargets.length, store.graphDiffIdx, store]);
-
-  useEffect(() => {
-    if (autoViewportRafRef.current !== null) {
-      window.cancelAnimationFrame(autoViewportRafRef.current);
-      autoViewportRafRef.current = null;
-    }
-
-    if (store.loading || didAutoViewportRef.current) return;
-
-    if (viewType === "logic") {
-      const oldKeys = Object.keys(store.oldTopAnchors);
-      const newKeys = Object.keys(store.newTopAnchors);
-      const hasCommonAnchor = oldKeys.some((key) => store.newTopAnchors[key] !== undefined);
-      if (oldKeys.length > 0 && newKeys.length > 0 && hasCommonAnchor && !newAlignmentOffset) {
-        return;
-      }
-    }
-
-    const oldTargetsReady = displayOldChangedCount === 0 || store.oldDiffTargets.length > 0;
-    const newTargetsReady = displayNewChangedCount === 0 || store.newDiffTargets.length > 0;
-    if (!oldTargetsReady || !newTargetsReady) return;
-
-    const sortedTargets = graphDiffTargets.length > 0
-      ? graphDiffTargets
-      : [...store.oldDiffTargets, ...store.newDiffTargets].sort((a, b) => (a.y - b.y) || (a.x - b.x));
-    const preferredTarget = sortedTargets.find((target) => target.kind !== "group") ?? sortedTargets[0];
-    if (!preferredTarget) return;
-
-    autoViewportRafRef.current = window.requestAnimationFrame(() => {
-      autoViewportRafRef.current = null;
-      didAutoViewportRef.current = true;
-      store.setSharedViewport({
-        x: preferredTarget.viewportX,
-        y: preferredTarget.viewportY,
-        zoom: preferredTarget.viewportZoom,
-      });
-    });
-
-    return () => {
-      if (autoViewportRafRef.current !== null) {
-        window.cancelAnimationFrame(autoViewportRafRef.current);
-        autoViewportRafRef.current = null;
-      }
-    };
-  }, [
-    store.loading,
-    store.newDiffTargets,
-    store.oldDiffTargets,
-    graphDiffTargets,
+  useViewBaseEffects({
+    store,
+    diffId,
     viewType,
-    store.oldTopAnchors,
-    store.newTopAnchors,
-    newAlignmentOffset,
+    hasSelectedFile: selectedFile !== null,
+    codeDiffSectionRef,
+    graphDiffTargets,
     displayOldChangedCount,
     displayNewChangedCount,
-    store,
-  ]);
-
-  useEffect(() => () => {
-    cancelPendingFrames();
-    if (autoViewportRafRef.current !== null) {
-      window.cancelAnimationFrame(autoViewportRafRef.current);
-      autoViewportRafRef.current = null;
-    }
-    if (graphDiffIdxRafRef.current !== null) {
-      window.cancelAnimationFrame(graphDiffIdxRafRef.current);
-      graphDiffIdxRafRef.current = null;
-    }
-    if (highlightTimerRef.current !== null) {
-      window.clearTimeout(highlightTimerRef.current);
-    }
-  }, [cancelPendingFrames]);
+    highlightTimerRef,
+  });
 
   if (store.error) {
     return <p className="errorText">{store.error}</p>;
@@ -414,98 +316,72 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
   const isInteractionPending = store.interactionBusy || isUiPending;
 
   return (
-    <section className="viewContainer">
-      {isInteractionPending && (
-        <div className="interactionOverlay interactionOverlayLocal" role="status" aria-live="polite">
-          <div className="spinner" />
-          <p className="dimText">Updating graph...</p>
+    <ViewBaseRuntimeProvider value={viewBaseRuntime}>
+      <section className="viewContainer">
+        {isInteractionPending && (
+          <div className="interactionOverlay interactionOverlayLocal" role="status" aria-live="polite">
+            <div className="spinner" />
+            <p className="dimText">Updating graph...</p>
+          </div>
+        )}
+
+        {viewType === "logic" && (
+          <LogicToolbar
+            showCalls={store.showCalls}
+            diffCountLabel={graphDiffTargets.length > 0 ? `${store.graphDiffIdx + 1}/${graphDiffTargets.length}` : "0/0"}
+            canNavigate={graphDiffTargets.length > 0}
+            onShowCallsChange={handleShowCallsChange}
+            onPrev={goToPrevGraphDiff}
+            onNext={goToNextGraphDiff}
+          />
+        )}
+
+        <SplitGraphRuntimeProvider value={splitGraphRuntime}>
+          <div className="splitLayout">
+            <SplitGraphPanel
+              title="Old"
+              side="old"
+              graph={displayOldGraph}
+              viewType={viewType}
+              showCalls={viewType === "logic" ? store.showCalls : true}
+              fileContentMap={oldFileContentMap}
+              alignmentAnchors={alignedTopAnchors.old}
+              isViewportPrimary={false}
+            />
+
+            <SplitGraphPanel
+              title="New"
+              side="new"
+              graph={displayNewGraph}
+              viewType={viewType}
+              showCalls={viewType === "logic" ? store.showCalls : true}
+              diffStats={diffStats}
+              fileContentMap={newFileContentMap}
+              alignmentOffset={newAlignmentOffset}
+              alignmentAnchors={alignedTopAnchors.new}
+              isViewportPrimary
+            />
+          </div>
+        </SplitGraphRuntimeProvider>
+
+        {isEmptyView && (
+          <p className="errorText">
+            {store.selectedFilePath
+              ? "No nodes found for this file. Try the Knowledge tab, or disable Changes Only."
+              : "No nodes found for this view. Try the Knowledge tab, or disable Changes Only."}
+          </p>
+        )}
+
+        <FileListPanel />
+
+        {selectedSymbols.length > 0 && (
+          <SymbolListPanel symbols={selectedSymbols} onSymbolClick={handleSymbolClick} />
+        )}
+
+        <div ref={codeDiffSectionRef}>
+          <CodeDiffDrawer />
         </div>
-      )}
-
-      {viewType === "logic" && (
-        <LogicToolbar
-          showCalls={store.showCalls}
-          diffCountLabel={graphDiffTargets.length > 0 ? `${store.graphDiffIdx + 1}/${graphDiffTargets.length}` : "0/0"}
-          canNavigate={graphDiffTargets.length > 0}
-          onShowCallsChange={handleShowCallsChange}
-          onPrev={goToPrevGraphDiff}
-          onNext={goToNextGraphDiff}
-        />
-      )}
-
-      <div className="splitLayout">
-        <SplitGraphPanel
-          title="Old"
-          side="old"
-          graph={displayOldGraph}
-          viewType={viewType}
-          showCalls={viewType === "logic" ? store.showCalls : true}
-          onNodeSelect={handleNodeSelect}
-          viewport={store.sharedViewport}
-          onViewportChange={handleViewportChange}
-          selectedNodeId={store.selectedNodeId}
-          highlightedNodeId={store.highlightedNodeId}
-          focusNodeId={store.focusNodeId}
-          focusNodeTick={store.focusNodeTick}
-          focusFilePath={store.selectedFilePath}
-          focusFileTick={store.focusFileTick}
-          fileContentMap={oldFileContentMap}
-          onDiffTargetsChange={handleDiffTargetsChange}
-          alignmentAnchors={alignedTopAnchors.old}
-          onTopLevelAnchorsChange={handleTopLevelAnchorsChange}
-        />
-
-        <SplitGraphPanel
-          title="New"
-          side="new"
-          graph={displayNewGraph}
-          viewType={viewType}
-          showCalls={viewType === "logic" ? store.showCalls : true}
-          onNodeSelect={handleNodeSelect}
-          viewport={store.sharedViewport}
-          onViewportChange={handleViewportChange}
-          selectedNodeId={store.selectedNodeId}
-          highlightedNodeId={store.highlightedNodeId}
-          focusNodeId={store.focusNodeId}
-          focusNodeTick={store.focusNodeTick}
-          focusFilePath={store.selectedFilePath}
-          focusFileTick={store.focusFileTick}
-          diffStats={diffStats}
-          fileContentMap={newFileContentMap}
-          onDiffTargetsChange={handleDiffTargetsChange}
-          alignmentOffset={newAlignmentOffset}
-          alignmentAnchors={alignedTopAnchors.new}
-          onTopLevelAnchorsChange={handleTopLevelAnchorsChange}
-        />
-      </div>
-
-      {isEmptyView && (
-        <p className="errorText">
-          {store.selectedFilePath
-            ? "No nodes found for this file. Try the Knowledge tab, or disable Changes Only."
-            : "No nodes found for this view. Try the Knowledge tab, or disable Changes Only."}
-        </p>
-      )}
-
-      <FileListPanel
-        files={store.fileDiffs}
-        selectedFilePath={store.selectedFilePath}
-        onFileSelect={handleFileSelect}
-      />
-
-      {selectedSymbols.length > 0 && (
-        <SymbolListPanel symbols={selectedSymbols} onSymbolClick={handleSymbolClick} />
-      )}
-
-      <div ref={codeDiffSectionRef}>
-        <CodeDiffDrawer
-          file={selectedFile}
-          targetLine={store.targetLine}
-          targetSide={store.targetSide}
-          scrollTick={store.scrollTick}
-          onLineClick={handleCodeLineClick}
-        />
-      </div>
-    </section>
+      </section>
+    </ViewBaseRuntimeProvider>
   );
 });

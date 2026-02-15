@@ -91,6 +91,45 @@ const functionIdentityFromLabel = (label: string): string => {
 export const stableNodeKey = (node: Pick<ViewGraphNode, "kind" | "filePath" | "label" | "className">): string =>
   `${node.kind}:${normPath(node.filePath)}:${(node.className ?? "").trim().toLowerCase()}:${functionIdentityFromLabel(node.label)}`;
 
+const topLevelAnchorSortTuple = (node: Pick<ViewGraphNode, "filePath" | "className" | "label" | "startLine" | "endLine" | "id">): [string, string, string, number, number, string] => [
+  normPath(node.filePath),
+  (node.className ?? "").trim().toLowerCase(),
+  functionIdentityFromLabel(node.label),
+  node.startLine ?? Number.MAX_SAFE_INTEGER,
+  node.endLine ?? Number.MAX_SAFE_INTEGER,
+  node.id,
+];
+
+export const buildTopLevelAnchorKeyByNodeId = (
+  nodes: Array<Pick<ViewGraphNode, "id" | "kind" | "filePath" | "label" | "className" | "startLine" | "endLine" | "parentId">>,
+): Map<string, string> => {
+  const topGroups = nodes
+    .filter((node) => node.kind === "group" && !node.parentId)
+    .slice()
+    .sort((a, b) => {
+      const ta = topLevelAnchorSortTuple(a);
+      const tb = topLevelAnchorSortTuple(b);
+      for (let i = 0; i < ta.length; i += 1) {
+        if (ta[i] < tb[i]) return -1;
+        if (ta[i] > tb[i]) return 1;
+      }
+      return 0;
+    });
+
+  const countByBaseKey = new Map<string, number>();
+  const keyByNodeId = new Map<string, string>();
+
+  for (const node of topGroups) {
+    const baseKey = stableNodeKey(node);
+    const nextCount = (countByBaseKey.get(baseKey) ?? 0) + 1;
+    countByBaseKey.set(baseKey, nextCount);
+    const uniqueKey = nextCount === 1 ? baseKey : `${baseKey}#${nextCount}`;
+    keyByNodeId.set(node.id, uniqueKey);
+  }
+
+  return keyByNodeId;
+};
+
 const langFromPath = (path: string): string => {
   if (path.endsWith(".ts") || path.endsWith(".tsx")) return "typescript";
   if (path.endsWith(".js") || path.endsWith(".jsx")) return "javascript";

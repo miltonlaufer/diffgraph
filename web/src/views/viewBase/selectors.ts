@@ -132,9 +132,7 @@ export const computeVisibleGraph = (
 type FileSelectionExpansionStrategy = (visibleGraph: ViewGraph, nodeIds: Set<string>) => Set<string>;
 
 const logicFileSelectionExpansion: FileSelectionExpansionStrategy = (visibleGraph, nodeIds) => {
-  let expanded = includeInvokeNeighbors(visibleGraph, nodeIds);
-  expanded = includeHierarchyAncestors(visibleGraph, expanded);
-  return expanded;
+  return includeHierarchyAncestors(visibleGraph, nodeIds);
 };
 
 const passthroughFileSelectionExpansion: FileSelectionExpansionStrategy = (_visibleGraph, nodeIds) => nodeIds;

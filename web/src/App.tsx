@@ -62,6 +62,7 @@ const App = () => {
     runInteractiveUpdate(() => setChangesOnly((current) => !current));
   }, [runInteractiveUpdate]);
   const canShowReact = meta?.hasReactView ?? true;
+  const activeTab: Tab = (!canShowReact && tab === "react") ? "logic" : tab;
   const isInteractionPending = interactionBusy || isTransitionPending;
 
   /******************* USEEFFECTS ***********************/
@@ -69,12 +70,6 @@ const App = () => {
     if (!diffId) return;
     fetchDiffMeta(diffId).then(setMeta).catch(() => {});
   }, [diffId]);
-
-  useEffect(() => {
-    if (!canShowReact && tab === "react") {
-      setTab("logic");
-    }
-  }, [canShowReact, tab]);
 
   useEffect(() => () => {
     cancelPendingFrames();
@@ -126,23 +121,23 @@ const App = () => {
           </label>
         </div>
         <div className="tabBar">
-          <button type="button" onClick={showLogic} className={tab === "logic" ? "active" : ""}>
-            Logic
-          </button>
-          <button type="button" onClick={showKnowledge} className={tab === "knowledge" ? "active" : ""}>
-            Knowledge
-          </button>
-          {canShowReact && (
-            <button type="button" onClick={showReact} className={tab === "react" ? "active" : ""}>
-              React
-            </button>
-          )}
+	          <button type="button" onClick={showLogic} className={activeTab === "logic" ? "active" : ""}>
+	            Logic
+	          </button>
+	          <button type="button" onClick={showKnowledge} className={activeTab === "knowledge" ? "active" : ""}>
+	            Knowledge
+	          </button>
+	          {canShowReact && (
+	            <button type="button" onClick={showReact} className={activeTab === "react" ? "active" : ""}>
+	              React
+	            </button>
+	          )}
         </div>
       </header>
 
-      {tab === "logic" && <LogicDiffView diffId={diffId} showChangesOnly={changesOnly} />}
-      {tab === "knowledge" && <KnowledgeDiffView diffId={diffId} showChangesOnly={changesOnly} />}
-      {tab === "react" && canShowReact && <ReactDiffView diffId={diffId} showChangesOnly={changesOnly} />}
+	      {activeTab === "logic" && <LogicDiffView diffId={diffId} showChangesOnly={changesOnly} />}
+	      {activeTab === "knowledge" && <KnowledgeDiffView diffId={diffId} showChangesOnly={changesOnly} />}
+	      {activeTab === "react" && canShowReact && <ReactDiffView diffId={diffId} showChangesOnly={changesOnly} />}
 
       {isInteractionPending && (
         <div className="interactionOverlay interactionOverlayGlobal" role="status" aria-live="polite">

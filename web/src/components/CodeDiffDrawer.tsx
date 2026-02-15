@@ -7,7 +7,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { observer, useLocalObservable } from "mobx-react-lite";
-import type { FileDiffEntry } from "../types/graph";
 import { CodeDiffMatrixView } from "./codeDiff/CodeDiffMatrixView";
 import { CodeDiffSingleFileView } from "./codeDiff/CodeDiffSingleFileView";
 import { CodeDiffToolbar } from "./codeDiff/CodeDiffToolbar";
@@ -20,16 +19,12 @@ import {
 } from "./codeDiff/diffUtils";
 import { CodeDiffDrawerStore } from "./codeDiff/store";
 import type { DiffMatrixRow } from "./codeDiff/types";
+import { useViewBaseRuntime } from "../views/viewBase/runtime";
 
-interface CodeDiffDrawerProps {
-  file: FileDiffEntry | null;
-  targetLine: number;
-  targetSide: "old" | "new";
-  scrollTick: number;
-  onLineClick?: (line: number, side: "old" | "new") => void;
-}
-
-export const CodeDiffDrawer = observer(({ file, targetLine, targetSide, scrollTick, onLineClick }: CodeDiffDrawerProps) => {
+export const CodeDiffDrawer = observer(() => {
+  const { state, actions } = useViewBaseRuntime();
+  const { selectedFile: file, targetLine, targetSide, scrollTick } = state;
+  const { onCodeLineClick } = actions;
   const store = useLocalObservable(() => new CodeDiffDrawerStore());
   const oldCodeScrollRef = useRef<HTMLDivElement>(null);
   const newCodeScrollRef = useRef<HTMLDivElement>(null);
@@ -192,7 +187,7 @@ export const CodeDiffDrawer = observer(({ file, targetLine, targetSide, scrollTi
         <button type="button" className="codeDiffFullscreenBtn" onClick={store.toggleFullscreen} title={fullscreenTitle}>
           {fullscreenIcon}
         </button>
-        <CodeDiffSingleFileView mode="added" filePath={file.path} content={file.newContent} language={lang} onLineClick={onLineClick} />
+        <CodeDiffSingleFileView mode="added" filePath={file.path} content={file.newContent} language={lang} onLineClick={onCodeLineClick} />
       </section>
     );
   }
@@ -203,7 +198,7 @@ export const CodeDiffDrawer = observer(({ file, targetLine, targetSide, scrollTi
         <button type="button" className="codeDiffFullscreenBtn" onClick={store.toggleFullscreen} title={fullscreenTitle}>
           {fullscreenIcon}
         </button>
-        <CodeDiffSingleFileView mode="removed" filePath={file.path} content={file.oldContent} language={lang} onLineClick={onLineClick} />
+        <CodeDiffSingleFileView mode="removed" filePath={file.path} content={file.oldContent} language={lang} onLineClick={onCodeLineClick} />
       </section>
     );
   }
@@ -234,7 +229,7 @@ export const CodeDiffDrawer = observer(({ file, targetLine, targetSide, scrollTi
         newCodeScrollRef={newCodeScrollRef}
         onOldScroll={handleOldScroll}
         onNewScroll={handleNewScroll}
-        onLineClick={onLineClick}
+        onLineClick={onCodeLineClick}
       />
     </section>
   );

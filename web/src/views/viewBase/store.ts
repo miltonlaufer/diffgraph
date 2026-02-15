@@ -24,6 +24,8 @@ export class ViewBaseStore {
   focusNodeId = "";
   focusNodeTick = 0;
   focusFileTick = 0;
+  oldLayoutPending = false;
+  newLayoutPending = false;
   loading = true;
   error = "";
   interactionBusy = false;
@@ -51,6 +53,8 @@ export class ViewBaseStore {
     this.newGraph = newGraph;
     this.oldDiffTargets = [];
     this.newDiffTargets = [];
+    this.oldLayoutPending = false;
+    this.newLayoutPending = false;
     this.graphDiffIdx = 0;
     this.oldTopAnchors = {};
     this.newTopAnchors = {};
@@ -84,6 +88,14 @@ export class ViewBaseStore {
       return;
     }
     this.newDiffTargets = targets;
+  }
+
+  setLayoutPending(side: "old" | "new", pending: boolean): void {
+    if (side === "old") {
+      this.oldLayoutPending = pending;
+      return;
+    }
+    this.newLayoutPending = pending;
   }
 
   setTopLevelAnchors(side: "old" | "new", anchors: Record<string, TopLevelAnchor>): void {

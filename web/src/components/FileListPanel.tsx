@@ -1,16 +1,12 @@
 import { useMemo } from "react";
 import { observer, useLocalObservable } from "mobx-react-lite";
-import type { FileDiffEntry } from "../types/graph";
 import { FileListView } from "./fileList/FileListView";
 import { FileListPanelStore } from "./fileList/store";
+import { useViewBaseRuntime } from "../views/viewBase/runtime";
 
-interface FileListPanelProps {
-  files: FileDiffEntry[];
-  selectedFilePath: string;
-  onFileSelect: (path: string) => void;
-}
-
-export const FileListPanel = observer(({ files, selectedFilePath, onFileSelect }: FileListPanelProps) => {
+export const FileListPanel = observer(() => {
+  const { state, actions } = useViewBaseRuntime();
+  const { files, selectedFilePath } = state;
   const store = useLocalObservable(() => new FileListPanelStore());
 
   const topRisk = useMemo(
@@ -25,7 +21,7 @@ export const FileListPanel = observer(({ files, selectedFilePath, onFileSelect }
       collapsed={store.collapsed}
       topRisk={topRisk}
       onToggleCollapsed={store.toggleCollapsed}
-      onSelectFile={onFileSelect}
+      onSelectFile={actions.onFileSelect}
     />
   );
 });

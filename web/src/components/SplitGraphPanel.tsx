@@ -1,17 +1,32 @@
 import { useMemo, useCallback, useEffect, useRef } from "react";
 import {
-  type Edge,
   type EdgeMouseHandler,
   type Node,
   type NodeMouseHandler,
   type Viewport,
 } from "@xyflow/react";
 import { observer, useLocalObservable } from "mobx-react-lite";
-import type { LayoutWorkerRequest, LayoutWorkerResponse } from "../workers/layoutTypes";
 import { GraphCanvas } from "./splitGraph/GraphCanvas";
+import { useSplitGraphRuntime } from "./splitGraph/context";
 import { GraphPanelHeader } from "./splitGraph/GraphPanelHeader";
-import { computeLayoutByView, knowledgeNodeTypes, LEAF_H, LEAF_W, logicNodeTypes, normPath, stableNodeKey } from "./splitGraph/layout";
+import {
+  buildTopLevelAnchorKeyByNodeId,
+  computeLayoutByView,
+  knowledgeNodeTypes,
+  LEAF_H,
+  LEAF_W,
+  logicNodeTypes,
+  normPath,
+  stableNodeKey,
+} from "./splitGraph/layout";
 import { SplitGraphPanelStore } from "./splitGraph/store";
+import { useFlowContainerSize } from "./splitGraph/useFlowContainerSize";
+import { useSplitGraphLayoutWorker } from "./splitGraph/useSplitGraphLayoutWorker";
+import {
+  computeNodeAbsolutePosition,
+  computeViewportForNode,
+  isNodeVisibleInViewport as computeIsNodeVisibleInViewport,
+} from "./splitGraph/viewport";
 import type { GraphDiffTarget, SplitGraphPanelProps, TopLevelAnchor } from "./splitGraph/types";
 
 export type { GraphDiffTarget, TopLevelAnchor } from "./splitGraph/types";
@@ -30,30 +45,37 @@ export const SplitGraphPanel = observer(({
   graph,
   viewType,
   showCalls = true,
-  onNodeSelect,
-  viewport,
-  onViewportChange,
-  selectedNodeId,
-  highlightedNodeId,
-  focusNodeId,
-  focusNodeTick,
-  focusFilePath,
-  focusFileTick = 0,
   diffStats,
   fileContentMap,
-  onDiffTargetsChange,
   alignmentOffset,
   alignmentAnchors,
-  onTopLevelAnchorsChange,
+  isViewportPrimary = true,
 }: SplitGraphPanelProps) => {
+  const { state: runtimeState, actions: runtimeActions } = useSplitGraphRuntime();
+  const {
+    viewport,
+    selectedNodeId,
+    highlightedNodeId,
+    focusNodeId,
+    focusNodeTick,
+    focusSourceSide,
+    focusFilePath,
+    focusFileTick,
+  } = runtimeState;
+  const {
+    onNodeSelect,
+    onViewportChange,
+    onDiffTargetsChange,
+    onTopLevelAnchorsChange,
+    onLayoutPendingChange,
+  } = runtimeActions;
   const store = useLocalObservable(() => new SplitGraphPanelStore());
   const searchHighlightTimerRef = useRef<number | null>(null);
   const flowContainerRef = useRef<HTMLDivElement>(null);
-  const layoutWorkerRef = useRef<Worker | null>(null);
-  const layoutRequestIdRef = useRef(0);
-  const layoutWatchdogTimerRef = useRef<number | null>(null);
-  const lastAppliedFocusNodeSignatureRef = useRef("");
+  const lastAppliedFocusNodeTickRef = useRef(0);
   const lastAppliedFocusFileTickRef = useRef(0);
+  const lastViewportRecoveryKeyRef = useRef("");
+  const layoutResult = store.layoutResult;
 
   const isLogic = viewType === "logic";
   const isOld = side === "old";
@@ -64,8 +86,12 @@ export const SplitGraphPanel = observer(({
     [viewType, graph, fileContentMap, showCalls],
   );
 
+  const topLevelAnchorKeyByNodeId = useMemo(
+    () => buildTopLevelAnchorKeyByNodeId(graph.nodes),
+    [graph.nodes],
+  );
+
   const positionedLayoutResult = useMemo(() => {
-    const { layoutResult } = store;
     if (!alignmentOffset && !alignmentAnchors) return layoutResult;
     const graphNodeById = new Map(graph.nodes.map((n) => [n.id, n]));
     const nodes = layoutResult.nodes.map((node) => ({
@@ -75,7 +101,8 @@ export const SplitGraphPanel = observer(({
           if (node.parentId) return node.position.x;
           const graphNode = graphNodeById.get(node.id);
           if (graphNode && graphNode.kind === "group" && alignmentAnchors) {
-            const anchored = alignmentAnchors[stableNodeKey(graphNode)];
+            const anchorKey = topLevelAnchorKeyByNodeId.get(graphNode.id) ?? stableNodeKey(graphNode);
+            const anchored = alignmentAnchors[anchorKey];
             if (anchored) return anchored.x;
           }
           return alignmentOffset ? node.position.x + alignmentOffset.x : node.position.x;
@@ -84,7 +111,8 @@ export const SplitGraphPanel = observer(({
           if (node.parentId) return node.position.y;
           const graphNode = graphNodeById.get(node.id);
           if (graphNode && graphNode.kind === "group" && alignmentAnchors) {
-            const anchored = alignmentAnchors[stableNodeKey(graphNode)];
+            const anchorKey = topLevelAnchorKeyByNodeId.get(graphNode.id) ?? stableNodeKey(graphNode);
+            const anchored = alignmentAnchors[anchorKey];
             if (anchored) return anchored.y;
           }
           return alignmentOffset ? node.position.y + alignmentOffset.y : node.position.y;
@@ -92,7 +120,7 @@ export const SplitGraphPanel = observer(({
       },
     }));
     return { nodes, edges: layoutResult.edges };
-  }, [store, alignmentAnchors, alignmentOffset, graph.nodes]);
+  }, [alignmentAnchors, alignmentOffset, graph.nodes, layoutResult, topLevelAnchorKeyByNodeId]);
 
   const flowElements = useMemo(() => {
     const hasNodeHighlights = Boolean(selectedNodeId || highlightedNodeId || store.searchHighlightedNodeId);
@@ -184,56 +212,12 @@ export const SplitGraphPanel = observer(({
   const flowNodeById = useMemo(() => new Map(flowElements.nodes.map((n) => [n.id, n])), [flowElements.nodes]);
 
   const nodeAbsolutePosition = useCallback((node: Node): { x: number; y: number } => {
-    let x = node.position.x;
-    let y = node.position.y;
-    let parentId = node.parentId;
-    while (parentId) {
-      const parent = flowNodeById.get(parentId);
-      if (!parent) break;
-      x += parent.position.x;
-      y += parent.position.y;
-      parentId = parent.parentId;
-    }
-    return { x, y };
+    return computeNodeAbsolutePosition(node, flowNodeById);
   }, [flowNodeById]);
 
-  const nodeSize = useCallback((node: Node): { width: number; height: number } => {
-    const styleWidth = typeof node.style?.width === "number" ? node.style.width : undefined;
-    const styleHeight = typeof node.style?.height === "number" ? node.style.height : undefined;
-    if (styleWidth && styleHeight) return { width: styleWidth, height: styleHeight };
-    if (node.type === "diamond") return { width: 120, height: 120 };
-    if (node.type === "knowledge") return { width: 220, height: 56 };
-    if (node.type === "scope") return { width: LEAF_W, height: LEAF_H };
-    return { width: LEAF_W, height: LEAF_H };
-  }, []);
-
   const viewportForNode = useCallback((node: Node): { x: number; y: number; zoom: number } => {
-    const zoom = 0.9;
-    const padding = 24;
-    const abs = nodeAbsolutePosition(node);
-    const size = nodeSize(node);
-    const worldVisibleW = store.flowSize.width / zoom;
-    const worldVisibleH = store.flowSize.height / zoom;
-    const tooLarge = size.width > worldVisibleW * 0.8 || size.height > worldVisibleH * 0.8;
-
-    if (tooLarge) {
-      const centerX = abs.x + size.width / 2;
-      const anchorWorldY = abs.y - padding;
-      return {
-        x: store.flowSize.width / 2 - centerX * zoom,
-        y: padding - anchorWorldY * zoom,
-        zoom,
-      };
-    }
-
-    const centerX = abs.x + size.width / 2;
-    const centerY = abs.y + size.height / 2;
-    return {
-      x: store.flowSize.width / 2 - centerX * zoom,
-      y: store.flowSize.height / 2 - centerY * zoom,
-      zoom,
-    };
-  }, [store.flowSize.width, store.flowSize.height, nodeAbsolutePosition, nodeSize]);
+    return computeViewportForNode(node, flowNodeById, store.flowSize);
+  }, [flowNodeById, store.flowSize]);
 
   const minimapNodeColor = useCallback((node: Node): string => {
     const data = node.data as { bgColor?: unknown } | undefined;
@@ -258,6 +242,21 @@ export const SplitGraphPanel = observer(({
   }, [diffStats, graph.nodes]);
 
   const nodeTypesForFlow = isLogic ? logicNodeTypes : knowledgeNodeTypes;
+  const hasInputNodes = graph.nodes.length > 0;
+  const hasRenderedNodes = positionedLayoutResult.nodes.length > 0;
+  const showLayoutStatus = hasInputNodes && !hasRenderedNodes && store.layoutPending;
+
+  useEffect(() => {
+    if (!onLayoutPendingChange) return;
+    onLayoutPendingChange(side, store.layoutPending);
+  }, [onLayoutPendingChange, side, store.layoutPending]);
+
+  useEffect(() => {
+    if (!onLayoutPendingChange) return;
+    return () => {
+      onLayoutPendingChange(side, false);
+    };
+  }, [onLayoutPendingChange, side]);
 
   const focusedViewport = useMemo(() => {
     if (!focusFilePath) return null;
@@ -326,112 +325,16 @@ export const SplitGraphPanel = observer(({
     onViewportChange({ x: nextViewport.x, y: nextViewport.y, zoom: nextViewport.zoom });
   }, [onViewportChange]);
 
-  useEffect(() => {
-    const worker = new Worker(new URL("../workers/layoutWorker.ts", import.meta.url), { type: "module" });
-    layoutWorkerRef.current = worker;
+  useSplitGraphLayoutWorker({
+    store,
+    graph,
+    viewType,
+    showCalls,
+    fileEntries,
+    computeLayoutSync,
+  });
 
-    const handleMessage = (event: MessageEvent<LayoutWorkerResponse>): void => {
-      const data = event.data;
-      if (data.requestId !== layoutRequestIdRef.current) return;
-      if (layoutWatchdogTimerRef.current !== null) {
-        window.clearTimeout(layoutWatchdogTimerRef.current);
-        layoutWatchdogTimerRef.current = null;
-      }
-      if (!data.ok) {
-        store.setLayoutPending(false);
-        store.setWorkerFailed(true);
-        return;
-      }
-      store.setLayoutPending(false);
-      store.setLayoutResult({ nodes: data.result.nodes as Node[], edges: data.result.edges as Edge[] });
-    };
-
-    const handleError = (): void => {
-      if (layoutWatchdogTimerRef.current !== null) {
-        window.clearTimeout(layoutWatchdogTimerRef.current);
-        layoutWatchdogTimerRef.current = null;
-      }
-      store.setLayoutPending(false);
-      store.setWorkerFailed(true);
-    };
-
-    worker.addEventListener("message", handleMessage as EventListener);
-    worker.addEventListener("error", handleError as EventListener);
-    store.setWorkerReady(true);
-
-    return () => {
-      worker.removeEventListener("message", handleMessage as EventListener);
-      worker.removeEventListener("error", handleError as EventListener);
-      worker.terminate();
-      if (layoutWatchdogTimerRef.current !== null) {
-        window.clearTimeout(layoutWatchdogTimerRef.current);
-        layoutWatchdogTimerRef.current = null;
-      }
-      layoutWorkerRef.current = null;
-      store.setWorkerReady(false);
-    };
-  }, [store]);
-
-  useEffect(() => {
-    const requestId = layoutRequestIdRef.current + 1;
-    layoutRequestIdRef.current = requestId;
-
-    if (store.workerFailed) {
-      store.setLayoutPending(true);
-      const fallbackTimer = window.setTimeout(() => {
-        if (requestId !== layoutRequestIdRef.current) return;
-        try {
-          store.setLayoutResult(computeLayoutSync());
-        } catch {
-          store.setWorkerFailed(true);
-        }
-        store.setLayoutPending(false);
-      }, 0);
-      return () => {
-        window.clearTimeout(fallbackTimer);
-      };
-    }
-
-    if (!store.workerReady || !layoutWorkerRef.current) return;
-
-    const payload: LayoutWorkerRequest = {
-      requestId,
-      graph,
-      viewType,
-      showCalls,
-      fileEntries,
-    };
-    store.setLayoutPending(true);
-    if (layoutWatchdogTimerRef.current !== null) {
-      window.clearTimeout(layoutWatchdogTimerRef.current);
-    }
-    layoutWatchdogTimerRef.current = window.setTimeout(() => {
-      if (requestId !== layoutRequestIdRef.current) return;
-      if (store.layoutResult.nodes.length > 0) return;
-      store.setLayoutPending(false);
-      store.setWorkerFailed(true);
-    }, 8000);
-    layoutWorkerRef.current.postMessage(payload);
-  }, [computeLayoutSync, fileEntries, graph, showCalls, store, viewType, store.workerFailed, store.workerReady]);
-
-  useEffect(() => {
-    const el = flowContainerRef.current;
-    if (!el) return;
-    const update = (): void => {
-      const rect = el.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        store.setFlowSize({ width: rect.width, height: rect.height });
-      }
-    };
-    update();
-    if (typeof ResizeObserver !== "undefined") {
-      const observer = new ResizeObserver(() => update());
-      observer.observe(el);
-      return () => observer.disconnect();
-    }
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, [store]);
+  useFlowContainerSize(flowContainerRef, store);
 
   useEffect(() => {
     if (!onDiffTargetsChange) return;
@@ -468,10 +371,11 @@ export const SplitGraphPanel = observer(({
       if (!gn || gn.kind !== "group") continue;
       const width = typeof node.style?.width === "number" ? node.style.width : LEAF_W;
       const height = typeof node.style?.height === "number" ? node.style.height : LEAF_H;
-      anchors[stableNodeKey(gn)] = { x: node.position.x, y: node.position.y, width, height };
+      const anchorKey = topLevelAnchorKeyByNodeId.get(gn.id) ?? stableNodeKey(gn);
+      anchors[anchorKey] = { x: node.position.x, y: node.position.y, width, height };
     }
     onTopLevelAnchorsChange(side, anchors);
-  }, [graph.nodes, store.layoutResult.nodes, onTopLevelAnchorsChange, side]);
+  }, [graph.nodes, store.layoutResult.nodes, onTopLevelAnchorsChange, side, topLevelAnchorKeyByNodeId]);
 
   useEffect(() => {
     if (!store.searchQuery || store.searchQuery.length < 2 || searchMatches.length === 0) return;
@@ -497,17 +401,78 @@ export const SplitGraphPanel = observer(({
     onViewportChange(focusedViewport);
   }, [focusFilePath, focusFileTick, focusedViewport, onViewportChange]);
 
+  const isNodeVisibleInViewport = useCallback((node: Node): boolean => {
+    return computeIsNodeVisibleInViewport(node, flowNodeById, store.flowSize, viewport);
+  }, [flowNodeById, store.flowSize, viewport]);
+
+  useEffect(() => {
+    if (!isViewportPrimary) return;
+    if (store.layoutPending) return;
+    if (flowElements.nodes.length === 0) return;
+    if (store.flowSize.width <= 0 || store.flowSize.height <= 0) return;
+
+    const firstNode = flowElements.nodes[0];
+    const lastNode = flowElements.nodes[flowElements.nodes.length - 1];
+    const layoutRecoveryKey = [
+      graph.nodes.length,
+      flowElements.nodes.length,
+      flowElements.edges.length,
+      firstNode?.id ?? "",
+      lastNode?.id ?? "",
+      Math.round(store.flowSize.width),
+      Math.round(store.flowSize.height),
+    ].join(":");
+
+    if (layoutRecoveryKey === lastViewportRecoveryKeyRef.current) return;
+    lastViewportRecoveryKeyRef.current = layoutRecoveryKey;
+
+    const hasVisibleNode = flowElements.nodes.some((node) => isNodeVisibleInViewport(node));
+    if (hasVisibleNode) return;
+
+    const preferredId = selectedNodeId || highlightedNodeId || focusNodeId || "";
+    const target = (
+      flowElements.nodes.find((node) => node.id === preferredId)
+      ?? flowElements.nodes.find((node) => node.type !== "scope")
+      ?? flowElements.nodes[0]
+    );
+    if (!target) return;
+    onViewportChange(viewportForNode(target));
+  }, [
+    focusNodeId,
+    flowElements.edges.length,
+    flowElements.nodes,
+    graph.nodes.length,
+    highlightedNodeId,
+    isNodeVisibleInViewport,
+    isViewportPrimary,
+    onViewportChange,
+    selectedNodeId,
+    store.flowSize.height,
+    store.flowSize.width,
+    store.layoutPending,
+    viewportForNode,
+  ]);
+
   useEffect(() => {
     if (!focusNodeId) return;
     if ((focusNodeTick ?? 0) <= 0) return;
+    if (focusSourceSide && focusSourceSide !== side) return;
+    if (store.layoutPending) return;
+    if ((focusNodeTick ?? 0) === lastAppliedFocusNodeTickRef.current) return;
     const target = flowElements.nodes.find((node) => node.id === focusNodeId);
     if (!target) return;
-    const abs = nodeAbsolutePosition(target);
-    const signature = `${focusNodeTick ?? 0}:${focusNodeId}:${Math.round(abs.x)}:${Math.round(abs.y)}:${flowElements.nodes.length}`;
-    if (signature === lastAppliedFocusNodeSignatureRef.current) return;
-    lastAppliedFocusNodeSignatureRef.current = signature;
     onViewportChange(viewportForNode(target));
-  }, [focusNodeId, focusNodeTick, flowElements.nodes, nodeAbsolutePosition, onViewportChange, viewportForNode]);
+    lastAppliedFocusNodeTickRef.current = focusNodeTick ?? 0;
+  }, [
+    focusNodeId,
+    focusNodeTick,
+    focusSourceSide,
+    flowElements.nodes,
+    onViewportChange,
+    side,
+    store.layoutPending,
+    viewportForNode,
+  ]);
 
   useEffect(() => {
     store.setHoveredEdgeId("");
@@ -525,8 +490,14 @@ export const SplitGraphPanel = observer(({
         onSearchNext={handleSearchNext}
         onSearchPrev={handleSearchPrev}
       />
-      {store.layoutPending && graph.nodes.length > 0 && (
-        <p className="dimText" style={{ marginTop: 6, marginBottom: 0 }}>Laying out graph...</p>
+      {showLayoutStatus && (
+        <div className="layoutStatusBanner" role="status" aria-live="polite">
+          <div className="spinner layoutStatusSpinner" />
+          <span className="dimText">Building graph layout...</span>
+        </div>
+      )}
+      {!showLayoutStatus && !hasInputNodes && (
+        <p className="dimText" style={{ marginTop: 6, marginBottom: 0 }}>No nodes for current file/filters.</p>
       )}
       <GraphCanvas
         side={side}
