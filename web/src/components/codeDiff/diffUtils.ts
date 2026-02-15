@@ -1,6 +1,8 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import type { DiffLine, DiffMatrixRow } from "./types";
 
+const GRAPH_SELECTED_ROW_CLASS = "lineSelectedFromGraph";
+
 export const computeSideBySide = (
   oldContent: string,
   newContent: string,
@@ -272,6 +274,9 @@ export const scrollToSourceLine = (
   targetSide: "old" | "new",
 ): void => {
   if (!container || targetLine <= 0) return;
+  container.querySelectorAll(`tr.${GRAPH_SELECTED_ROW_CLASS}`).forEach((candidate) => {
+    candidate.classList.remove(GRAPH_SELECTED_ROW_CLASS);
+  });
   const preferredSelector = targetSide === "old" ? `tr[data-old-line="${targetLine}"]` : `tr[data-new-line="${targetLine}"]`;
   const fallbackSelector = targetSide === "old" ? `tr[data-new-line="${targetLine}"]` : `tr[data-old-line="${targetLine}"]`;
   const row =
@@ -284,10 +289,5 @@ export const scrollToSourceLine = (
   const currentScroll = container.scrollTop;
   const rowOffsetInContainer = rowRect.top - containerRect.top + currentScroll;
   container.scrollTop = Math.max(0, rowOffsetInContainer - containerRect.height / 2);
-  row.style.outline = "2px solid #38bdf8";
-  row.style.outlineOffset = "-2px";
-  setTimeout(() => {
-    row.style.outline = "";
-    row.style.outlineOffset = "";
-  }, 1500);
+  row.classList.add(GRAPH_SELECTED_ROW_CLASS);
 };

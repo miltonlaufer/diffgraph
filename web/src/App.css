@@ -633,6 +633,11 @@
   height: 1.5em;
 }
 
+.diffTable tr.lineSelectedFromGraph {
+  outline: 2px solid #f8fafc;
+  outline-offset: -2px;
+}
+
 .diffTable tr:hover {
   outline: 2px solid rgba(56, 189, 248, 0.92);
   outline-offset: -2px;
