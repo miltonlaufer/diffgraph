@@ -1,6 +1,6 @@
 import { makeAutoObservable, observable } from "mobx";
 import type { FileDiffEntry, ViewGraph, ViewportState } from "#/types/graph";
-import type { GraphDiffTarget, TopLevelAnchor } from "#/components/SplitGraphPanel";
+import type { GraphDiffTarget, InternalNodeAnchor, TopLevelAnchor } from "#/components/SplitGraphPanel";
 
 const EMPTY_GRAPH: ViewGraph = { nodes: [], edges: [] };
 
@@ -19,11 +19,15 @@ export class ViewBaseStore {
   newDiffTargets: GraphDiffTarget[] = [];
   oldTopAnchors: Record<string, TopLevelAnchor> = {};
   newTopAnchors: Record<string, TopLevelAnchor> = {};
+  oldNodeAnchors: Record<string, InternalNodeAnchor> = {};
+  newNodeAnchors: Record<string, InternalNodeAnchor> = {};
   graphDiffIdx = 0;
   highlightedNodeId = "";
   focusNodeId = "";
   focusNodeTick = 0;
   focusFileTick = 0;
+  hoveredNodeId = "";
+  hoveredNodeMatchKey = "";
   oldLayoutPending = false;
   newLayoutPending = false;
   loading = true;
@@ -39,6 +43,8 @@ export class ViewBaseStore {
       newDiffTargets: observable.ref,
       oldTopAnchors: observable.ref,
       newTopAnchors: observable.ref,
+      oldNodeAnchors: observable.ref,
+      newNodeAnchors: observable.ref,
       sharedViewport: observable.ref,
     }, { autoBind: true });
   }
@@ -58,6 +64,10 @@ export class ViewBaseStore {
     this.graphDiffIdx = 0;
     this.oldTopAnchors = {};
     this.newTopAnchors = {};
+    this.oldNodeAnchors = {};
+    this.newNodeAnchors = {};
+    this.hoveredNodeId = "";
+    this.hoveredNodeMatchKey = "";
     this.fileDiffs = fileDiffs;
     this.selectedFilePath = "";
     this.sharedViewport = { x: 20, y: 20, zoom: 0.5 };
@@ -106,6 +116,14 @@ export class ViewBaseStore {
     this.newTopAnchors = anchors;
   }
 
+  setNodeAnchors(side: "old" | "new", anchors: Record<string, InternalNodeAnchor>): void {
+    if (side === "old") {
+      this.oldNodeAnchors = anchors;
+      return;
+    }
+    this.newNodeAnchors = anchors;
+  }
+
   setSelectedFilePath(path: string): void {
     this.selectedFilePath = path;
   }
@@ -117,6 +135,16 @@ export class ViewBaseStore {
   focusNode(nodeId: string): void {
     this.focusNodeId = nodeId;
     this.focusNodeTick += 1;
+  }
+
+  setHoveredNode(nodeId: string, matchKey: string): void {
+    this.hoveredNodeId = nodeId;
+    this.hoveredNodeMatchKey = matchKey;
+  }
+
+  clearHoveredNode(): void {
+    this.hoveredNodeId = "";
+    this.hoveredNodeMatchKey = "";
   }
 
   bumpFocusFileTick(): void {
@@ -148,5 +176,6 @@ export class ViewBaseStore {
     this.selectedNodeId = "";
     this.selectedFilePath = "";
     this.targetLine = 0;
+    this.clearHoveredNode();
   }
 }

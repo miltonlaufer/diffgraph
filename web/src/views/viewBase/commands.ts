@@ -1,6 +1,7 @@
 import type { MutableRefObject } from "react";
-import type { GraphDiffTarget, TopLevelAnchor } from "#/components/SplitGraphPanel";
+import type { GraphDiffTarget, InternalNodeAnchor, TopLevelAnchor } from "#/components/SplitGraphPanel";
 import type { ViewGraph, ViewportState } from "#/types/graph";
+import { buildCrossGraphNodeMatchKey } from "#/lib/nodeIdentity";
 import { ViewBaseStore } from "./store";
 import { normalizePath } from "./selectors";
 
@@ -86,6 +87,39 @@ export const commandSetTopLevelAnchors = (
   anchors: Record<string, TopLevelAnchor>,
 ): void => {
   context.store.setTopLevelAnchors(side, anchors);
+};
+
+export const commandSetNodeAnchors = (
+  context: CommandContext,
+  side: "old" | "new",
+  anchors: Record<string, InternalNodeAnchor>,
+): void => {
+  context.store.setNodeAnchors(side, anchors);
+};
+
+export const commandSetHoveredNode = (
+  context: CommandContext,
+  side: "old" | "new",
+  nodeId: string,
+  matchKey: string,
+): void => {
+  const { store } = context;
+  if (!nodeId) {
+    store.clearHoveredNode();
+    return;
+  }
+  if (matchKey) {
+    store.setHoveredNode(nodeId, matchKey);
+    return;
+  }
+  const sourceGraph = side === "old" ? store.oldGraph : store.newGraph;
+  const sourceNode = sourceGraph.nodes.find((node) => node.id === nodeId);
+  if (!sourceNode) {
+    store.clearHoveredNode();
+    return;
+  }
+  const fallbackMatchKey = buildCrossGraphNodeMatchKey(sourceNode);
+  store.setHoveredNode(nodeId, fallbackMatchKey);
 };
 
 interface LineClickContext extends CommandContext {

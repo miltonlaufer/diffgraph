@@ -1,5 +1,5 @@
 import type { FileDiffEntry, ViewGraph } from "#/types/graph";
-import type { TopLevelAnchor } from "#/components/SplitGraphPanel";
+import type { AlignmentBreakpoint, InternalNodeAnchor, TopLevelAnchor } from "#/components/SplitGraphPanel";
 import type { ViewType } from "./types";
 
 export const normalizePath = (value: string): string =>
@@ -273,6 +273,65 @@ export const computeAlignedTopAnchors = (
   }
 
   return { old: oldAligned, new: newAligned };
+};
+
+export const computeAlignmentBreakpoints = (
+  viewType: ViewType,
+  oldNodeAnchors: Record<string, InternalNodeAnchor>,
+  newNodeAnchors: Record<string, InternalNodeAnchor>,
+): Record<string, AlignmentBreakpoint[]> => {
+  if (viewType !== "logic") return {};
+
+  const byTopKey = new Map<string, Array<AlignmentBreakpoint & { priority: 1 | 2 }>>();
+  for (const [nodeKey, oldAnchor] of Object.entries(oldNodeAnchors)) {
+    const newAnchor = newNodeAnchors[nodeKey];
+    if (!newAnchor) continue;
+    const topKey = newAnchor.topKey;
+    const deltaY = oldAnchor.y - newAnchor.y;
+    if (Math.abs(deltaY) < 1) continue;
+    const list = byTopKey.get(topKey) ?? [];
+    list.push({ sourceY: newAnchor.y, deltaY, priority: nodeKey.startsWith("id:") ? 2 : 1 });
+    byTopKey.set(topKey, list);
+  }
+
+  const result: Record<string, AlignmentBreakpoint[]> = {};
+  for (const [topKey, list] of byTopKey.entries()) {
+    if (list.length === 0) continue;
+    const sorted = list.slice().sort((a, b) => a.sourceY - b.sourceY);
+
+    const bins: Array<Array<AlignmentBreakpoint & { priority: 1 | 2 }>> = [];
+    for (const bp of sorted) {
+      const lastBin = bins[bins.length - 1];
+      if (!lastBin) {
+        bins.push([bp]);
+        continue;
+      }
+      const lastY = lastBin[lastBin.length - 1]?.sourceY ?? bp.sourceY;
+      if (Math.abs(bp.sourceY - lastY) < 9) {
+        lastBin.push(bp);
+      } else {
+        bins.push([bp]);
+      }
+    }
+
+    const compact: AlignmentBreakpoint[] = bins.map((bin) => {
+      const preferred = bin.filter((bp) => bp.priority === 2);
+      const source = preferred.length > 0 ? preferred : bin;
+      const sortedByDelta = source
+        .map((bp) => bp.deltaY)
+        .slice()
+        .sort((a, b) => a - b);
+      const mid = Math.floor(sortedByDelta.length / 2);
+      const medianDelta = sortedByDelta[mid] ?? source[0]?.deltaY ?? 0;
+      const avgY = source.reduce((sum, bp) => sum + bp.sourceY, 0) / source.length;
+      return { sourceY: avgY, deltaY: medianDelta };
+    });
+
+    if (compact.length > 0) {
+      result[topKey] = compact.sort((a, b) => a.sourceY - b.sourceY);
+    }
+  }
+  return result;
 };
 
 export const buildFileContentMap = (

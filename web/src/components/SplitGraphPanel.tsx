@@ -6,6 +6,7 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import { observer, useLocalObservable } from "mobx-react-lite";
+import { buildCrossGraphNodeMatchKey } from "#/lib/nodeIdentity";
 import { GraphCanvas } from "./splitGraph/GraphCanvas";
 import { useSplitGraphRuntime } from "./splitGraph/context";
 import { GraphPanelHeader } from "./splitGraph/GraphPanelHeader";
@@ -27,9 +28,9 @@ import {
   computeViewportForNode,
   isNodeVisibleInViewport as computeIsNodeVisibleInViewport,
 } from "./splitGraph/viewport";
-import type { GraphDiffTarget, SplitGraphPanelProps, TopLevelAnchor } from "./splitGraph/types";
+import type { GraphDiffTarget, InternalNodeAnchor, SplitGraphPanelProps, TopLevelAnchor } from "./splitGraph/types";
 
-export type { GraphDiffTarget, TopLevelAnchor } from "./splitGraph/types";
+export type { AlignmentBreakpoint, GraphDiffTarget, InternalNodeAnchor, TopLevelAnchor } from "./splitGraph/types";
 
 const SEARCH_FLASH_MS = 3200;
 const SEARCH_FLASH_STYLE = {
@@ -37,6 +38,36 @@ const SEARCH_FLASH_STYLE = {
   outlineOffset: "3px",
   boxShadow: "0 0 0 2px rgba(255,255,255,0.95), 0 0 28px rgba(255,255,255,0.92)",
   zIndex: 1000,
+};
+
+const labelIdentity = (label: string): string =>
+  label
+    .replace(/^\[[^\]]+\]\s*/, "")
+    .replace(/@\d+/g, "@#")
+    .replace(/\bline\s+\d+\b/gi, "line #")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+const structuralAnchorKey = (topKey: string, kind: string, filePath: string, className: string | undefined, label: string, branchType: string | undefined): string =>
+  `${topKey}:${kind}:${normPath(filePath)}:${(className ?? "").trim().toLowerCase()}:${labelIdentity(label)}:${(branchType ?? "").trim().toLowerCase()}`;
+
+const resolveBreakpointDelta = (
+  breakpoints: Array<{ sourceY: number; deltaY: number }> | undefined,
+  sourceY: number,
+): number => {
+  if (!breakpoints || breakpoints.length === 0) return 0;
+  // Keep a stable baseline before the first matched anchor, so newly inserted
+  // nodes above it move with the same block shift instead of being overlapped.
+  let delta = breakpoints[0]?.deltaY ?? 0;
+  for (const bp of breakpoints) {
+    if (sourceY + 0.5 >= bp.sourceY) {
+      delta = bp.deltaY;
+      continue;
+    }
+    break;
+  }
+  return delta;
 };
 
 export const SplitGraphPanel = observer(({
@@ -49,6 +80,7 @@ export const SplitGraphPanel = observer(({
   fileContentMap,
   alignmentOffset,
   alignmentAnchors,
+  alignmentBreakpoints,
   isViewportPrimary = true,
 }: SplitGraphPanelProps) => {
   const { state: runtimeState, actions: runtimeActions } = useSplitGraphRuntime();
@@ -61,12 +93,16 @@ export const SplitGraphPanel = observer(({
     focusSourceSide,
     focusFilePath,
     focusFileTick,
+    hoveredNodeId,
+    hoveredNodeMatchKey,
   } = runtimeState;
   const {
     onNodeSelect,
+    onNodeHoverChange,
     onViewportChange,
     onDiffTargetsChange,
     onTopLevelAnchorsChange,
+    onNodeAnchorsChange,
     onLayoutPendingChange,
   } = runtimeActions;
   const store = useLocalObservable(() => new SplitGraphPanelStore());
@@ -75,6 +111,7 @@ export const SplitGraphPanel = observer(({
   const lastAppliedFocusNodeTickRef = useRef(0);
   const lastAppliedFocusFileTickRef = useRef(0);
   const lastViewportRecoveryKeyRef = useRef("");
+  const lastNodeAnchorSignatureRef = useRef("");
   const layoutResult = store.layoutResult;
 
   const isLogic = viewType === "logic";
@@ -91,10 +128,56 @@ export const SplitGraphPanel = observer(({
     [graph.nodes],
   );
 
-  const positionedLayoutResult = useMemo(() => {
+  const graphNodeById = useMemo(
+    () => new Map(graph.nodes.map((node) => [node.id, node])),
+    [graph.nodes],
+  );
+
+  const nodeMatchKeyById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const node of graph.nodes) {
+      if (node.kind === "group") continue;
+      map.set(node.id, buildCrossGraphNodeMatchKey(node));
+    }
+    return map;
+  }, [graph.nodes]);
+
+  const topKeyByNodeId = useMemo(() => {
+    const resolved = new Map<string, string>();
+    const resolving = new Set<string>();
+    const resolveFor = (nodeId: string): string | undefined => {
+      const cached = resolved.get(nodeId);
+      if (cached) return cached;
+      if (resolving.has(nodeId)) return undefined;
+      resolving.add(nodeId);
+      try {
+        const node = graphNodeById.get(nodeId);
+        if (!node) return undefined;
+        if (node.kind === "group" && !node.parentId) {
+          const topKey = topLevelAnchorKeyByNodeId.get(node.id) ?? stableNodeKey(node);
+          resolved.set(nodeId, topKey);
+          return topKey;
+        }
+        if (!node.parentId) return undefined;
+        const parentTopKey = resolveFor(node.parentId);
+        if (parentTopKey) {
+          resolved.set(nodeId, parentTopKey);
+        }
+        return parentTopKey;
+      } finally {
+        resolving.delete(nodeId);
+      }
+    };
+
+    for (const node of graph.nodes) {
+      resolveFor(node.id);
+    }
+    return resolved;
+  }, [graph.nodes, graphNodeById, topLevelAnchorKeyByNodeId]);
+
+  const topAlignedLayoutResult = useMemo(() => {
     if (!alignmentOffset && !alignmentAnchors) return layoutResult;
     const hasAlignmentAnchors = Boolean(alignmentAnchors && Object.keys(alignmentAnchors).length > 0);
-    const graphNodeById = new Map(graph.nodes.map((n) => [n.id, n]));
     const nodes = layoutResult.nodes.map((node) => ({
       ...node,
       position: {
@@ -123,31 +206,272 @@ export const SplitGraphPanel = observer(({
       },
     }));
     return { nodes, edges: layoutResult.edges };
-  }, [alignmentAnchors, alignmentOffset, graph.nodes, layoutResult, topLevelAnchorKeyByNodeId]);
+  }, [alignmentAnchors, alignmentOffset, graphNodeById, layoutResult, topLevelAnchorKeyByNodeId]);
+
+  const internalNodeAnchors = useMemo(() => {
+    if (!isLogic) return {} as Record<string, InternalNodeAnchor>;
+    const nodeById = new Map(topAlignedLayoutResult.nodes.map((node) => [node.id, node]));
+    const structuralEntries: Array<{ baseKey: string; topKey: string; y: number; x: number }> = [];
+    const idAnchors: Record<string, InternalNodeAnchor> = {};
+    for (const node of topAlignedLayoutResult.nodes) {
+      if (!node.parentId) continue;
+      const graphNode = graphNodeById.get(node.id);
+      if (!graphNode || graphNode.kind === "group") continue;
+      const topKey = topKeyByNodeId.get(node.id);
+      if (!topKey) continue;
+      const abs = computeNodeAbsolutePosition(node, nodeById);
+      idAnchors[`id:${topKey}:${node.id}`] = { topKey, y: abs.y };
+      structuralEntries.push({
+        baseKey: structuralAnchorKey(
+          topKey,
+          graphNode.kind,
+          graphNode.filePath,
+          graphNode.className,
+          graphNode.label,
+          graphNode.branchType,
+        ),
+        topKey,
+        y: abs.y,
+        x: abs.x,
+      });
+    }
+
+    structuralEntries.sort((a, b) => (a.y - b.y) || (a.x - b.x) || a.baseKey.localeCompare(b.baseKey));
+    const countByKey = new Map<string, number>();
+    const structuralAnchors: Record<string, InternalNodeAnchor> = {};
+    for (const entry of structuralEntries) {
+      const nextIdx = (countByKey.get(entry.baseKey) ?? 0) + 1;
+      countByKey.set(entry.baseKey, nextIdx);
+      structuralAnchors[`struct:${entry.baseKey}#${nextIdx}`] = { topKey: entry.topKey, y: entry.y };
+    }
+    return { ...structuralAnchors, ...idAnchors };
+  }, [graphNodeById, isLogic, topAlignedLayoutResult.nodes, topKeyByNodeId]);
+
+  const positionedLayoutResult = useMemo(() => {
+    if (
+      !isLogic
+      || side !== "new"
+      || !alignmentBreakpoints
+      || Object.keys(alignmentBreakpoints).length === 0
+      || topAlignedLayoutResult.nodes.length === 0
+    ) {
+      return topAlignedLayoutResult;
+    }
+
+    const nodeById = new Map(topAlignedLayoutResult.nodes.map((node) => [node.id, node]));
+    const absoluteById = new Map<string, { x: number; y: number }>();
+    for (const node of topAlignedLayoutResult.nodes) {
+      absoluteById.set(node.id, computeNodeAbsolutePosition(node, nodeById));
+    }
+
+    const adjustedAbsYById = new Map<string, number>();
+    for (const node of topAlignedLayoutResult.nodes) {
+      const abs = absoluteById.get(node.id);
+      if (!node.parentId) {
+        adjustedAbsYById.set(node.id, abs?.y ?? node.position.y);
+        continue;
+      }
+      const topKey = topKeyByNodeId.get(node.id);
+      if (!abs || !topKey) {
+        adjustedAbsYById.set(node.id, abs?.y ?? node.position.y);
+        continue;
+      }
+      const breakpoints = alignmentBreakpoints[topKey];
+      const deltaY = resolveBreakpointDelta(breakpoints, abs.y);
+      adjustedAbsYById.set(node.id, abs.y + deltaY);
+    }
+
+    // Prevent upward drift that places inner nodes above their original top-content area.
+    // We keep top-level group headers aligned and shift only descendants of that top group.
+    const originalMinByTopKey = new Map<string, number>();
+    const adjustedMinByTopKey = new Map<string, number>();
+    for (const node of topAlignedLayoutResult.nodes) {
+      if (!node.parentId) continue;
+      const topKey = topKeyByNodeId.get(node.id);
+      const originalAbs = absoluteById.get(node.id);
+      const adjustedAbs = adjustedAbsYById.get(node.id);
+      if (!topKey || originalAbs === undefined || adjustedAbs === undefined) continue;
+      const originalMin = originalMinByTopKey.get(topKey);
+      const adjustedMin = adjustedMinByTopKey.get(topKey);
+      originalMinByTopKey.set(topKey, originalMin === undefined ? originalAbs.y : Math.min(originalMin, originalAbs.y));
+      adjustedMinByTopKey.set(topKey, adjustedMin === undefined ? adjustedAbs : Math.min(adjustedMin, adjustedAbs));
+    }
+
+    const topCorrectionByTopKey = new Map<string, number>();
+    for (const [topKey, originalMin] of originalMinByTopKey.entries()) {
+      const adjustedMin = adjustedMinByTopKey.get(topKey);
+      if (adjustedMin === undefined) continue;
+      if (adjustedMin < originalMin - 0.5) {
+        topCorrectionByTopKey.set(topKey, originalMin - adjustedMin);
+      }
+    }
+
+    if (topCorrectionByTopKey.size > 0) {
+      for (const node of topAlignedLayoutResult.nodes) {
+        if (!node.parentId) continue;
+        const topKey = topKeyByNodeId.get(node.id);
+        if (!topKey) continue;
+        const correction = topCorrectionByTopKey.get(topKey);
+        if (!correction) continue;
+        const prev = adjustedAbsYById.get(node.id);
+        if (prev === undefined) continue;
+        adjustedAbsYById.set(node.id, prev + correction);
+      }
+    }
+
+    const nodes = topAlignedLayoutResult.nodes.map((node) => {
+      const adjustedAbsY = adjustedAbsYById.get(node.id);
+      if (adjustedAbsY === undefined) return node;
+      if (!node.parentId) return node;
+      const adjustedParentAbsY = adjustedAbsYById.get(node.parentId);
+      if (adjustedParentAbsY === undefined) return node;
+      const nextRelativeY = adjustedAbsY - adjustedParentAbsY;
+      if (Math.abs(nextRelativeY - node.position.y) < 0.5) return node;
+      return { ...node, position: { ...node.position, y: nextRelativeY } };
+    });
+
+    return { nodes, edges: topAlignedLayoutResult.edges };
+  }, [alignmentBreakpoints, isLogic, side, topAlignedLayoutResult, topKeyByNodeId]);
+
+  const positionedNodeById = useMemo(
+    () => new Map(positionedLayoutResult.nodes.map((node) => [node.id, node])),
+    [positionedLayoutResult.nodes],
+  );
+
+  const nodeIdsByMatchKey = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const node of positionedLayoutResult.nodes) {
+      const matchKey = nodeMatchKeyById.get(node.id);
+      if (!matchKey) continue;
+      const list = map.get(matchKey) ?? [];
+      list.push(node.id);
+      map.set(matchKey, list);
+    }
+    return map;
+  }, [nodeMatchKeyById, positionedLayoutResult.nodes]);
+
+  const hoveredNodeIdForPanel = useMemo(() => {
+    if (!hoveredNodeId && !hoveredNodeMatchKey) return "";
+
+    let candidateId = "";
+    if (hoveredNodeId && positionedNodeById.has(hoveredNodeId)) {
+      candidateId = hoveredNodeId;
+    } else if (hoveredNodeMatchKey) {
+      const candidates = nodeIdsByMatchKey.get(hoveredNodeMatchKey) ?? [];
+      if (candidates.length > 0) {
+        candidateId = candidates[0];
+      }
+    }
+    if (!candidateId) return "";
+
+    const graphNode = graphNodeById.get(candidateId);
+    if (!graphNode) return "";
+    if (graphNode.kind === "group") return "";
+    return candidateId;
+  }, [graphNodeById, hoveredNodeId, hoveredNodeMatchKey, nodeIdsByMatchKey, positionedNodeById]);
+
+  const hoverNeighborhoodByNodeId = useMemo(() => {
+    const neighborNodeIdsByNode = new Map<string, Set<string>>();
+    const incidentEdgeIdsByNode = new Map<string, Set<string>>();
+    for (const node of positionedLayoutResult.nodes) {
+      if (!nodeMatchKeyById.has(node.id)) continue;
+      neighborNodeIdsByNode.set(node.id, new Set());
+      incidentEdgeIdsByNode.set(node.id, new Set());
+    }
+
+    for (const edge of positionedLayoutResult.edges) {
+      if (neighborNodeIdsByNode.has(edge.source)) {
+        neighborNodeIdsByNode.get(edge.source)?.add(edge.target);
+        incidentEdgeIdsByNode.get(edge.source)?.add(edge.id);
+      }
+      if (neighborNodeIdsByNode.has(edge.target)) {
+        neighborNodeIdsByNode.get(edge.target)?.add(edge.source);
+        incidentEdgeIdsByNode.get(edge.target)?.add(edge.id);
+      }
+    }
+
+    const index = new Map<string, { keepNodeIds: Set<string>; keepEdgeIds: Set<string> }>();
+    for (const nodeId of neighborNodeIdsByNode.keys()) {
+      const keepNodeIds = new Set<string>([nodeId]);
+      for (const neighborId of neighborNodeIdsByNode.get(nodeId) ?? []) {
+        if (nodeMatchKeyById.has(neighborId)) {
+          keepNodeIds.add(neighborId);
+        }
+      }
+      const keepEdgeIds = new Set<string>();
+      for (const edge of positionedLayoutResult.edges) {
+        if (keepNodeIds.has(edge.source) && keepNodeIds.has(edge.target)) {
+          keepEdgeIds.add(edge.id);
+        }
+      }
+      index.set(nodeId, { keepNodeIds, keepEdgeIds });
+    }
+    return index;
+  }, [nodeMatchKeyById, positionedLayoutResult.edges, positionedLayoutResult.nodes]);
+
+  const hoverNeighborhood = useMemo(() => {
+    if (!hoveredNodeIdForPanel) return null;
+    return hoverNeighborhoodByNodeId.get(hoveredNodeIdForPanel) ?? null;
+  }, [hoverNeighborhoodByNodeId, hoveredNodeIdForPanel]);
 
   const flowElements = useMemo(() => {
     const hasNodeHighlights = Boolean(selectedNodeId || highlightedNodeId || store.searchHighlightedNodeId);
+    const hasHoverNeighborhood = hoverNeighborhood !== null;
     const hasEdgeHover = store.hoveredEdgeId.length > 0;
-    if (!hasNodeHighlights && !hasEdgeHover) return positionedLayoutResult;
+    if (!hasNodeHighlights && !hasEdgeHover && !hasHoverNeighborhood) return positionedLayoutResult;
 
-    const nodes = hasNodeHighlights
+    const nodes = (hasNodeHighlights || hasHoverNeighborhood)
       ? positionedLayoutResult.nodes.map((node) => {
         const isSearchTarget = node.id === store.searchHighlightedNodeId;
-        const isSelected = node.id === selectedNodeId || node.id === highlightedNodeId || isSearchTarget;
-        if (!isSelected) return node;
-        const baseNode = (node.type === "scope" || node.type === "diamond" || node.type === "pill" || node.type === "process" || node.type === "knowledge")
-          ? { ...node, data: { ...node.data, selected: true } }
-          : { ...node, style: { ...(node.style ?? {}), border: "3px solid #38bdf8", boxShadow: "0 0 12px #38bdf8" } };
-        if (!isSearchTarget) {
-          return baseNode;
+        const isHoveredNode = node.id === hoveredNodeIdForPanel;
+        const graphNode = graphNodeById.get(node.id);
+        const isHoverRelated =
+          Boolean(hasHoverNeighborhood && hoverNeighborhood?.keepNodeIds.has(node.id))
+          && graphNode?.kind !== "group";
+        const isPrimarySelected =
+          node.id === selectedNodeId
+          || node.id === highlightedNodeId
+          || isSearchTarget;
+        let nextNode = node;
+        if (isPrimarySelected || isHoveredNode) {
+          nextNode = (node.type === "scope" || node.type === "diamond" || node.type === "pill" || node.type === "process" || node.type === "knowledge")
+            ? { ...node, data: { ...node.data, selected: true } }
+            : { ...node, style: { ...(node.style ?? {}), border: "3px solid #38bdf8", boxShadow: "0 0 12px #38bdf8" } };
         }
-        return { ...baseNode, style: { ...(baseNode.style ?? {}), ...SEARCH_FLASH_STYLE } };
+        if (isSearchTarget) {
+          nextNode = { ...nextNode, style: { ...(nextNode.style ?? {}), ...SEARCH_FLASH_STYLE } };
+        }
+        if (isHoverRelated && !isPrimarySelected && !isHoveredNode) {
+          nextNode = {
+            ...nextNode,
+            style: {
+              ...(nextNode.style ?? {}),
+              outline: "2px solid #c084fc",
+              outlineOffset: "2px",
+              boxShadow: "0 0 0 1px rgba(192,132,252,0.9), 0 0 14px rgba(192,132,252,0.55)",
+            },
+          };
+        }
+        if (isHoveredNode) {
+          nextNode = {
+            ...nextNode,
+            style: {
+              ...(nextNode.style ?? {}),
+              outline: "3px solid #fbbf24",
+              outlineOffset: "2px",
+              boxShadow: "0 0 0 2px rgba(251,191,36,0.92), 0 0 22px rgba(251,191,36,0.5)",
+            },
+          };
+        }
+        return nextNode;
       })
       : positionedLayoutResult.nodes;
 
-    const edges = hasEdgeHover
+    const edges = (hasEdgeHover || hasHoverNeighborhood)
       ? positionedLayoutResult.edges.map((edge) => {
         const isHovered = edge.id === store.hoveredEdgeId;
+        const isInHoverNeighborhood = Boolean(hasHoverNeighborhood && hoverNeighborhood?.keepEdgeIds.has(edge.id));
+        if (!isHovered && !isInHoverNeighborhood && !hasEdgeHover) return edge;
         const baseStyle = edge.style ?? {};
         const baseLabelStyle = edge.labelStyle ?? {};
         const baseLabelBgStyle = edge.labelBgStyle ?? {};
@@ -155,31 +479,64 @@ export const SplitGraphPanel = observer(({
           typeof baseStyle.strokeWidth === "number"
             ? baseStyle.strokeWidth
             : Number(baseStyle.strokeWidth ?? 1.5);
+        const nextStrokeWidth = isHovered
+          ? Math.max(baseStrokeWidth + 1.8, 3)
+          : isInHoverNeighborhood
+            ? Math.max(baseStrokeWidth + 0.8, 2.2)
+            : baseStrokeWidth;
+        const nextStrokeOpacity = isHovered
+          ? 1
+          : isInHoverNeighborhood
+            ? 1
+            : 0.24;
+        const nextLabelOpacity = isHovered
+          ? 1
+          : isInHoverNeighborhood
+            ? 1
+            : 0.35;
+        const nextStroke = isHovered
+          ? "#f8fafc"
+          : isInHoverNeighborhood
+            ? "#c084fc"
+            : baseStyle.stroke;
         return {
           ...edge,
           style: {
             ...baseStyle,
-            stroke: isHovered ? "#f8fafc" : baseStyle.stroke,
-            strokeWidth: isHovered ? Math.max(baseStrokeWidth + 1.8, 3) : baseStrokeWidth,
-            strokeOpacity: isHovered ? 1 : 0.24,
-            filter: isHovered ? "drop-shadow(0 0 6px rgba(248,250,252,0.9))" : baseStyle.filter,
+            stroke: nextStroke,
+            strokeWidth: nextStrokeWidth,
+            strokeOpacity: nextStrokeOpacity,
+            filter: isHovered
+              ? "drop-shadow(0 0 6px rgba(248,250,252,0.9))"
+              : isInHoverNeighborhood
+                ? "drop-shadow(0 0 6px rgba(192,132,252,0.8))"
+                : baseStyle.filter,
           },
           labelStyle: {
             ...baseLabelStyle,
-            fill: isHovered ? "#ffffff" : baseLabelStyle.fill,
-            opacity: isHovered ? 1 : 0.35,
+            fill: isHovered ? "#ffffff" : isInHoverNeighborhood ? "#f3e8ff" : baseLabelStyle.fill,
+            opacity: nextLabelOpacity,
           },
           labelBgStyle: {
             ...baseLabelBgStyle,
-            fillOpacity: isHovered ? 0.98 : 0.5,
-            stroke: isHovered ? "#f8fafc" : baseLabelBgStyle.stroke,
+            fillOpacity: isHovered ? 0.98 : isInHoverNeighborhood ? 0.68 : 0.5,
+            stroke: isHovered ? "#f8fafc" : isInHoverNeighborhood ? "#c084fc" : baseLabelBgStyle.stroke,
           },
         };
       })
       : positionedLayoutResult.edges;
 
     return { nodes, edges };
-  }, [positionedLayoutResult, selectedNodeId, highlightedNodeId, store.searchHighlightedNodeId, store.hoveredEdgeId]);
+  }, [
+    graphNodeById,
+    hoveredNodeIdForPanel,
+    hoverNeighborhood,
+    highlightedNodeId,
+    positionedLayoutResult,
+    selectedNodeId,
+    store.hoveredEdgeId,
+    store.searchHighlightedNodeId,
+  ]);
 
   const searchMatches = useMemo(() => {
     if (!store.searchQuery || store.searchQuery.length < 2) return [];
@@ -316,6 +673,16 @@ export const SplitGraphPanel = observer(({
     onNodeSelect(node.id, side);
   }, [onNodeSelect, side]);
 
+  const handleNodeMouseEnter = useCallback<NodeMouseHandler>((_event, node) => {
+    const graphNode = graphNodeById.get(node.id);
+    if (!graphNode || graphNode.kind === "group") return;
+    onNodeHoverChange(side, node.id, nodeMatchKeyById.get(node.id) ?? "");
+  }, [graphNodeById, nodeMatchKeyById, onNodeHoverChange, side]);
+
+  const handleNodeMouseLeave = useCallback<NodeMouseHandler>(() => {
+    onNodeHoverChange(side, "", "");
+  }, [onNodeHoverChange, side]);
+
   const handleEdgeMouseEnter = useCallback<EdgeMouseHandler>((_event, edge) => {
     store.setHoveredEdgeId(edge.id);
   }, [store]);
@@ -323,6 +690,11 @@ export const SplitGraphPanel = observer(({
   const handleEdgeMouseLeave = useCallback<EdgeMouseHandler>(() => {
     store.setHoveredEdgeId("");
   }, [store]);
+
+  const handlePaneMouseLeave = useCallback(() => {
+    store.setHoveredEdgeId("");
+    onNodeHoverChange(side, "", "");
+  }, [onNodeHoverChange, side, store]);
 
   const handleMove = useCallback((_event: MouseEvent | TouchEvent | null, nextViewport: Viewport) => {
     onViewportChange({ x: nextViewport.x, y: nextViewport.y, zoom: nextViewport.zoom });
@@ -341,7 +713,6 @@ export const SplitGraphPanel = observer(({
 
   useEffect(() => {
     if (!onDiffTargetsChange) return;
-    const graphNodeById = new Map(graph.nodes.map((n) => [n.id, n]));
     const targets: GraphDiffTarget[] = flowElements.nodes
       .map((node) => {
         const gn = graphNodeById.get(node.id);
@@ -362,11 +733,10 @@ export const SplitGraphPanel = observer(({
       })
       .filter((entry): entry is GraphDiffTarget => entry !== null);
     onDiffTargetsChange(side, targets);
-  }, [onDiffTargetsChange, side, graph.nodes, flowElements.nodes, nodeAbsolutePosition, viewportForNode]);
+  }, [flowElements.nodes, graphNodeById, nodeAbsolutePosition, onDiffTargetsChange, side, viewportForNode]);
 
   useEffect(() => {
     if (!onTopLevelAnchorsChange) return;
-    const graphNodeById = new Map(graph.nodes.map((n) => [n.id, n]));
     const anchors: Record<string, TopLevelAnchor> = {};
     for (const node of store.layoutResult.nodes) {
       if (node.parentId) continue;
@@ -378,7 +748,18 @@ export const SplitGraphPanel = observer(({
       anchors[anchorKey] = { x: node.position.x, y: node.position.y, width, height };
     }
     onTopLevelAnchorsChange(side, anchors);
-  }, [graph.nodes, store.layoutResult.nodes, onTopLevelAnchorsChange, side, topLevelAnchorKeyByNodeId]);
+  }, [graphNodeById, store.layoutResult.nodes, onTopLevelAnchorsChange, side, topLevelAnchorKeyByNodeId]);
+
+  useEffect(() => {
+    if (!onNodeAnchorsChange) return;
+    const signature = Object.entries(internalNodeAnchors)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, anchor]) => `${key}:${anchor.topKey}:${Math.round(anchor.y * 10)}`)
+      .join("|");
+    if (signature === lastNodeAnchorSignatureRef.current) return;
+    lastNodeAnchorSignatureRef.current = signature;
+    onNodeAnchorsChange(side, internalNodeAnchors);
+  }, [internalNodeAnchors, onNodeAnchorsChange, side]);
 
   useEffect(() => {
     if (!store.searchQuery || store.searchQuery.length < 2 || searchMatches.length === 0) return;
@@ -513,9 +894,11 @@ export const SplitGraphPanel = observer(({
         minimapNodeColor={minimapNodeColor}
         minimapNodeStrokeColor={minimapNodeStrokeColor}
         onNodeClick={handleNodeClick}
+        onNodeMouseEnter={handleNodeMouseEnter}
+        onNodeMouseLeave={handleNodeMouseLeave}
         onEdgeMouseEnter={handleEdgeMouseEnter}
         onEdgeMouseLeave={handleEdgeMouseLeave}
-        onPaneMouseLeave={() => store.setHoveredEdgeId("")}
+        onPaneMouseLeave={handlePaneMouseLeave}
         onMove={handleMove}
       />
     </section>

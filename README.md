@@ -259,7 +259,11 @@ If the default port (4177) is busy, the server automatically finds the next avai
 
 - **Click a node** -- highlights it (cyan border + glow), selects its file below, and scrolls the code diff to that line
 - **Click a file pill** -- selects the file, scrolls graphs to related nodes, shows its code diff
-- **Risk-ranked file list** -- changed files are sorted by deterministic risk score (graph connectivity + change type + churn)
+- **Risk-ranked file list** -- changed files are sorted by `R` score:
+  - **graph connectivity** = how many other symbols call into changed symbols (high fan-in => wider impact)
+  - **change type** = rename/add/delete/type-changed adds extra risk boost
+  - **churn** = how many lines were added/removed
+  - thresholds: **`R >= 25` = high**, **`R >= 12` = medium**, below 12 = low (see **Risk score (`Rxx`) details** below)
 - **Escape** -- deselects node and file
 - **Changes Only** (on by default) -- keeps changed nodes plus required context (hierarchy ancestors and relevant invoke neighbors in Logic view). Toggle off to show full graph.
 - **Show calls** (Logic tab) -- show/hide invoke edges to reduce visual noise
@@ -267,6 +271,36 @@ If the default port (4177) is busy, the server automatically finds the next avai
 - **Graph search** (per panel) -- search nodes by text, use up/down arrows to jump matches; matched node is focused and highlighted
 - **Hover function/group headers** -- tooltip includes documentation (JSDoc/docstring), parameters with types, return type, and class/file metadata when available
 - **Risk-ranked symbols** -- functions/methods/classes inside a file are sorted by deterministic risk score to prioritize review order
+
+### Risk score (`Rxx`) details
+
+The `R38` / `R28` badge on each file pill is the file-level `riskScore` computed server-side in `src/server/app.ts`.
+
+File-level formula:
+
+```text
+riskScore = symbolRisk + churnScore + connectivityScore + statusBoost
+```
+
+- `symbolRisk`: sum of the top 8 changed symbols' scores in that file
+- `churnScore`: `min(10, floor(churn / 15))`, where `churn` is added/removed diff lines from hunks
+- `connectivityScore`: `min(6, floor(hotspotFanIn / 2))`
+- `statusBoost`:
+  - `renamed`: `+2`
+  - `deleted` or `added`: `+2`
+  - `type-changed`: `+3`
+  - otherwise: `+0`
+
+Risk level thresholds (this is where `12` and `25` come from):
+
+- `low`: `< 12`
+- `medium`: `>= 12` and `< 25`
+- `high`: `>= 25`
+
+Symbol-level score (used by `symbolRisk`) is also computed in `src/server/app.ts` (`computeSymbolRiskScore`) and combines:
+- diff status weight (`added`/`removed`/`modified`)
+- symbol kind weight (`Class`, `Function`, `Method`, `ReactComponent`, `Hook`)
+- span size, call fan-in/out, ownership, and public API heuristic
 
 ### Code diff panel
 

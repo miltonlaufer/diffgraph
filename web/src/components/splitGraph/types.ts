@@ -1,4 +1,4 @@
-import type { ViewGraph } from "../../types/graph";
+import type { ViewGraph } from "#/types/graph";
 
 export interface DiffStats {
   added: number;
@@ -25,6 +25,16 @@ export interface TopLevelAnchor {
   height: number;
 }
 
+export interface InternalNodeAnchor {
+  topKey: string;
+  y: number;
+}
+
+export interface AlignmentBreakpoint {
+  sourceY: number;
+  deltaY: number;
+}
+
 export interface SplitGraphPanelProps {
   title: string;
   side: "old" | "new";
@@ -35,5 +45,6 @@ export interface SplitGraphPanelProps {
   fileContentMap: Map<string, string>;
   alignmentOffset?: { x: number; y: number };
   alignmentAnchors?: Record<string, TopLevelAnchor>;
+  alignmentBreakpoints?: Record<string, AlignmentBreakpoint[]>;
   isViewportPrimary?: boolean;
 }

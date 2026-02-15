@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef } from "react";
 import { observer, useLocalObservable } from "mobx-react-lite";
 import { CodeDiffDrawer } from "../components/CodeDiffDrawer";
 import { FileListPanel } from "../components/FileListPanel";
-import { SplitGraphPanel, type GraphDiffTarget, type TopLevelAnchor } from "../components/SplitGraphPanel";
+import { SplitGraphPanel, type GraphDiffTarget, type InternalNodeAnchor, type TopLevelAnchor } from "../components/SplitGraphPanel";
 import { SplitGraphRuntimeProvider, type SplitGraphRuntimeContextValue } from "../components/splitGraph/context";
 import { SymbolListPanel } from "../components/SymbolListPanel";
 import type { FileSymbol, ViewportState } from "../types/graph";
@@ -14,6 +14,8 @@ import {
   commandSelectNode,
   commandSelectSymbol,
   commandSetDiffTargets,
+  commandSetHoveredNode,
+  commandSetNodeAnchors,
   commandSetTopLevelAnchors,
   commandSetViewport,
   commandToggleShowCalls,
@@ -25,6 +27,7 @@ import { useInteractiveUpdate } from "./viewBase/useInteractiveUpdate";
 import { useViewBaseEffects } from "./viewBase/useViewBaseEffects";
 import {
   buildFileContentMap,
+  computeAlignmentBreakpoints,
   computeAlignedTopAnchors,
   computeChangedNodeCount,
   computeDiffStats,
@@ -124,6 +127,11 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     [viewType, store.oldTopAnchors, store.newTopAnchors],
   );
 
+  const alignmentBreakpoints = useMemo(
+    () => computeAlignmentBreakpoints(viewType, store.oldNodeAnchors, store.newNodeAnchors),
+    [viewType, store.oldNodeAnchors, store.newNodeAnchors],
+  );
+
   const oldFileContentMap = useMemo(
     () => buildFileContentMap(store.fileDiffs, "old"),
     [store.fileDiffs],
@@ -183,11 +191,25 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     [commandContext],
   );
 
+  const handleNodeAnchorsChange = useCallback(
+    (side: "old" | "new", anchors: Record<string, InternalNodeAnchor>) => {
+      commandSetNodeAnchors(commandContext, side, anchors);
+    },
+    [commandContext],
+  );
+
   const handleLayoutPendingChange = useCallback(
     (side: "old" | "new", pending: boolean) => {
       store.setLayoutPending(side, pending);
     },
     [store],
+  );
+
+  const handleNodeHoverChange = useCallback(
+    (side: "old" | "new", nodeId: string, matchKey: string) => {
+      commandSetHoveredNode(commandContext, side, nodeId, matchKey);
+    },
+    [commandContext],
   );
 
   const splitGraphRuntime = useMemo<SplitGraphRuntimeContextValue>(() => ({
@@ -200,23 +222,31 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
       focusSourceSide: store.targetSide,
       focusFilePath: store.selectedFilePath,
       focusFileTick: store.focusFileTick,
+      hoveredNodeId: store.hoveredNodeId,
+      hoveredNodeMatchKey: store.hoveredNodeMatchKey,
     },
     actions: {
       onNodeSelect: handleNodeSelect,
+      onNodeHoverChange: handleNodeHoverChange,
       onViewportChange: handleViewportChange,
       onDiffTargetsChange: handleDiffTargetsChange,
       onTopLevelAnchorsChange: handleTopLevelAnchorsChange,
+      onNodeAnchorsChange: handleNodeAnchorsChange,
       onLayoutPendingChange: handleLayoutPendingChange,
     },
   }), [
     handleDiffTargetsChange,
     handleLayoutPendingChange,
+    handleNodeHoverChange,
     handleNodeSelect,
+    handleNodeAnchorsChange,
     handleTopLevelAnchorsChange,
     handleViewportChange,
     store.focusFileTick,
     store.focusNodeId,
     store.focusNodeTick,
+    store.hoveredNodeId,
+    store.hoveredNodeMatchKey,
     store.highlightedNodeId,
     store.selectedFilePath,
     store.selectedNodeId,
@@ -359,6 +389,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
               fileContentMap={newFileContentMap}
               alignmentOffset={newAlignmentOffset}
               alignmentAnchors={alignedTopAnchors.new}
+              alignmentBreakpoints={alignmentBreakpoints}
               isViewportPrimary
             />
           </div>
