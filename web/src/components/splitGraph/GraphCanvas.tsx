@@ -32,7 +32,9 @@ interface GraphCanvasProps {
   onEdgeMouseMove: EdgeMouseHandler;
   onEdgeMouseLeave: EdgeMouseHandler;
   onPaneMouseLeave: () => void;
+  onMoveStart: (event: MouseEvent | TouchEvent | null, viewport: Viewport) => void;
   onMove: (event: MouseEvent | TouchEvent | null, viewport: Viewport) => void;
+  onMoveEnd: (event: MouseEvent | TouchEvent | null, viewport: Viewport) => void;
 }
 
 export const GraphCanvas = ({
@@ -54,7 +56,9 @@ export const GraphCanvas = ({
   onEdgeMouseMove,
   onEdgeMouseLeave,
   onPaneMouseLeave,
+  onMoveStart,
   onMove,
+  onMoveEnd,
 }: GraphCanvasProps) => (
   <div className="flowContainer" ref={flowContainerRef}>
     <ReactFlow
@@ -71,8 +75,10 @@ export const GraphCanvas = ({
       onEdgeMouseMove={onEdgeMouseMove}
       onEdgeMouseLeave={onEdgeMouseLeave}
       onPaneMouseLeave={onPaneMouseLeave}
+      onMoveStart={onMoveStart}
       viewport={viewport}
       onMove={onMove}
+      onMoveEnd={onMoveEnd}
       style={{ width: "100%", height: "100%" }}
       onlyRenderVisibleElements
       minZoom={0.05}

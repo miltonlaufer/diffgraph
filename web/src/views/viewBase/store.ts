@@ -41,6 +41,7 @@ export class ViewBaseStore {
   codeSearchNavTick = 0;
   hoveredNodeId = "";
   hoveredNodeMatchKey = "";
+  hoveredNodeSide: "old" | "new" | "" = "";
   oldLayoutPending = false;
   newLayoutPending = false;
   loading = true;
@@ -81,6 +82,7 @@ export class ViewBaseStore {
     this.newNodeAnchors = {};
     this.hoveredNodeId = "";
     this.hoveredNodeMatchKey = "";
+    this.hoveredNodeSide = "";
     this.fileDiffs = fileDiffs;
     this.selectedFilePath = "";
     this.sharedViewport = { x: 20, y: 20, zoom: 0.5 };
@@ -164,12 +166,14 @@ export class ViewBaseStore {
     this.focusNodeTick += 1;
   }
 
-  setHoveredNode(nodeId: string, matchKey: string): void {
+  setHoveredNode(side: "old" | "new", nodeId: string, matchKey: string): void {
+    this.hoveredNodeSide = side;
     this.hoveredNodeId = nodeId;
     this.hoveredNodeMatchKey = matchKey;
   }
 
   clearHoveredNode(): void {
+    this.hoveredNodeSide = "";
     this.hoveredNodeId = "";
     this.hoveredNodeMatchKey = "";
   }

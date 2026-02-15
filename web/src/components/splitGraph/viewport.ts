@@ -10,15 +10,25 @@ interface FlowSize {
 const NODE_CENTER_ZOOM = 0.9;
 const VIEWPORT_FOCUS_TOP_RATIO = 0.2;
 const VIEWPORT_FOCUS_LEFT_RATIO = 0.2;
+const DIAMOND_BOUNDS = 146;
+const FLOW_NODE_W = 220;
+const FLOW_NODE_H = 72;
 
 export const resolveNodeSize = (node: Node): { width: number; height: number } => {
   const styleWidth = typeof node.style?.width === "number" ? node.style.width : undefined;
   const styleHeight = typeof node.style?.height === "number" ? node.style.height : undefined;
-  if (styleWidth && styleHeight) return { width: styleWidth, height: styleHeight };
-  if (node.type === "diamond") return { width: 120, height: 120 };
-  if (node.type === "knowledge") return { width: 220, height: 56 };
-  if (node.type === "scope") return { width: LEAF_W, height: LEAF_H };
-  return { width: LEAF_W, height: LEAF_H };
+  const initialWidth = typeof node.initialWidth === "number" ? node.initialWidth : undefined;
+  const initialHeight = typeof node.initialHeight === "number" ? node.initialHeight : undefined;
+  const fallback = (() => {
+    if (node.type === "diamond") return { width: DIAMOND_BOUNDS, height: DIAMOND_BOUNDS };
+    if (node.type === "knowledge") return { width: FLOW_NODE_W, height: LEAF_H };
+    if (node.type === "scope") return { width: LEAF_W, height: LEAF_H };
+    return { width: FLOW_NODE_W, height: FLOW_NODE_H };
+  })();
+  return {
+    width: Math.max(styleWidth ?? 0, initialWidth ?? 0, fallback.width),
+    height: Math.max(styleHeight ?? 0, initialHeight ?? 0, fallback.height),
+  };
 };
 
 export const computeNodeAbsolutePosition = (

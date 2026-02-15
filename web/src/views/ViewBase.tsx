@@ -226,6 +226,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
       focusFileTick: store.focusFileTick,
       hoveredNodeId: store.hoveredNodeId,
       hoveredNodeMatchKey: store.hoveredNodeMatchKey,
+      hoveredNodeSide: store.hoveredNodeSide,
     },
     actions: {
       onInteractionClick: handleInteractionClick,
@@ -262,6 +263,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     store.graphSearchNavTick,
     store.hoveredNodeId,
     store.hoveredNodeMatchKey,
+    store.hoveredNodeSide,
     store.highlightedNodeId,
     store.selectedFilePath,
     store.selectedNodeId,

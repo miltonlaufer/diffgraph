@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useEffect, useRef } from "react";
+import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   type Edge,
@@ -45,6 +45,17 @@ const EDGE_TOOLTIP_OFFSET_X = 12;
 const EDGE_TOOLTIP_OFFSET_Y = 14;
 const EDGE_CLICK_HIGHLIGHT_MS = 5000;
 const GROUP_BLOCK_GAP = 22;
+const VIEWPORT_EPSILON = 0.5;
+const VIEWPORT_ZOOM_EPSILON = 0.001;
+const DIAMOND_BOUNDS = 146;
+const FLOW_NODE_W = 220;
+const FLOW_NODE_H = 72;
+
+interface PanelViewport {
+  x: number;
+  y: number;
+  zoom: number;
+}
 
 const labelIdentity = (label: string): string =>
   label
@@ -89,9 +100,15 @@ const nodeSize = (node: Node): { width: number; height: number } => {
   const styleHeight = typeof node.style?.height === "number" ? node.style.height : undefined;
   const initialWidth = typeof node.initialWidth === "number" ? node.initialWidth : undefined;
   const initialHeight = typeof node.initialHeight === "number" ? node.initialHeight : undefined;
+  const fallback = (() => {
+    if (node.type === "diamond") return { width: DIAMOND_BOUNDS, height: DIAMOND_BOUNDS };
+    if (node.type === "knowledge") return { width: FLOW_NODE_W, height: LEAF_H };
+    if (node.type === "scope") return { width: LEAF_W, height: LEAF_H };
+    return { width: FLOW_NODE_W, height: FLOW_NODE_H };
+  })();
   return {
-    width: styleWidth ?? initialWidth ?? LEAF_W,
-    height: styleHeight ?? initialHeight ?? LEAF_H,
+    width: Math.max(styleWidth ?? 0, initialWidth ?? 0, fallback.width),
+    height: Math.max(styleHeight ?? 0, initialHeight ?? 0, fallback.height),
   };
 };
 
@@ -105,12 +122,56 @@ const hasHorizontalOverlap = (
   return aX + aWidth - margin > bX && bX + bWidth - margin > aX;
 };
 
+const hasVerticalOverlap = (
+  aY: number,
+  aHeight: number,
+  bY: number,
+  bHeight: number,
+): boolean => {
+  const margin = 4;
+  return aY + aHeight - margin > bY && bY + bHeight - margin > aY;
+};
+
+const hasActivePointerEvent = (event: MouseEvent | TouchEvent | null): boolean => {
+  if (!event) return false;
+  const maybeEvent = event as {
+    buttons?: unknown;
+    touches?: { length: number } | null;
+    pointerType?: unknown;
+    type?: unknown;
+  };
+  if (typeof maybeEvent.buttons === "number") {
+    return maybeEvent.buttons > 0;
+  }
+  if (maybeEvent.touches && typeof maybeEvent.touches.length === "number") {
+    return maybeEvent.touches.length > 0;
+  }
+  if (typeof maybeEvent.pointerType === "string") {
+    return true;
+  }
+  if (typeof maybeEvent.type === "string") {
+    return maybeEvent.type.startsWith("mouse") || maybeEvent.type.startsWith("touch") || maybeEvent.type.startsWith("pointer");
+  }
+  return false;
+};
+
+const isWheelEvent = (event: MouseEvent | TouchEvent | null): boolean => {
+  if (!event) return false;
+  const maybeEvent = event as { type?: unknown };
+  return typeof maybeEvent.type === "string" && maybeEvent.type === "wheel";
+};
+
 interface LayoutElements {
   nodes: Node[];
   edges: Edge[];
 }
 
-const resolveScopeBlockOverlaps = (layoutResult: LayoutElements): LayoutElements => {
+const hasViewportDelta = (a: PanelViewport, b: PanelViewport): boolean =>
+  Math.abs(a.x - b.x) > VIEWPORT_EPSILON
+  || Math.abs(a.y - b.y) > VIEWPORT_EPSILON
+  || Math.abs(a.zoom - b.zoom) > VIEWPORT_ZOOM_EPSILON;
+
+const resolveSiblingBlockOverlaps = (layoutResult: LayoutElements): LayoutElements => {
   if (layoutResult.nodes.length < 2) return layoutResult;
 
   const nodes = layoutResult.nodes.map((node) => ({
@@ -118,18 +179,17 @@ const resolveScopeBlockOverlaps = (layoutResult: LayoutElements): LayoutElements
     position: { ...node.position },
   }));
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const scopeChildrenByParent = new Map<string, Node[]>();
+  const childrenByParent = new Map<string, Node[]>();
   const rootParentKey = "__root__";
 
   for (const node of nodes) {
-    if (node.type !== "scope") continue;
     const parentKey = node.parentId ?? rootParentKey;
-    const siblings = scopeChildrenByParent.get(parentKey) ?? [];
+    const siblings = childrenByParent.get(parentKey) ?? [];
     siblings.push(node);
-    scopeChildrenByParent.set(parentKey, siblings);
+    childrenByParent.set(parentKey, siblings);
   }
 
-  if (scopeChildrenByParent.size === 0) {
+  if (childrenByParent.size === 0) {
     return { nodes, edges: layoutResult.edges };
   }
 
@@ -147,7 +207,7 @@ const resolveScopeBlockOverlaps = (layoutResult: LayoutElements): LayoutElements
     return depth;
   };
 
-  const parentKeys = [...scopeChildrenByParent.keys()].sort((a, b) => {
+  const parentKeys = [...childrenByParent.keys()].sort((a, b) => {
     if (a === rootParentKey) return -1;
     if (b === rootParentKey) return 1;
     const depthA = getDepth(a);
@@ -157,7 +217,7 @@ const resolveScopeBlockOverlaps = (layoutResult: LayoutElements): LayoutElements
   });
 
   for (const parentKey of parentKeys) {
-    const siblings = scopeChildrenByParent.get(parentKey);
+    const siblings = childrenByParent.get(parentKey);
     if (!siblings || siblings.length < 2) continue;
 
     const ordered = siblings.slice().sort((a, b) => {
@@ -175,6 +235,75 @@ const resolveScopeBlockOverlaps = (layoutResult: LayoutElements): LayoutElements
       let nextAbsY = abs.y;
       for (const prev of placed) {
         if (!hasHorizontalOverlap(abs.x, size.width, prev.x, prev.width)) continue;
+        const minY = prev.y + prev.height + GROUP_BLOCK_GAP;
+        if (nextAbsY < minY) {
+          nextAbsY = minY;
+        }
+      }
+
+      if (nextAbsY > abs.y + 0.5) {
+        if (node.parentId) {
+          const parent = nodeById.get(node.parentId);
+          if (parent) {
+            const parentAbs = computeNodeAbsolutePosition(parent, nodeById);
+            node.position.y = nextAbsY - parentAbs.y;
+          }
+        } else {
+          node.position.y = nextAbsY;
+        }
+      }
+
+      placed.push({
+        x: abs.x,
+        y: nextAbsY,
+        width: size.width,
+        height: size.height,
+      });
+    }
+  }
+
+  const topRootByNodeId = new Map<string, string>();
+  const resolveTopRoot = (node: Node): string => {
+    const cached = topRootByNodeId.get(node.id);
+    if (cached) return cached;
+    let current: Node | undefined = node;
+    while (current?.parentId) {
+      const parent = nodeById.get(current.parentId);
+      if (!parent) break;
+      current = parent;
+    }
+    const rootId = current?.id ?? node.id;
+    topRootByNodeId.set(node.id, rootId);
+    return rootId;
+  };
+
+  const nodesByTopRoot = new Map<string, Node[]>();
+  for (const node of nodes) {
+    if (node.type === "scope") continue;
+    const topRoot = resolveTopRoot(node);
+    const siblings = nodesByTopRoot.get(topRoot) ?? [];
+    siblings.push(node);
+    nodesByTopRoot.set(topRoot, siblings);
+  }
+
+  for (const siblings of nodesByTopRoot.values()) {
+    if (siblings.length < 2) continue;
+    const ordered = siblings.slice().sort((a, b) => {
+      const aAbs = computeNodeAbsolutePosition(a, nodeById);
+      const bAbs = computeNodeAbsolutePosition(b, nodeById);
+      const yDelta = aAbs.y - bAbs.y;
+      if (Math.abs(yDelta) > 0.5) return yDelta;
+      return aAbs.x - bAbs.x;
+    });
+
+    const placed: Array<{ x: number; y: number; width: number; height: number }> = [];
+    for (const node of ordered) {
+      const abs = computeNodeAbsolutePosition(node, nodeById);
+      const size = nodeSize(node);
+      let nextAbsY = abs.y;
+      for (const prev of placed) {
+        if (!hasHorizontalOverlap(abs.x, size.width, prev.x, prev.width)) continue;
+        if (!hasVerticalOverlap(nextAbsY, size.height, prev.y, prev.height)) continue;
         const minY = prev.y + prev.height + GROUP_BLOCK_GAP;
         if (nextAbsY < minY) {
           nextAbsY = minY;
@@ -236,6 +365,7 @@ export const SplitGraphPanel = observer(({
     focusFileTick,
     hoveredNodeId,
     hoveredNodeMatchKey,
+    hoveredNodeSide,
   } = runtimeState;
   const {
     onInteractionClick,
@@ -259,7 +389,11 @@ export const SplitGraphPanel = observer(({
   const lastAppliedSearchTickRef = useRef(0);
   const lastViewportRecoveryKeyRef = useRef("");
   const lastNodeAnchorSignatureRef = useRef("");
+  const viewportOverrideBaseRef = useRef<PanelViewport | null>(null);
+  const userMoveActiveRef = useRef(false);
+  const [viewportOverride, setViewportOverride] = useState<PanelViewport | null>(null);
   const layoutResult = store.layoutResult;
+  const effectiveViewport = viewportOverride ?? viewport;
 
   const isLogic = viewType === "logic";
   const isOld = side === "old";
@@ -393,7 +527,7 @@ export const SplitGraphPanel = observer(({
       || Object.keys(alignmentBreakpoints).length === 0
       || topAlignedLayoutResult.nodes.length === 0
     ) {
-      return resolveScopeBlockOverlaps(topAlignedLayoutResult);
+      return resolveSiblingBlockOverlaps(topAlignedLayoutResult);
     }
 
     const nodeById = new Map(topAlignedLayoutResult.nodes.map((node) => [node.id, node]));
@@ -468,7 +602,7 @@ export const SplitGraphPanel = observer(({
       return { ...node, position: { ...node.position, y: nextRelativeY } };
     });
 
-    return resolveScopeBlockOverlaps({ nodes, edges: topAlignedLayoutResult.edges });
+    return resolveSiblingBlockOverlaps({ nodes, edges: topAlignedLayoutResult.edges });
   }, [alignmentBreakpoints, isLogic, side, topAlignedLayoutResult, topKeyByNodeId]);
 
   const positionedNodeById = useMemo(
@@ -927,9 +1061,45 @@ export const SplitGraphPanel = observer(({
     onNodeHoverChange(side, "", "");
   }, [onNodeHoverChange, side, store]);
 
-  const handleMove = useCallback((_event: MouseEvent | TouchEvent | null, nextViewport: Viewport) => {
+  const handleMoveStart = useCallback((event: MouseEvent | TouchEvent | null) => {
+    userMoveActiveRef.current = hasActivePointerEvent(event);
+    if (!hasActivePointerEvent(event)) return;
+    if (viewportOverrideBaseRef.current !== null) {
+      viewportOverrideBaseRef.current = null;
+      setViewportOverride(null);
+    }
+  }, []);
+
+  const handleMove = useCallback((event: MouseEvent | TouchEvent | null, nextViewport: Viewport) => {
+    const wheel = isWheelEvent(event);
+    if (!wheel) {
+      if (!hasActivePointerEvent(event)) return;
+      if (!userMoveActiveRef.current) return;
+    }
+    if (viewportOverrideBaseRef.current !== null) {
+      viewportOverrideBaseRef.current = null;
+      setViewportOverride(null);
+    }
     onViewportChange({ x: nextViewport.x, y: nextViewport.y, zoom: nextViewport.zoom });
   }, [onViewportChange]);
+
+  const handleMoveEnd = useCallback(() => {
+    userMoveActiveRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    const endMove = (): void => {
+      userMoveActiveRef.current = false;
+    };
+    window.addEventListener("mouseup", endMove);
+    window.addEventListener("touchend", endMove);
+    window.addEventListener("blur", endMove);
+    return () => {
+      window.removeEventListener("mouseup", endMove);
+      window.removeEventListener("touchend", endMove);
+      window.removeEventListener("blur", endMove);
+    };
+  }, []);
 
   useSplitGraphLayoutWorker({
     store,
@@ -1060,12 +1230,50 @@ export const SplitGraphPanel = observer(({
     onViewportChange(focusedViewport);
   }, [focusFilePath, focusFileTick, focusedViewport, onViewportChange]);
 
+  useEffect(() => {
+    if (!viewportOverride || !viewportOverrideBaseRef.current) return;
+    if (!hasViewportDelta(viewport, viewportOverrideBaseRef.current)) return;
+    viewportOverrideBaseRef.current = null;
+    setViewportOverride(null);
+  }, [viewport, viewportOverride]);
+
   const isNodeVisibleInViewport = useCallback((node: Node): boolean => {
-    return computeIsNodeVisibleInViewport(node, flowNodeById, store.flowSize, viewport);
-  }, [flowNodeById, store.flowSize, viewport]);
+    return computeIsNodeVisibleInViewport(node, flowNodeById, store.flowSize, effectiveViewport);
+  }, [effectiveViewport, flowNodeById, store.flowSize]);
+
+  useEffect(() => {
+    if (!hoveredNodeSide || hoveredNodeSide === side) return;
+    if (!hoveredNodeIdForPanel) return;
+    if (store.layoutPending) return;
+    if (store.flowSize.width <= 0 || store.flowSize.height <= 0) return;
+
+    const target = flowElements.nodes.find((node) => node.id === hoveredNodeIdForPanel);
+    if (!target) return;
+
+    const isVisible = computeIsNodeVisibleInViewport(target, flowNodeById, store.flowSize, effectiveViewport);
+    if (isVisible) return;
+
+    const nextViewport = viewportForNode(target);
+    if (!hasViewportDelta(nextViewport, effectiveViewport)) return;
+    viewportOverrideBaseRef.current = viewport;
+    setViewportOverride(nextViewport);
+  }, [
+    effectiveViewport,
+    flowElements.nodes,
+    flowNodeById,
+    hoveredNodeIdForPanel,
+    hoveredNodeSide,
+    side,
+    store.flowSize.height,
+    store.flowSize.width,
+    store.layoutPending,
+    viewport,
+    viewportForNode,
+  ]);
 
   useEffect(() => {
     if (!isViewportPrimary) return;
+    if (viewportOverride) return;
     if (store.layoutPending) return;
     if (flowElements.nodes.length === 0) return;
     if (store.flowSize.width <= 0 || store.flowSize.height <= 0) return;
@@ -1109,6 +1317,7 @@ export const SplitGraphPanel = observer(({
     store.flowSize.height,
     store.flowSize.width,
     store.layoutPending,
+    viewportOverride,
     viewportForNode,
   ]);
 
@@ -1137,6 +1346,8 @@ export const SplitGraphPanel = observer(({
     store.clearHoveredEdge();
     store.clearClickedEdge();
     lastEdgeNavigationRef.current = null;
+    viewportOverrideBaseRef.current = null;
+    setViewportOverride(null);
     if (edgeClickHighlightTimerRef.current !== null) {
       window.clearTimeout(edgeClickHighlightTimerRef.current);
       edgeClickHighlightTimerRef.current = null;
@@ -1179,7 +1390,7 @@ export const SplitGraphPanel = observer(({
         nodes={searchResultNodes.nodes}
         edges={searchResultNodes.edges}
         nodeTypes={nodeTypesForFlow}
-        viewport={viewport}
+        viewport={effectiveViewport}
         flowContainerRef={flowContainerRef}
         minimapNodeColor={minimapNodeColor}
         minimapNodeStrokeColor={minimapNodeStrokeColor}
@@ -1192,7 +1403,9 @@ export const SplitGraphPanel = observer(({
         onEdgeMouseMove={handleEdgeMouseMove}
         onEdgeMouseLeave={handleEdgeMouseLeave}
         onPaneMouseLeave={handlePaneMouseLeave}
+        onMoveStart={handleMoveStart}
         onMove={handleMove}
+        onMoveEnd={handleMoveEnd}
       />
     </section>
   );

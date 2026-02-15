@@ -124,7 +124,7 @@ export const commandSetHoveredNode = (
     return;
   }
   if (matchKey) {
-    store.setHoveredNode(nodeId, matchKey);
+    store.setHoveredNode(side, nodeId, matchKey);
     return;
   }
   const sourceGraph = side === "old" ? store.oldGraph : store.newGraph;
@@ -134,7 +134,7 @@ export const commandSetHoveredNode = (
     return;
   }
   const fallbackMatchKey = buildCrossGraphNodeMatchKey(sourceNode);
-  store.setHoveredNode(nodeId, fallbackMatchKey);
+  store.setHoveredNode(side, nodeId, fallbackMatchKey);
 };
 
 interface LineClickContext extends CommandContext {

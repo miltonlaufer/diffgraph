@@ -19,6 +19,7 @@ interface SplitGraphRuntimeState {
   focusFileTick: number;
   hoveredNodeId: string;
   hoveredNodeMatchKey: string;
+  hoveredNodeSide: "old" | "new" | "";
 }
 
 interface SplitGraphRuntimeActions {
