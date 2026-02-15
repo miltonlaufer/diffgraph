@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, type MutableRefObject } from "react";
 import { HighlightedCode } from "./HighlightedCode";
 import type { DiffLine } from "./types";
 import { lineStyle } from "./diffUtils";
@@ -15,6 +15,8 @@ interface SimpleRowProps {
 const SimpleRow = memo(({ side, text, lineNum, type, language, onLineClick }: SimpleRowProps) => (
   <tr
     data-line={`${side}-${lineNum}`}
+    data-old-line={side === "old" ? lineNum : undefined}
+    data-new-line={side === "new" ? lineNum : undefined}
     style={{ ...lineStyle(type), cursor: onLineClick ? "pointer" : "default" }}
     onClick={() => onLineClick?.(lineNum, side)}
   >
@@ -28,6 +30,8 @@ interface CodeDiffSingleFileViewProps {
   filePath: string;
   content: string;
   language: string;
+  oldCodeScrollRef: MutableRefObject<HTMLDivElement | null>;
+  newCodeScrollRef: MutableRefObject<HTMLDivElement | null>;
   onLineClick?: (line: number, side: "old" | "new") => void;
 }
 
@@ -36,6 +40,8 @@ export const CodeDiffSingleFileView = ({
   filePath,
   content,
   language,
+  oldCodeScrollRef,
+  newCodeScrollRef,
   onLineClick,
 }: CodeDiffSingleFileViewProps) => {
   const isAdded = mode === "added";
@@ -47,7 +53,7 @@ export const CodeDiffSingleFileView = ({
       <div className="splitCodeLayout">
         <div className="codeColumn">
           <h5 className="codeColumnHeader oldHeader">{isAdded ? "Old" : "Old (file was deleted)"}</h5>
-          <div className="codeScrollArea">
+          <div className="codeScrollArea" ref={oldCodeScrollRef}>
             {isAdded ? (
               <p className="dimText">File did not exist.</p>
             ) : (
@@ -63,7 +69,7 @@ export const CodeDiffSingleFileView = ({
         </div>
         <div className="codeColumn">
           <h5 className="codeColumnHeader newHeader">{isAdded ? "New (entire file is new)" : "New"}</h5>
-          <div className="codeScrollArea">
+          <div className="codeScrollArea" ref={newCodeScrollRef}>
             {isAdded ? (
               <table className="diffTable">
                 <tbody>

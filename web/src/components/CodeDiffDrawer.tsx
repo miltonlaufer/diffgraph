@@ -187,7 +187,15 @@ export const CodeDiffDrawer = observer(() => {
         <button type="button" className="codeDiffFullscreenBtn" onClick={store.toggleFullscreen} title={fullscreenTitle}>
           {fullscreenIcon}
         </button>
-        <CodeDiffSingleFileView mode="added" filePath={file.path} content={file.newContent} language={lang} onLineClick={onCodeLineClick} />
+        <CodeDiffSingleFileView
+          mode="added"
+          filePath={file.path}
+          content={file.newContent}
+          language={lang}
+          oldCodeScrollRef={oldCodeScrollRef}
+          newCodeScrollRef={newCodeScrollRef}
+          onLineClick={onCodeLineClick}
+        />
       </section>
     );
   }
@@ -198,7 +206,15 @@ export const CodeDiffDrawer = observer(() => {
         <button type="button" className="codeDiffFullscreenBtn" onClick={store.toggleFullscreen} title={fullscreenTitle}>
           {fullscreenIcon}
         </button>
-        <CodeDiffSingleFileView mode="removed" filePath={file.path} content={file.oldContent} language={lang} onLineClick={onCodeLineClick} />
+        <CodeDiffSingleFileView
+          mode="removed"
+          filePath={file.path}
+          content={file.oldContent}
+          language={lang}
+          oldCodeScrollRef={oldCodeScrollRef}
+          newCodeScrollRef={newCodeScrollRef}
+          onLineClick={onCodeLineClick}
+        />
       </section>
     );
   }
