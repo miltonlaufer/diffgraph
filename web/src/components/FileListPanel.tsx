@@ -1,26 +1,32 @@
 import { useMemo } from "react";
-import { observer, useLocalObservable } from "mobx-react-lite";
+import { observer } from "mobx-react-lite";
 import { FileListView } from "./fileList/FileListView";
-import { FileListPanelStore } from "./fileList/store";
 import { useViewBaseRuntime } from "../views/viewBase/runtime";
 
 export const FileListPanel = observer(() => {
   const { state, actions } = useViewBaseRuntime();
-  const { files, selectedFilePath } = state;
-  const store = useLocalObservable(() => new FileListPanelStore());
+  const { files, selectedFilePath, fileListCollapsed } = state;
 
   const topRisk = useMemo(
     () => files.reduce((max, file) => Math.max(max, file.riskScore ?? 0), 0),
     [files],
   );
 
+  const selectedFileName = useMemo(() => {
+    if (!selectedFilePath) return "";
+    const normalized = selectedFilePath.replaceAll("\\", "/");
+    const parts = normalized.split("/").filter((part) => part.length > 0);
+    return parts[parts.length - 1] ?? normalized;
+  }, [selectedFilePath]);
+
   return (
     <FileListView
       files={files}
       selectedFilePath={selectedFilePath}
-      collapsed={store.collapsed}
+      selectedFileName={selectedFileName}
+      collapsed={fileListCollapsed}
       topRisk={topRisk}
-      onToggleCollapsed={store.toggleCollapsed}
+      onToggleCollapsed={actions.onToggleFileListCollapsed}
       onSelectFile={actions.onFileSelect}
     />
   );

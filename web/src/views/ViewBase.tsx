@@ -141,6 +141,10 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     [commandContext],
   );
 
+  const handleToggleFileListCollapsed = useCallback(() => {
+    store.toggleFileListCollapsed();
+  }, [store]);
+
   const handleSymbolClick = useCallback(
     (startLine: number) => {
       commandSelectSymbol(commandContext, startLine);
@@ -305,6 +309,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     state: {
       files: store.fileDiffs,
       selectedFilePath: store.selectedFilePath,
+      fileListCollapsed: store.fileListCollapsed,
       selectedFile,
       targetLine: store.targetLine,
       targetSide: store.targetSide,
@@ -314,6 +319,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     },
     actions: {
       onFileSelect: handleFileSelect,
+      onToggleFileListCollapsed: handleToggleFileListCollapsed,
       onCodeLineClick: handleCodeLineClick,
       onCodeLineDoubleClick: handleCodeLineDoubleClick,
       onCodeSearchStateChange: handleCodeSearchStateChange,
@@ -323,8 +329,10 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     handleCodeLineDoubleClick,
     handleCodeSearchStateChange,
     handleFileSelect,
+    handleToggleFileListCollapsed,
     store.codeSearchNavDirection,
     store.codeSearchNavTick,
+    store.fileListCollapsed,
     selectedFile,
     store.fileDiffs,
     store.scrollTick,

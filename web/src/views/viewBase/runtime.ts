@@ -4,6 +4,7 @@ import type { FileDiffEntry } from "#/types/graph";
 interface ViewBaseRuntimeState {
   files: FileDiffEntry[];
   selectedFilePath: string;
+  fileListCollapsed: boolean;
   selectedFile: FileDiffEntry | null;
   targetLine: number;
   targetSide: "old" | "new";
@@ -14,6 +15,7 @@ interface ViewBaseRuntimeState {
 
 interface ViewBaseRuntimeActions {
   onFileSelect: (filePath: string) => void;
+  onToggleFileListCollapsed: () => void;
   onCodeLineClick: (line: number, side: "old" | "new") => void;
   onCodeLineDoubleClick: (line: number, side: "old" | "new", word: string) => void;
   onCodeSearchStateChange: (active: boolean) => void;

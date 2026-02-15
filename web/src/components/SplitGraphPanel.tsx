@@ -134,25 +134,29 @@ const hasVerticalOverlap = (
 
 const hasActivePointerEvent = (event: MouseEvent | TouchEvent | null): boolean => {
   if (!event) return false;
+  const eventType = typeof (event as { type?: unknown }).type === "string"
+    ? (event as { type: string }).type
+    : "";
+  if (event instanceof MouseEvent) {
+    return event.buttons > 0
+      || eventType.startsWith("mouse")
+      || eventType.startsWith("pointer")
+      || eventType === "click"
+      || eventType === "dblclick";
+  }
   const maybeEvent = event as {
     buttons?: unknown;
     touches?: { length: number } | null;
     pointerType?: unknown;
     type?: unknown;
   };
-  if (typeof maybeEvent.buttons === "number") {
-    return maybeEvent.buttons > 0;
-  }
   if (maybeEvent.touches && typeof maybeEvent.touches.length === "number") {
-    return maybeEvent.touches.length > 0;
+    return maybeEvent.touches.length > 0 || eventType.startsWith("touch");
   }
   if (typeof maybeEvent.pointerType === "string") {
     return true;
   }
-  if (typeof maybeEvent.type === "string") {
-    return maybeEvent.type.startsWith("mouse") || maybeEvent.type.startsWith("touch") || maybeEvent.type.startsWith("pointer");
-  }
-  return false;
+  return eventType.startsWith("touch") || eventType.startsWith("pointer");
 };
 
 const isWheelEvent = (event: MouseEvent | TouchEvent | null): boolean => {
@@ -384,13 +388,12 @@ export const SplitGraphPanel = observer(({
   const edgeClickHighlightTimerRef = useRef<number | null>(null);
   const flowContainerRef = useRef<HTMLDivElement>(null);
   const lastEdgeNavigationRef = useRef<{ edgeId: string; lastEndpoint: "source" | "target" } | null>(null);
-  const lastAppliedFocusNodeTickRef = useRef(0);
+  const lastAppliedFocusNodeKeyRef = useRef("");
   const lastAppliedFocusFileTickRef = useRef(0);
   const lastAppliedSearchTickRef = useRef(0);
   const lastViewportRecoveryKeyRef = useRef("");
   const lastNodeAnchorSignatureRef = useRef("");
   const viewportOverrideBaseRef = useRef<PanelViewport | null>(null);
-  const userMoveActiveRef = useRef(false);
   const [viewportOverride, setViewportOverride] = useState<PanelViewport | null>(null);
   const layoutResult = store.layoutResult;
   const effectiveViewport = viewportOverride ?? viewport;
@@ -1062,7 +1065,6 @@ export const SplitGraphPanel = observer(({
   }, [onNodeHoverChange, side, store]);
 
   const handleMoveStart = useCallback((event: MouseEvent | TouchEvent | null) => {
-    userMoveActiveRef.current = hasActivePointerEvent(event);
     if (!hasActivePointerEvent(event)) return;
     if (viewportOverrideBaseRef.current !== null) {
       viewportOverrideBaseRef.current = null;
@@ -1071,35 +1073,19 @@ export const SplitGraphPanel = observer(({
   }, []);
 
   const handleMove = useCallback((event: MouseEvent | TouchEvent | null, nextViewport: Viewport) => {
+    const nextViewportState = { x: nextViewport.x, y: nextViewport.y, zoom: nextViewport.zoom };
     const wheel = isWheelEvent(event);
-    if (!wheel) {
-      if (!hasActivePointerEvent(event)) return;
-      if (!userMoveActiveRef.current) return;
-    }
+    const pointerDriven = hasActivePointerEvent(event);
+    const nullEventDriven = event === null && hasViewportDelta(nextViewportState, viewport);
+    if (!wheel && !pointerDriven && !nullEventDriven) return;
     if (viewportOverrideBaseRef.current !== null) {
       viewportOverrideBaseRef.current = null;
       setViewportOverride(null);
     }
-    onViewportChange({ x: nextViewport.x, y: nextViewport.y, zoom: nextViewport.zoom });
-  }, [onViewportChange]);
+    onViewportChange(nextViewportState);
+  }, [onViewportChange, viewport]);
 
-  const handleMoveEnd = useCallback(() => {
-    userMoveActiveRef.current = false;
-  }, []);
-
-  useEffect(() => {
-    const endMove = (): void => {
-      userMoveActiveRef.current = false;
-    };
-    window.addEventListener("mouseup", endMove);
-    window.addEventListener("touchend", endMove);
-    window.addEventListener("blur", endMove);
-    return () => {
-      window.removeEventListener("mouseup", endMove);
-      window.removeEventListener("touchend", endMove);
-      window.removeEventListener("blur", endMove);
-    };
-  }, []);
+  const handleMoveEnd = useCallback(() => {}, []);
 
   useSplitGraphLayoutWorker({
     store,
@@ -1297,8 +1283,12 @@ export const SplitGraphPanel = observer(({
     if (hasVisibleNode) return;
 
     const preferredId = selectedNodeId || highlightedNodeId || focusNodeId || "";
+    const preferredTarget = preferredId
+      ? flowElements.nodes.find((node) => node.id === preferredId)
+      : undefined;
+    if (preferredId && !preferredTarget) return;
     const target = (
-      flowElements.nodes.find((node) => node.id === preferredId)
+      preferredTarget
       ?? flowElements.nodes.find((node) => node.type !== "scope")
       ?? flowElements.nodes[0]
     );
@@ -1326,18 +1316,30 @@ export const SplitGraphPanel = observer(({
     if ((focusNodeTick ?? 0) <= 0) return;
     if (focusSourceSide && focusSourceSide !== side) return;
     if (store.layoutPending) return;
-    if ((focusNodeTick ?? 0) === lastAppliedFocusNodeTickRef.current) return;
     const target = flowElements.nodes.find((node) => node.id === focusNodeId);
     if (!target) return;
+    const abs = nodeAbsolutePosition(target);
+    const focusNodeKey = [
+      focusNodeTick ?? 0,
+      target.id,
+      Math.round(abs.x),
+      Math.round(abs.y),
+      Math.round(store.flowSize.width),
+      Math.round(store.flowSize.height),
+    ].join(":");
+    if (focusNodeKey === lastAppliedFocusNodeKeyRef.current) return;
     onViewportChange(viewportForNode(target));
-    lastAppliedFocusNodeTickRef.current = focusNodeTick ?? 0;
+    lastAppliedFocusNodeKeyRef.current = focusNodeKey;
   }, [
     focusNodeId,
     focusNodeTick,
     focusSourceSide,
     flowElements.nodes,
+    nodeAbsolutePosition,
     onViewportChange,
     side,
+    store.flowSize.height,
+    store.flowSize.width,
     store.layoutPending,
     viewportForNode,
   ]);

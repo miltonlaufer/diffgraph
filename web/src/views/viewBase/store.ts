@@ -10,6 +10,7 @@ export class ViewBaseStore {
   fileDiffs: FileDiffEntry[] = [];
   selectedFilePath = "";
   selectedNodeId = "";
+  fileListCollapsed = false;
   targetLine = 0;
   targetSide: "old" | "new" = "new";
   scrollTick = 0;
@@ -85,6 +86,7 @@ export class ViewBaseStore {
     this.hoveredNodeSide = "";
     this.fileDiffs = fileDiffs;
     this.selectedFilePath = "";
+    this.fileListCollapsed = false;
     this.sharedViewport = { x: 20, y: 20, zoom: 0.5 };
     this.focusSourceSide = "new";
     this.graphSearchSide = "new";
@@ -158,6 +160,14 @@ export class ViewBaseStore {
 
   setSelectedNodeId(nodeId: string): void {
     this.selectedNodeId = nodeId;
+  }
+
+  setFileListCollapsed(collapsed: boolean): void {
+    this.fileListCollapsed = collapsed;
+  }
+
+  toggleFileListCollapsed(): void {
+    this.fileListCollapsed = !this.fileListCollapsed;
   }
 
   focusNode(nodeId: string, sourceSide: "old" | "new"): void {

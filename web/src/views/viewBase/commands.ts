@@ -18,6 +18,7 @@ export const commandSelectNode = (
   const { store, runInteractiveUpdate } = context;
   runInteractiveUpdate(() => {
     store.setSelectedNodeId(nodeId);
+    store.setFileListCollapsed(true);
     store.focusNode(nodeId, sourceSide);
     const matchedOld = store.oldGraph.nodes.find((node) => node.id === nodeId);
     const matchedNew = store.newGraph.nodes.find((node) => node.id === nodeId);
