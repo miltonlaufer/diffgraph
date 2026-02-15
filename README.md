@@ -275,9 +275,11 @@ If the default port (4177) is busy, the server automatically finds the next avai
 - **Show calls** (Logic tab) -- show/hide invoke edges to reduce visual noise
 - **Graph diff navigation** (Logic tab, up/down arrows) -- jumps across graph-level changes (added/removed/modified nodes) and highlights the focused node for ~5 seconds
 - **Graph search** (per panel) -- search nodes by text, use up/down arrows to jump matches; matched node is focused and highlighted, and related connections are emphasized during the flash window
+- **Arrow keys behavior** -- `ArrowUp`/`ArrowDown` follow this priority: (1) if `Search code...` is filled, navigate code-search matches, (2) else if graph search is filled and `exclude` is off, navigate graph-search matches, (3) else navigate graph differences in Logic view (same as the up/down diff buttons)
 - **Hover function/group headers** -- tooltip includes documentation (JSDoc/docstring), parameters with types, return type, and class/file metadata when available
 - **Risk-ranked symbols** -- functions/methods/classes inside a file are sorted by deterministic risk score to prioritize review order
 - **Code line -> graph focus** -- clicking a code line finds the best matching graph node, highlights it for ~4.2 seconds, and keeps the graph area in view
+- **Double-click code word -> code search** -- double-clicking a word in the diff fills `Search code...` and jumps to the first textual match
 
 ### Risk score (`Rxx`) details
 
@@ -314,11 +316,13 @@ Symbol-level score (used by `symbolRisk`) is also computed in `src/server/app.ts
 - Side-by-side view: Old code on the left, New code on the right
 - Line-level change highlighting: green for added lines, red for removed lines
 - Hovering a line highlights that row for easier scanning
+- Active code search highlights matching words inline inside code lines
 - Synchronized scrolling between left and right
 - Each side is fixed at 50% width and supports horizontal scrolling for long lines
 - New files show "File did not exist" on the old side; deleted files show "File was deleted" on the new side
 - Clicking a logic node scrolls the diff to the corresponding line number and scrolls the page to the code viewer
 - Clicking a code line can navigate back to the best matching node in the graph (including full-file add/remove views)
+- Code search matching runs across both Old and New columns
 - Fullscreen toggle (top-right icon in code diff panel; `Esc` exits fullscreen)
 - Whitespace-only/blank-line-only changes are ignored for semantic change detection to reduce false modified markers
 

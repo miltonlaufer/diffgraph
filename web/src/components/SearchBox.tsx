@@ -1,7 +1,9 @@
-import { useCallback, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { useCallback, type ChangeEvent, type KeyboardEvent } from "react";
 
 interface SearchBoxProps {
   placeholder: string;
+  query: string;
+  exclude: boolean;
   onSearch: (query: string, exclude: boolean) => void;
   onNext: () => void;
   onPrev: () => void;
@@ -9,31 +11,32 @@ interface SearchBoxProps {
   currentIndex: number;
 }
 
-export const SearchBox = ({ placeholder, onSearch, onNext, onPrev, resultCount, currentIndex }: SearchBoxProps) => {
-  /******************* STORE ***********************/
-  const [query, setQuery] = useState("");
-  const [exclude, setExclude] = useState(false);
-
+export const SearchBox = ({
+  placeholder,
+  query,
+  exclude,
+  onSearch,
+  onNext,
+  onPrev,
+  resultCount,
+  currentIndex,
+}: SearchBoxProps) => {
   /******************* FUNCTIONS ***********************/
   const handleChange = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
       const val = e.target.value;
-      setQuery(val);
       onSearch(val, exclude);
     },
     [onSearch, exclude],
   );
 
   const handleExcludeToggle = useCallback(() => {
-    setExclude((prev) => {
-      const next = !prev;
-      onSearch(query, next);
-      return next;
-    });
-  }, [onSearch, query]);
+    onSearch(query, !exclude);
+  }, [exclude, onSearch, query]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
+      if (exclude || query.trim().length === 0) return;
       if (e.key === "Enter") {
         if (e.shiftKey) {
           onPrev();
@@ -41,9 +44,22 @@ export const SearchBox = ({ placeholder, onSearch, onNext, onPrev, resultCount, 
           onNext();
         }
         e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        onNext();
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        onPrev();
+        e.preventDefault();
+        e.stopPropagation();
       }
     },
-    [onNext, onPrev],
+    [exclude, onNext, onPrev, query],
   );
 
   /******************* USEEFFECTS ***********************/

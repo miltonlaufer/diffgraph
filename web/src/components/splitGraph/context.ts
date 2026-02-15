@@ -9,6 +9,12 @@ interface SplitGraphRuntimeState {
   focusNodeId: string;
   focusNodeTick: number;
   focusSourceSide: "old" | "new";
+  graphSearchSide: "old" | "new";
+  graphSearchQuery: string;
+  graphSearchTick: number;
+  graphSearchNavSide: "old" | "new";
+  graphSearchNavDirection: "next" | "prev";
+  graphSearchNavTick: number;
   focusFilePath: string;
   focusFileTick: number;
   hoveredNodeId: string;
@@ -25,6 +31,7 @@ interface SplitGraphRuntimeActions {
   onTopLevelAnchorsChange?: (side: "old" | "new", anchors: Record<string, TopLevelAnchor>) => void;
   onNodeAnchorsChange?: (side: "old" | "new", anchors: Record<string, InternalNodeAnchor>) => void;
   onLayoutPendingChange?: (side: "old" | "new", pending: boolean) => void;
+  onSearchStateChange?: (side: "old" | "new", active: boolean) => void;
 }
 
 export interface SplitGraphRuntimeContextValue {

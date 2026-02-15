@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import type { DiffLine, DiffMatrixRow } from "./types";
 
 export const computeSideBySide = (
@@ -233,6 +233,20 @@ export const emptyLineStyle: CSSProperties = {
   minHeight: "1.5em",
   whiteSpace: "pre",
   width: "1px",
+};
+
+export const extractSearchWordFromDoubleClick = (
+  event: ReactMouseEvent<HTMLElement>,
+): string => {
+  const selected = typeof window !== "undefined"
+    ? window.getSelection()?.toString().trim() ?? ""
+    : "";
+  if (selected.length > 0 && !/\s/.test(selected)) {
+    return selected;
+  }
+  const text = (event.target instanceof HTMLElement ? event.target.textContent : "") ?? "";
+  const token = text.match(/[A-Za-z_][A-Za-z0-9_.$]*/)?.[0] ?? "";
+  return token.trim();
 };
 
 export const scrollToRowIndex = (container: HTMLDivElement | null, rowIndex: number): void => {

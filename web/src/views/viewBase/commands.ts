@@ -147,6 +147,51 @@ interface LineClickContext extends CommandContext {
 const NODE_HIGHLIGHT_MS = 4200;
 const GRAPH_DIFF_HIGHLIGHT_MS = 5000;
 
+const resolveBestNodeForLine = (
+  selectedFilePath: string,
+  displayOldGraph: ViewGraph,
+  displayNewGraph: ViewGraph,
+  line: number,
+  side: "old" | "new",
+) => {
+  const filePath = normalizePath(selectedFilePath);
+  if (!filePath) return null;
+
+  const sideGraph = side === "old" ? displayOldGraph : displayNewGraph;
+  const inFile = sideGraph.nodes.filter((node) => normalizePath(node.filePath) === filePath);
+  if (inFile.length === 0) return null;
+
+  const withRange = inFile.filter(
+    (node) =>
+      (node.startLine ?? 0) > 0
+      && (node.endLine ?? node.startLine ?? 0) >= (node.startLine ?? 0),
+  );
+
+  const containing = withRange.filter((node) => {
+    const start = node.startLine ?? 0;
+    const end = node.endLine ?? start;
+    return line >= start && line <= end;
+  });
+
+  const candidates = containing.length > 0 ? containing : withRange;
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    const aStart = a.startLine ?? 0;
+    const aEnd = a.endLine ?? aStart;
+    const bStart = b.startLine ?? 0;
+    const bEnd = b.endLine ?? bStart;
+    const aSpan = Math.max(1, aEnd - aStart + 1);
+    const bSpan = Math.max(1, bEnd - bStart + 1);
+    if (aSpan !== bSpan) return aSpan - bSpan;
+    if (a.kind === "Branch" && b.kind !== "Branch") return -1;
+    if (b.kind === "Branch" && a.kind !== "Branch") return 1;
+    return Math.abs(aStart - line) - Math.abs(bStart - line);
+  });
+
+  return candidates[0] ?? null;
+};
+
 export const commandCodeLineClick = (
   context: LineClickContext,
   line: number,
@@ -154,42 +199,14 @@ export const commandCodeLineClick = (
 ): void => {
   const { runInteractiveUpdate } = context;
   runInteractiveUpdate(() => {
-    const filePath = normalizePath(context.selectedFilePath);
-    if (!filePath) return;
-
-    const sideGraph = side === "old" ? context.displayOldGraph : context.displayNewGraph;
-    const inFile = sideGraph.nodes.filter((node) => normalizePath(node.filePath) === filePath);
-    if (inFile.length === 0) return;
-
-    const withRange = inFile.filter(
-      (node) =>
-        (node.startLine ?? 0) > 0
-        && (node.endLine ?? node.startLine ?? 0) >= (node.startLine ?? 0),
+    const target = resolveBestNodeForLine(
+      context.selectedFilePath,
+      context.displayOldGraph,
+      context.displayNewGraph,
+      line,
+      side,
     );
-
-    const containing = withRange.filter((node) => {
-      const start = node.startLine ?? 0;
-      const end = node.endLine ?? start;
-      return line >= start && line <= end;
-    });
-
-    const candidates = containing.length > 0 ? containing : withRange;
-    if (candidates.length === 0) return;
-
-    candidates.sort((a, b) => {
-      const aStart = a.startLine ?? 0;
-      const aEnd = a.endLine ?? aStart;
-      const bStart = b.startLine ?? 0;
-      const bEnd = b.endLine ?? bStart;
-      const aSpan = Math.max(1, aEnd - aStart + 1);
-      const bSpan = Math.max(1, bEnd - bStart + 1);
-      if (aSpan !== bSpan) return aSpan - bSpan;
-      if (a.kind === "Branch" && b.kind !== "Branch") return -1;
-      if (b.kind === "Branch" && a.kind !== "Branch") return 1;
-      return Math.abs(aStart - line) - Math.abs(bStart - line);
-    });
-
-    const target = candidates[0];
+    if (!target) return;
     context.store.setSelectedNodeId(target.id);
     context.store.focusNode(target.id, side);
     context.store.bumpGraphTopScrollTick();
@@ -201,6 +218,19 @@ export const commandCodeLineClick = (
       context.store.clearHighlightedNode();
       context.highlightTimerRef.current = null;
     }, NODE_HIGHLIGHT_MS);
+  });
+};
+
+export const commandCodeLineDoubleClick = (
+  context: CommandContext,
+  side: "old" | "new",
+  word: string,
+): void => {
+  const query = word.trim();
+  if (!query) return;
+  context.runInteractiveUpdate(() => {
+    context.store.requestGraphSearch(side, query);
+    context.store.bumpGraphTopScrollTick();
   });
 };
 

@@ -28,6 +28,17 @@ export class ViewBaseStore {
   focusSourceSide: "old" | "new" = "new";
   focusNodeTick = 0;
   focusFileTick = 0;
+  graphSearchSide: "old" | "new" = "new";
+  graphSearchQuery = "";
+  graphSearchTick = 0;
+  oldGraphSearchActive = false;
+  newGraphSearchActive = false;
+  graphSearchNavSide: "old" | "new" = "new";
+  graphSearchNavDirection: "next" | "prev" = "next";
+  graphSearchNavTick = 0;
+  codeSearchActive = false;
+  codeSearchNavDirection: "next" | "prev" = "next";
+  codeSearchNavTick = 0;
   hoveredNodeId = "";
   hoveredNodeMatchKey = "";
   oldLayoutPending = false;
@@ -74,6 +85,17 @@ export class ViewBaseStore {
     this.selectedFilePath = "";
     this.sharedViewport = { x: 20, y: 20, zoom: 0.5 };
     this.focusSourceSide = "new";
+    this.graphSearchSide = "new";
+    this.graphSearchQuery = "";
+    this.graphSearchTick = 0;
+    this.oldGraphSearchActive = false;
+    this.newGraphSearchActive = false;
+    this.graphSearchNavSide = "new";
+    this.graphSearchNavDirection = "next";
+    this.graphSearchNavTick = 0;
+    this.codeSearchActive = false;
+    this.codeSearchNavDirection = "next";
+    this.codeSearchNavTick = 0;
     this.graphTopScrollTick = 0;
     this.loading = false;
     this.error = "";
@@ -154,6 +176,35 @@ export class ViewBaseStore {
 
   bumpFocusFileTick(): void {
     this.focusFileTick += 1;
+  }
+
+  requestGraphSearch(side: "old" | "new", query: string): void {
+    this.graphSearchSide = side;
+    this.graphSearchQuery = query;
+    this.graphSearchTick += 1;
+  }
+
+  setGraphSearchActive(side: "old" | "new", active: boolean): void {
+    if (side === "old") {
+      this.oldGraphSearchActive = active;
+      return;
+    }
+    this.newGraphSearchActive = active;
+  }
+
+  requestGraphSearchNavigate(side: "old" | "new", direction: "next" | "prev"): void {
+    this.graphSearchNavSide = side;
+    this.graphSearchNavDirection = direction;
+    this.graphSearchNavTick += 1;
+  }
+
+  setCodeSearchActive(active: boolean): void {
+    this.codeSearchActive = active;
+  }
+
+  requestCodeSearchNavigate(direction: "next" | "prev"): void {
+    this.codeSearchNavDirection = direction;
+    this.codeSearchNavTick += 1;
   }
 
   setTarget(line: number, side: "old" | "new"): void {

@@ -5,6 +5,8 @@ interface GraphPanelHeaderProps {
   title: string;
   isOld: boolean;
   stats: DiffStats;
+  searchQuery: string;
+  searchExclude: boolean;
   searchMatchCount: number;
   searchIndex: number;
   onSearch: (query: string, exclude: boolean) => void;
@@ -16,6 +18,8 @@ export const GraphPanelHeader = ({
   title,
   isOld,
   stats,
+  searchQuery,
+  searchExclude,
   searchMatchCount,
   searchIndex,
   onSearch,
@@ -34,6 +38,8 @@ export const GraphPanelHeader = ({
       )}
       <SearchBox
         placeholder="Search nodes..."
+        query={searchQuery}
+        exclude={searchExclude}
         onSearch={onSearch}
         onNext={onSearchNext}
         onPrev={onSearchPrev}

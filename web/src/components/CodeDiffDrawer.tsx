@@ -23,12 +23,22 @@ import { useViewBaseRuntime } from "../views/viewBase/runtime";
 
 export const CodeDiffDrawer = observer(() => {
   const { state, actions } = useViewBaseRuntime();
-  const { selectedFile: file, targetLine, targetSide, scrollTick } = state;
-  const { onCodeLineClick } = actions;
+  const {
+    selectedFile: file,
+    targetLine,
+    targetSide,
+    scrollTick,
+    codeSearchNavDirection,
+    codeSearchNavTick,
+  } = state;
+  const { onCodeLineClick, onCodeSearchStateChange } = actions;
   const store = useLocalObservable(() => new CodeDiffDrawerStore());
   const oldCodeScrollRef = useRef<HTMLDivElement>(null);
   const newCodeScrollRef = useRef<HTMLDivElement>(null);
   const syncingScrollRef = useRef(false);
+  const pendingLineClickTimerRef = useRef<number | null>(null);
+  const lastAppliedCodeSearchNavTickRef = useRef(0);
+  const SINGLE_CLICK_DELAY_MS = 450;
 
   const lang = useMemo(() => langFromPath(file?.path ?? ""), [file?.path]);
   const hasOld = useMemo(() => (file?.oldContent ?? "").length > 0, [file?.oldContent]);
@@ -57,7 +67,7 @@ export const CodeDiffDrawer = observer(() => {
     const query = store.textSearch.toLowerCase();
     const matches: number[] = [];
     matrixRows.forEach((row, i) => {
-      if (row.new.text.toLowerCase().includes(query)) matches.push(i);
+      if (row.new.text.toLowerCase().includes(query) || row.old.text.toLowerCase().includes(query)) matches.push(i);
     });
     return matches;
   }, [store.textSearch, diff, matrixRows]);
@@ -101,11 +111,25 @@ export const CodeDiffDrawer = observer(() => {
   }, [textSearchMatches, store]);
 
   const handleTextSearchKey = useCallback((event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (store.textSearch.trim().length === 0) return;
     if (event.key === "Enter") {
       goToTextMatch(event.shiftKey ? store.textSearchIdx - 1 : store.textSearchIdx + 1);
       event.preventDefault();
+      event.stopPropagation();
+      return;
     }
-  }, [goToTextMatch, store.textSearchIdx]);
+    if (event.key === "ArrowDown") {
+      goToTextMatch(store.textSearchIdx + 1);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      goToTextMatch(store.textSearchIdx - 1);
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, [goToTextMatch, store.textSearch, store.textSearchIdx]);
 
   const syncVerticalScroll = useCallback((source: HTMLDivElement | null, target: HTMLDivElement | null) => {
     if (!source || !target) return;
@@ -125,9 +149,43 @@ export const CodeDiffDrawer = observer(() => {
     syncVerticalScroll(newCodeScrollRef.current, oldCodeScrollRef.current);
   }, [syncVerticalScroll]);
 
+  const handleDeferredLineClick = useCallback((line: number, side: "old" | "new") => {
+    if (pendingLineClickTimerRef.current !== null) {
+      window.clearTimeout(pendingLineClickTimerRef.current);
+      pendingLineClickTimerRef.current = null;
+    }
+    pendingLineClickTimerRef.current = window.setTimeout(() => {
+      pendingLineClickTimerRef.current = null;
+      onCodeLineClick(line, side);
+    }, SINGLE_CLICK_DELAY_MS);
+  }, [onCodeLineClick, SINGLE_CLICK_DELAY_MS]);
+
+  const handleLineDoubleClick = useCallback((_line: number, _side: "old" | "new", word: string) => {
+    if (pendingLineClickTimerRef.current !== null) {
+      window.clearTimeout(pendingLineClickTimerRef.current);
+      pendingLineClickTimerRef.current = null;
+    }
+    const query = word.trim();
+    if (!query) return;
+    store.setTextSearch(query);
+    store.setTextSearchIdx(0);
+
+    const normalized = query.toLowerCase();
+    const firstMatchIdx = matrixRows.findIndex(
+      (row) => row.new.text.toLowerCase().includes(normalized) || row.old.text.toLowerCase().includes(normalized),
+    );
+    if (firstMatchIdx >= 0) {
+      scrollToRowIndex(oldCodeScrollRef.current, firstMatchIdx);
+    }
+  }, [matrixRows, store]);
+
   useEffect(() => {
     store.resetHunkIdx();
   }, [file?.path, store]);
+
+  useEffect(() => {
+    onCodeSearchStateChange(store.textSearch.trim().length > 0);
+  }, [onCodeSearchStateChange, store.textSearch]);
 
   useEffect(() => {
     if (targetLine <= 0) return;
@@ -153,6 +211,25 @@ export const CodeDiffDrawer = observer(() => {
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [store.isFullscreen, store]);
+
+  useEffect(() => {
+    if (codeSearchNavTick <= 0) return;
+    if (codeSearchNavTick === lastAppliedCodeSearchNavTickRef.current) return;
+    lastAppliedCodeSearchNavTickRef.current = codeSearchNavTick;
+    if (codeSearchNavDirection === "next") {
+      goToTextMatch(store.textSearchIdx + 1);
+      return;
+    }
+    goToTextMatch(store.textSearchIdx - 1);
+  }, [codeSearchNavDirection, codeSearchNavTick, goToTextMatch, store.textSearchIdx]);
+
+  useEffect(() => () => {
+    onCodeSearchStateChange(false);
+    if (pendingLineClickTimerRef.current !== null) {
+      window.clearTimeout(pendingLineClickTimerRef.current);
+      pendingLineClickTimerRef.current = null;
+    }
+  }, [onCodeSearchStateChange]);
 
   const panelClassName = store.isFullscreen ? "codeDiffPanel codeDiffPanelFullscreen" : "codeDiffPanel";
   const fullscreenTitle = store.isFullscreen ? "Exit full screen" : "Full screen";
@@ -192,9 +269,11 @@ export const CodeDiffDrawer = observer(() => {
           filePath={file.path}
           content={file.newContent}
           language={lang}
+          searchQuery={store.textSearch}
           oldCodeScrollRef={oldCodeScrollRef}
           newCodeScrollRef={newCodeScrollRef}
-          onLineClick={onCodeLineClick}
+          onLineClick={handleDeferredLineClick}
+          onLineDoubleClick={handleLineDoubleClick}
         />
       </section>
     );
@@ -211,9 +290,11 @@ export const CodeDiffDrawer = observer(() => {
           filePath={file.path}
           content={file.oldContent}
           language={lang}
+          searchQuery={store.textSearch}
           oldCodeScrollRef={oldCodeScrollRef}
           newCodeScrollRef={newCodeScrollRef}
-          onLineClick={onCodeLineClick}
+          onLineClick={handleDeferredLineClick}
+          onLineDoubleClick={handleLineDoubleClick}
         />
       </section>
     );
@@ -241,11 +322,13 @@ export const CodeDiffDrawer = observer(() => {
       <CodeDiffMatrixView
         matrixRows={matrixRows}
         language={lang}
+        searchQuery={store.textSearch}
         oldCodeScrollRef={oldCodeScrollRef}
         newCodeScrollRef={newCodeScrollRef}
         onOldScroll={handleOldScroll}
         onNewScroll={handleNewScroll}
-        onLineClick={onCodeLineClick}
+        onLineClick={handleDeferredLineClick}
+        onLineDoubleClick={handleLineDoubleClick}
       />
     </section>
   );

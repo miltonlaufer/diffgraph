@@ -1,7 +1,7 @@
 import { memo, type MutableRefObject } from "react";
 import { HighlightedCode } from "./HighlightedCode";
 import type { DiffLine } from "./types";
-import { lineStyle } from "./diffUtils";
+import { extractSearchWordFromDoubleClick, lineStyle } from "./diffUtils";
 
 interface SimpleRowProps {
   side: "old" | "new";
@@ -9,19 +9,35 @@ interface SimpleRowProps {
   lineNum: number;
   type: DiffLine["type"];
   language: string;
+  searchQuery: string;
   onLineClick?: (line: number, side: "old" | "new") => void;
+  onLineDoubleClick?: (line: number, side: "old" | "new", word: string) => void;
 }
 
-const SimpleRow = memo(({ side, text, lineNum, type, language, onLineClick }: SimpleRowProps) => (
+const SimpleRow = memo(({
+  side,
+  text,
+  lineNum,
+  type,
+  language,
+  searchQuery,
+  onLineClick,
+  onLineDoubleClick,
+}: SimpleRowProps) => (
   <tr
     data-line={`${side}-${lineNum}`}
     data-old-line={side === "old" ? lineNum : undefined}
     data-new-line={side === "new" ? lineNum : undefined}
     style={{ ...lineStyle(type), cursor: onLineClick ? "pointer" : "default" }}
     onClick={() => onLineClick?.(lineNum, side)}
+    onDoubleClick={(event) => {
+      const word = extractSearchWordFromDoubleClick(event);
+      if (!word) return;
+      onLineDoubleClick?.(lineNum, side, word);
+    }}
   >
     <td className="lineNum">{lineNum}</td>
-    <td className="lineCode"><HighlightedCode code={text} language={language} /></td>
+    <td className="lineCode"><HighlightedCode code={text} language={language} searchQuery={searchQuery} /></td>
   </tr>
 ));
 
@@ -30,9 +46,11 @@ interface CodeDiffSingleFileViewProps {
   filePath: string;
   content: string;
   language: string;
+  searchQuery: string;
   oldCodeScrollRef: MutableRefObject<HTMLDivElement | null>;
   newCodeScrollRef: MutableRefObject<HTMLDivElement | null>;
   onLineClick?: (line: number, side: "old" | "new") => void;
+  onLineDoubleClick?: (line: number, side: "old" | "new", word: string) => void;
 }
 
 export const CodeDiffSingleFileView = ({
@@ -40,9 +58,11 @@ export const CodeDiffSingleFileView = ({
   filePath,
   content,
   language,
+  searchQuery,
   oldCodeScrollRef,
   newCodeScrollRef,
   onLineClick,
+  onLineDoubleClick,
 }: CodeDiffSingleFileViewProps) => {
   const isAdded = mode === "added";
   const lineCount = content.split("\n").length;
@@ -60,7 +80,17 @@ export const CodeDiffSingleFileView = ({
               <table className="diffTable">
                 <tbody>
                   {content.split("\n").map((line, i) => (
-                    <SimpleRow key={`old-${i}`} side="old" text={line} lineNum={i + 1} type="removed" language={language} onLineClick={onLineClick} />
+                    <SimpleRow
+                      key={`old-${i}`}
+                      side="old"
+                      text={line}
+                      lineNum={i + 1}
+                      type="removed"
+                      language={language}
+                      searchQuery={searchQuery}
+                      onLineClick={onLineClick}
+                      onLineDoubleClick={onLineDoubleClick}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -74,7 +104,17 @@ export const CodeDiffSingleFileView = ({
               <table className="diffTable">
                 <tbody>
                   {content.split("\n").map((line, i) => (
-                    <SimpleRow key={`new-${i}`} side="new" text={line} lineNum={i + 1} type="added" language={language} onLineClick={onLineClick} />
+                    <SimpleRow
+                      key={`new-${i}`}
+                      side="new"
+                      text={line}
+                      lineNum={i + 1}
+                      type="added"
+                      language={language}
+                      searchQuery={searchQuery}
+                      onLineClick={onLineClick}
+                      onLineDoubleClick={onLineDoubleClick}
+                    />
                   ))}
                 </tbody>
               </table>

@@ -8,11 +8,15 @@ interface ViewBaseRuntimeState {
   targetLine: number;
   targetSide: "old" | "new";
   scrollTick: number;
+  codeSearchNavDirection: "next" | "prev";
+  codeSearchNavTick: number;
 }
 
 interface ViewBaseRuntimeActions {
   onFileSelect: (filePath: string) => void;
   onCodeLineClick: (line: number, side: "old" | "new") => void;
+  onCodeLineDoubleClick: (line: number, side: "old" | "new", word: string) => void;
+  onCodeSearchStateChange: (active: boolean) => void;
 }
 
 export interface ViewBaseRuntimeContextValue {

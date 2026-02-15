@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { observer, useLocalObservable } from "mobx-react-lite";
 import { CodeDiffDrawer } from "../components/CodeDiffDrawer";
 import { FileListPanel } from "../components/FileListPanel";
@@ -9,6 +9,7 @@ import type { FileSymbol, ViewportState } from "../types/graph";
 import { LogicToolbar } from "./viewBase/LogicToolbar";
 import {
   commandCodeLineClick,
+  commandCodeLineDoubleClick,
   commandFocusGraphNode,
   commandGoToGraphDiff,
   commandSelectFile,
@@ -189,6 +190,13 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     [store],
   );
 
+  const handleSearchStateChange = useCallback(
+    (side: "old" | "new", active: boolean) => {
+      store.setGraphSearchActive(side, active);
+    },
+    [store],
+  );
+
   const handleNodeHoverChange = useCallback(
     (side: "old" | "new", nodeId: string, matchKey: string) => {
       commandSetHoveredNode(commandContext, side, nodeId, matchKey);
@@ -208,6 +216,12 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
       focusNodeId: store.focusNodeId,
       focusNodeTick: store.focusNodeTick,
       focusSourceSide: store.focusSourceSide,
+      graphSearchSide: store.graphSearchSide,
+      graphSearchQuery: store.graphSearchQuery,
+      graphSearchTick: store.graphSearchTick,
+      graphSearchNavSide: store.graphSearchNavSide,
+      graphSearchNavDirection: store.graphSearchNavDirection,
+      graphSearchNavTick: store.graphSearchNavTick,
       focusFilePath: store.selectedFilePath,
       focusFileTick: store.focusFileTick,
       hoveredNodeId: store.hoveredNodeId,
@@ -223,12 +237,14 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
       onTopLevelAnchorsChange: handleTopLevelAnchorsChange,
       onNodeAnchorsChange: handleNodeAnchorsChange,
       onLayoutPendingChange: handleLayoutPendingChange,
+      onSearchStateChange: handleSearchStateChange,
     },
   }), [
     handleDiffTargetsChange,
     handleGraphNodeFocus,
     handleInteractionClick,
     handleLayoutPendingChange,
+    handleSearchStateChange,
     handleNodeHoverChange,
     handleNodeSelect,
     handleNodeAnchorsChange,
@@ -238,6 +254,12 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     store.focusNodeId,
     store.focusSourceSide,
     store.focusNodeTick,
+    store.graphSearchQuery,
+    store.graphSearchSide,
+    store.graphSearchTick,
+    store.graphSearchNavDirection,
+    store.graphSearchNavSide,
+    store.graphSearchNavTick,
     store.hoveredNodeId,
     store.hoveredNodeMatchKey,
     store.highlightedNodeId,
@@ -263,6 +285,20 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     [commandContext, selectedFile?.path, store.selectedFilePath, displayOldGraph, displayNewGraph, highlightTimerRef],
   );
 
+  const handleCodeLineDoubleClick = useCallback(
+    (_line: number, side: "old" | "new", word: string) => {
+      commandCodeLineDoubleClick(commandContext, side, word);
+    },
+    [commandContext],
+  );
+
+  const handleCodeSearchStateChange = useCallback(
+    (active: boolean) => {
+      store.setCodeSearchActive(active);
+    },
+    [store],
+  );
+
   const viewBaseRuntime = useMemo<ViewBaseRuntimeContextValue>(() => ({
     state: {
       files: store.fileDiffs,
@@ -271,14 +307,22 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
       targetLine: store.targetLine,
       targetSide: store.targetSide,
       scrollTick: store.scrollTick,
+      codeSearchNavDirection: store.codeSearchNavDirection,
+      codeSearchNavTick: store.codeSearchNavTick,
     },
     actions: {
       onFileSelect: handleFileSelect,
       onCodeLineClick: handleCodeLineClick,
+      onCodeLineDoubleClick: handleCodeLineDoubleClick,
+      onCodeSearchStateChange: handleCodeSearchStateChange,
     },
   }), [
     handleCodeLineClick,
+    handleCodeLineDoubleClick,
+    handleCodeSearchStateChange,
     handleFileSelect,
+    store.codeSearchNavDirection,
+    store.codeSearchNavTick,
     selectedFile,
     store.fileDiffs,
     store.scrollTick,
@@ -308,6 +352,49 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
   const goToNextGraphDiff = useCallback(() => {
     goToGraphDiff(store.graphDiffIdx + 1);
   }, [goToGraphDiff, store.graphDiffIdx]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+
+      const direction: "next" | "prev" = event.key === "ArrowDown" ? "next" : "prev";
+      if (store.codeSearchActive) {
+        store.requestCodeSearchNavigate(direction);
+        event.preventDefault();
+        return;
+      }
+      const hasGraphSearchActive = store.oldGraphSearchActive || store.newGraphSearchActive;
+      if (hasGraphSearchActive) {
+        const side: "old" | "new" = store.newGraphSearchActive ? "new" : "old";
+        store.requestGraphSearchNavigate(side, direction);
+        event.preventDefault();
+        return;
+      }
+
+      if (viewType !== "logic" || graphDiffTargets.length === 0) return;
+      if (direction === "next") {
+        goToNextGraphDiff();
+      } else {
+        goToPrevGraphDiff();
+      }
+      event.preventDefault();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [
+    goToNextGraphDiff,
+    goToPrevGraphDiff,
+    graphDiffTargets.length,
+    store,
+    store.codeSearchActive,
+    store.newGraphSearchActive,
+    store.oldGraphSearchActive,
+    viewType,
+  ]);
 
   useViewBaseEffects({
     store,

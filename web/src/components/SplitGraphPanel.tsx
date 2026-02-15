@@ -226,6 +226,12 @@ export const SplitGraphPanel = observer(({
     focusNodeId,
     focusNodeTick,
     focusSourceSide,
+    graphSearchSide,
+    graphSearchQuery,
+    graphSearchTick,
+    graphSearchNavSide,
+    graphSearchNavDirection,
+    graphSearchNavTick,
     focusFilePath,
     focusFileTick,
     hoveredNodeId,
@@ -241,6 +247,7 @@ export const SplitGraphPanel = observer(({
     onTopLevelAnchorsChange,
     onNodeAnchorsChange,
     onLayoutPendingChange,
+    onSearchStateChange,
   } = runtimeActions;
   const store = useLocalObservable(() => new SplitGraphPanelStore());
   const searchHighlightTimerRef = useRef<number | null>(null);
@@ -249,6 +256,7 @@ export const SplitGraphPanel = observer(({
   const lastEdgeNavigationRef = useRef<{ edgeId: string; lastEndpoint: "source" | "target" } | null>(null);
   const lastAppliedFocusNodeTickRef = useRef(0);
   const lastAppliedFocusFileTickRef = useRef(0);
+  const lastAppliedSearchTickRef = useRef(0);
   const lastViewportRecoveryKeyRef = useRef("");
   const lastNodeAnchorSignatureRef = useRef("");
   const layoutResult = store.layoutResult;
@@ -985,6 +993,47 @@ export const SplitGraphPanel = observer(({
   }, [internalNodeAnchors, onNodeAnchorsChange, side]);
 
   useEffect(() => {
+    if (graphSearchTick <= 0) return;
+    if (graphSearchTick === lastAppliedSearchTickRef.current) return;
+    lastAppliedSearchTickRef.current = graphSearchTick;
+    if (graphSearchSide !== side) return;
+    const query = graphSearchQuery.trim();
+    if (!query) return;
+    store.setLastAutoFocusSearchKey("");
+    store.setSearch(query, false);
+  }, [graphSearchQuery, graphSearchSide, graphSearchTick, side, store]);
+
+  useEffect(() => {
+    onSearchStateChange?.(side, store.searchQuery.trim().length > 0 && !store.searchExclude);
+  }, [onSearchStateChange, side, store.searchExclude, store.searchQuery]);
+
+  useEffect(() => () => {
+    onSearchStateChange?.(side, false);
+  }, [onSearchStateChange, side]);
+
+  useEffect(() => {
+    if (graphSearchNavTick <= 0) return;
+    if (graphSearchNavSide !== side) return;
+    if (store.searchQuery.trim().length < 1 || store.searchExclude) return;
+    if (searchMatches.length === 0) return;
+    if (graphSearchNavDirection === "next") {
+      handleSearchNext();
+      return;
+    }
+    handleSearchPrev();
+  }, [
+    graphSearchNavDirection,
+    graphSearchNavSide,
+    graphSearchNavTick,
+    handleSearchNext,
+    handleSearchPrev,
+    searchMatches.length,
+    side,
+    store.searchExclude,
+    store.searchQuery,
+  ]);
+
+  useEffect(() => {
     if (!store.searchQuery || store.searchQuery.length < 2 || searchMatches.length === 0) return;
     const searchKey = `${store.searchExclude ? "exclude" : "include"}:${store.searchQuery.toLowerCase()}`;
     if (store.lastAutoFocusSearchKey === searchKey) return;
@@ -1100,6 +1149,8 @@ export const SplitGraphPanel = observer(({
         title={title}
         isOld={isOld}
         stats={stats}
+        searchQuery={store.searchQuery}
+        searchExclude={store.searchExclude}
         searchMatchCount={searchMatches.length}
         searchIndex={store.searchIdx}
         onSearch={handleSearch}
