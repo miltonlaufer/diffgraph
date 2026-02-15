@@ -63,17 +63,16 @@ interface CodeContextData {
 }
 
 const extractCodeContext = (
-  fileContent: string,
+  fileLines: string[],
   startLine: number | undefined,
   endLine: number | undefined,
 ): CodeContextData => {
-  if (!startLine || !fileContent) return { lines: [] };
-  const allLines = fileContent.split("\n");
+  if (!startLine || fileLines.length === 0) return { lines: [] };
   const from = Math.max(0, startLine - 6);
-  const to = Math.min(allLines.length, (endLine ?? startLine) + 5);
+  const to = Math.min(fileLines.length, (endLine ?? startLine) + 5);
   const end = endLine ?? startLine;
   return {
-    lines: allLines.slice(from, to).map((text, i) => {
+    lines: fileLines.slice(from, to).map((text, i) => {
       const num = from + i + 1;
       return { num, text, highlight: num >= startLine && num <= end };
     }),
@@ -114,6 +113,15 @@ const computeLogicLayout = (
   fileContentMap: Map<string, string>,
   showCalls: boolean,
 ): { nodes: Node[]; edges: Edge[] } => {
+  const fileLinesCache = new Map<string, string[]>();
+  const getFileLines = (normalizedFilePath: string): string[] => {
+    const cached = fileLinesCache.get(normalizedFilePath);
+    if (cached) return cached;
+    const content = fileContentMap.get(normalizedFilePath) ?? "";
+    const lines = content.length > 0 ? content.split("\n") : [];
+    fileLinesCache.set(normalizedFilePath, lines);
+    return lines;
+  };
   const graphNodeById = new Map(graph.nodes.map((n) => [n.id, n]));
   const groupNodes = graph.nodes.filter((n) => n.kind === "group");
   const leafNodes = graph.nodes.filter((n) => n.kind !== "group");
@@ -295,8 +303,7 @@ const computeLogicLayout = (
       const pos = parentOk ? (childPos.get(node.id) ?? { x: 0, y: 0 }) : (topPos.get(node.id) ?? { x: 0, y: 0 });
       const ownerFn = node.parentId ? graphNodeById.get(node.parentId) : undefined;
       const normalizedFilePath = normPath(node.filePath);
-      const fileContent = fileContentMap.get(normalizedFilePath) ?? "";
-      const codeContext = extractCodeContext(fileContent, node.startLine, node.endLine);
+      const codeContext = extractCodeContext(getFileLines(normalizedFilePath), node.startLine, node.endLine);
       const nodeLang = langFromPath(normalizedFilePath);
 
       let nodeBg = bg;
@@ -433,6 +440,15 @@ const computeFlatLayout = (
   selectedNodeId: string,
   fileContentMap: Map<string, string>,
 ): { nodes: Node[]; edges: Edge[] } => {
+  const fileLinesCache = new Map<string, string[]>();
+  const getFileLines = (normalizedFilePath: string): string[] => {
+    const cached = fileLinesCache.get(normalizedFilePath);
+    if (cached) return cached;
+    const content = fileContentMap.get(normalizedFilePath) ?? "";
+    const lines = content.length > 0 ? content.split("\n") : [];
+    fileLinesCache.set(normalizedFilePath, lines);
+    return lines;
+  };
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir: "LR", nodesep: 50, ranksep: 80, marginx: 50, marginy: 50 });
@@ -448,8 +464,7 @@ const computeFlatLayout = (
     const txt = statusTextColor[node.diffStatus] ?? "#f8fafc";
     const sel = node.id === selectedNodeId;
     const nfp = normPath(node.filePath);
-    const fileContent = fileContentMap.get(nfp) ?? "";
-    const codeContext = extractCodeContext(fileContent, node.startLine, node.endLine);
+    const codeContext = extractCodeContext(getFileLines(nfp), node.startLine, node.endLine);
     const lang = langFromPath(nfp);
     return {
       id: node.id,

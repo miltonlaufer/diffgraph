@@ -21,6 +21,7 @@ export class SplitGraphPanelStore {
   layoutResult: LayoutResult = { nodes: [], edges: [] };
   workerReady = false;
   workerFailed = false;
+  layoutPending = false;
   lastAutoFocusSearchKey = "";
 
   constructor() {
@@ -66,6 +67,10 @@ export class SplitGraphPanelStore {
 
   setWorkerFailed(failed: boolean): void {
     this.workerFailed = failed;
+  }
+
+  setLayoutPending(pending: boolean): void {
+    this.layoutPending = pending;
   }
 
   setLastAutoFocusSearchKey(key: string): void {

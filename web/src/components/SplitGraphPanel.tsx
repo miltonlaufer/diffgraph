@@ -51,6 +51,7 @@ export const SplitGraphPanel = observer(({
   const flowContainerRef = useRef<HTMLDivElement>(null);
   const layoutWorkerRef = useRef<Worker | null>(null);
   const layoutRequestIdRef = useRef(0);
+  const layoutWatchdogTimerRef = useRef<number | null>(null);
   const lastAppliedFocusNodeSignatureRef = useRef("");
   const lastAppliedFocusFileTickRef = useRef(0);
 
@@ -332,14 +333,25 @@ export const SplitGraphPanel = observer(({
     const handleMessage = (event: MessageEvent<LayoutWorkerResponse>): void => {
       const data = event.data;
       if (data.requestId !== layoutRequestIdRef.current) return;
+      if (layoutWatchdogTimerRef.current !== null) {
+        window.clearTimeout(layoutWatchdogTimerRef.current);
+        layoutWatchdogTimerRef.current = null;
+      }
       if (!data.ok) {
+        store.setLayoutPending(false);
         store.setWorkerFailed(true);
         return;
       }
+      store.setLayoutPending(false);
       store.setLayoutResult({ nodes: data.result.nodes as Node[], edges: data.result.edges as Edge[] });
     };
 
     const handleError = (): void => {
+      if (layoutWatchdogTimerRef.current !== null) {
+        window.clearTimeout(layoutWatchdogTimerRef.current);
+        layoutWatchdogTimerRef.current = null;
+      }
+      store.setLayoutPending(false);
       store.setWorkerFailed(true);
     };
 
@@ -351,6 +363,10 @@ export const SplitGraphPanel = observer(({
       worker.removeEventListener("message", handleMessage as EventListener);
       worker.removeEventListener("error", handleError as EventListener);
       worker.terminate();
+      if (layoutWatchdogTimerRef.current !== null) {
+        window.clearTimeout(layoutWatchdogTimerRef.current);
+        layoutWatchdogTimerRef.current = null;
+      }
       layoutWorkerRef.current = null;
       store.setWorkerReady(false);
     };
@@ -361,9 +377,15 @@ export const SplitGraphPanel = observer(({
     layoutRequestIdRef.current = requestId;
 
     if (store.workerFailed) {
+      store.setLayoutPending(true);
       const fallbackTimer = window.setTimeout(() => {
         if (requestId !== layoutRequestIdRef.current) return;
-        store.setLayoutResult(computeLayoutSync());
+        try {
+          store.setLayoutResult(computeLayoutSync());
+        } catch {
+          store.setWorkerFailed(true);
+        }
+        store.setLayoutPending(false);
       }, 0);
       return () => {
         window.clearTimeout(fallbackTimer);
@@ -379,6 +401,16 @@ export const SplitGraphPanel = observer(({
       showCalls,
       fileEntries,
     };
+    store.setLayoutPending(true);
+    if (layoutWatchdogTimerRef.current !== null) {
+      window.clearTimeout(layoutWatchdogTimerRef.current);
+    }
+    layoutWatchdogTimerRef.current = window.setTimeout(() => {
+      if (requestId !== layoutRequestIdRef.current) return;
+      if (store.layoutResult.nodes.length > 0) return;
+      store.setLayoutPending(false);
+      store.setWorkerFailed(true);
+    }, 8000);
     layoutWorkerRef.current.postMessage(payload);
   }, [computeLayoutSync, fileEntries, graph, showCalls, store, viewType, store.workerFailed, store.workerReady]);
 
@@ -493,6 +525,9 @@ export const SplitGraphPanel = observer(({
         onSearchNext={handleSearchNext}
         onSearchPrev={handleSearchPrev}
       />
+      {store.layoutPending && graph.nodes.length > 0 && (
+        <p className="dimText" style={{ marginTop: 6, marginBottom: 0 }}>Laying out graph...</p>
+      )}
       <GraphCanvas
         side={side}
         isOld={isOld}

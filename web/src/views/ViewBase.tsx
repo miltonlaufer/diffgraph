@@ -7,6 +7,17 @@ import { SplitGraphPanel, type GraphDiffTarget, type TopLevelAnchor } from "../c
 import { SymbolListPanel } from "../components/SymbolListPanel";
 import type { FileSymbol, ViewportState } from "../types/graph";
 import { LogicToolbar } from "./viewBase/LogicToolbar";
+import {
+  commandCodeLineClick,
+  commandGoToGraphDiff,
+  commandSelectFile,
+  commandSelectNode,
+  commandSelectSymbol,
+  commandSetDiffTargets,
+  commandSetTopLevelAnchors,
+  commandSetViewport,
+  commandToggleShowCalls,
+} from "./viewBase/commands";
 import { ViewBaseStore } from "./viewBase/store";
 import type { ViewType } from "./viewBase/types";
 import {
@@ -151,113 +162,89 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     });
   }, [cancelPendingFrames, startUiTransition, store]);
 
-  const handleNodeSelect = useCallback(
-    (nodeId: string, sourceSide: "old" | "new") => {
-      runInteractiveUpdate(() => {
-        store.setSelectedNodeId(nodeId);
-        store.focusNode(nodeId);
-        const matchedOld = store.oldGraph.nodes.find((n) => n.id === nodeId);
-        const matchedNew = store.newGraph.nodes.find((n) => n.id === nodeId);
-        const primary = sourceSide === "old" ? matchedOld : matchedNew;
-        const fallback = sourceSide === "old" ? matchedNew : matchedOld;
-        const filePath = primary?.filePath ?? fallback?.filePath ?? "";
-        if (filePath.length > 0) {
-          store.setSelectedFilePath(normalizePath(filePath));
-        }
-        const line = primary?.startLine ?? fallback?.startLine ?? 0;
-        store.setTarget(line, sourceSide);
-        store.bumpScrollTick();
-      });
-    },
-    [runInteractiveUpdate, store],
+  const commandContext = useMemo(
+    () => ({ store, runInteractiveUpdate }),
+    [store, runInteractiveUpdate],
   );
 
-  const handleFileSelect = useCallback((filePath: string) => {
-    runInteractiveUpdate(() => {
-      store.setSelectedFilePath(filePath);
-      store.bumpFocusFileTick();
-    });
-  }, [runInteractiveUpdate, store]);
+  const handleNodeSelect = useCallback(
+    (nodeId: string, sourceSide: "old" | "new") => {
+      commandSelectNode(commandContext, nodeId, sourceSide);
+    },
+    [commandContext],
+  );
 
-  const handleSymbolClick = useCallback((startLine: number) => {
-    store.setTarget(startLine, "new");
-    store.bumpScrollTick();
-  }, [store]);
+  const handleFileSelect = useCallback(
+    (filePath: string) => {
+      commandSelectFile(commandContext, filePath);
+    },
+    [commandContext],
+  );
 
-  const handleViewportChange = useCallback((viewport: ViewportState) => {
-    store.setSharedViewport(viewport);
-  }, [store]);
+  const handleSymbolClick = useCallback(
+    (startLine: number) => {
+      commandSelectSymbol(commandContext, startLine);
+    },
+    [commandContext],
+  );
 
-  const handleShowCallsChange = useCallback((nextChecked: boolean) => {
-    runInteractiveUpdate(() => {
-      store.setShowCalls(nextChecked);
-    });
-  }, [runInteractiveUpdate, store]);
+  const handleViewportChange = useCallback(
+    (viewport: ViewportState) => {
+      commandSetViewport(commandContext, viewport);
+    },
+    [commandContext],
+  );
 
-  const handleDiffTargetsChange = useCallback((side: "old" | "new", targets: GraphDiffTarget[]) => {
-    store.setDiffTargets(side, targets);
-  }, [store]);
+  const handleShowCallsChange = useCallback(
+    (nextChecked: boolean) => {
+      commandToggleShowCalls(commandContext, nextChecked);
+    },
+    [commandContext],
+  );
 
-  const handleTopLevelAnchorsChange = useCallback((side: "old" | "new", anchors: Record<string, TopLevelAnchor>) => {
-    store.setTopLevelAnchors(side, anchors);
-  }, [store]);
+  const handleDiffTargetsChange = useCallback(
+    (side: "old" | "new", targets: GraphDiffTarget[]) => {
+      commandSetDiffTargets(commandContext, side, targets);
+    },
+    [commandContext],
+  );
 
-  const handleCodeLineClick = useCallback((line: number, side: "old" | "new") => {
-    const filePath = normalizePath(selectedFile?.path ?? store.selectedFilePath);
-    if (!filePath) return;
+  const handleTopLevelAnchorsChange = useCallback(
+    (side: "old" | "new", anchors: Record<string, TopLevelAnchor>) => {
+      commandSetTopLevelAnchors(commandContext, side, anchors);
+    },
+    [commandContext],
+  );
 
-    const sideGraph = side === "old" ? displayOldGraph : displayNewGraph;
-    const inFile = sideGraph.nodes.filter((n) => normalizePath(n.filePath) === filePath);
-    if (inFile.length === 0) return;
+  const handleCodeLineClick = useCallback(
+    (line: number, side: "old" | "new") => {
+      commandCodeLineClick(
+        {
+          ...commandContext,
+          selectedFilePath: selectedFile?.path ?? store.selectedFilePath,
+          displayOldGraph,
+          displayNewGraph,
+        },
+        line,
+        side,
+      );
+    },
+    [commandContext, selectedFile?.path, store.selectedFilePath, displayOldGraph, displayNewGraph],
+  );
 
-    const withRange = inFile.filter(
-      (n) =>
-        (n.startLine ?? 0) > 0
-        && (n.endLine ?? n.startLine ?? 0) >= (n.startLine ?? 0),
-    );
-
-    const containing = withRange.filter((n) => {
-      const start = n.startLine ?? 0;
-      const end = n.endLine ?? start;
-      return line >= start && line <= end;
-    });
-
-    const candidates = containing.length > 0 ? containing : withRange;
-    if (candidates.length === 0) return;
-
-    candidates.sort((a, b) => {
-      const aStart = a.startLine ?? 0;
-      const aEnd = a.endLine ?? aStart;
-      const bStart = b.startLine ?? 0;
-      const bEnd = b.endLine ?? bStart;
-      const aSpan = Math.max(1, aEnd - aStart + 1);
-      const bSpan = Math.max(1, bEnd - bStart + 1);
-      if (aSpan !== bSpan) return aSpan - bSpan;
-      if (a.kind === "Branch" && b.kind !== "Branch") return -1;
-      if (b.kind === "Branch" && a.kind !== "Branch") return 1;
-      return Math.abs(aStart - line) - Math.abs(bStart - line);
-    });
-
-    const target = candidates[0];
-    store.setSelectedNodeId(target.id);
-    store.focusNode(target.id);
-  }, [selectedFile, store, displayOldGraph, displayNewGraph]);
-
-  const goToGraphDiff = useCallback((idx: number) => {
-    if (graphDiffTargets.length === 0) return;
-    const normalized = ((idx % graphDiffTargets.length) + graphDiffTargets.length) % graphDiffTargets.length;
-    store.setGraphDiffIdx(normalized);
-    const target = graphDiffTargets[normalized];
-    store.setHighlightedNodeId(target.id);
-    if (highlightTimerRef.current !== null) {
-      window.clearTimeout(highlightTimerRef.current);
-    }
-    highlightTimerRef.current = window.setTimeout(() => {
-      store.clearHighlightedNode();
-      highlightTimerRef.current = null;
-    }, 1400);
-    store.setSharedViewport({ x: target.viewportX, y: target.viewportY, zoom: target.viewportZoom });
-  }, [graphDiffTargets, store]);
+  const goToGraphDiff = useCallback(
+    (idx: number) => {
+      commandGoToGraphDiff(
+        {
+          ...commandContext,
+          graphDiffTargets,
+          highlightTimerRef,
+        },
+        idx,
+      );
+    },
+    [commandContext, graphDiffTargets],
+  );
 
   const goToPrevGraphDiff = useCallback(() => {
     goToGraphDiff(store.graphDiffIdx - 1);
