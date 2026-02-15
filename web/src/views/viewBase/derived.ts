@@ -1,15 +1,11 @@
-import type { AlignmentBreakpoint, InternalNodeAnchor, TopLevelAnchor } from "#/components/splitGraph/types";
 import type { ViewGraph } from "#/types/graph";
 import type { ViewType } from "./types";
 import {
-  computeAlignedTopAnchors,
-  computeAlignmentBreakpoints,
   computeChangedNodeCount,
   computeDiffStats,
   computeDisplayGraph,
   computeFilteredNewGraph,
   computeFilteredOldGraph,
-  computeNewAlignmentOffset,
   computeVisibleGraph,
 } from "./selectors";
 
@@ -19,10 +15,6 @@ export interface ViewBaseDerivedInput {
   selectedFilePath: string;
   showChangesOnly: boolean;
   viewType: ViewType;
-  oldTopAnchors: Record<string, TopLevelAnchor>;
-  newTopAnchors: Record<string, TopLevelAnchor>;
-  oldNodeAnchors: Record<string, InternalNodeAnchor>;
-  newNodeAnchors: Record<string, InternalNodeAnchor>;
 }
 
 export interface ViewBaseDerivedResult {
@@ -31,12 +23,6 @@ export interface ViewBaseDerivedResult {
   diffStats: { added: number; removed: number; modified: number };
   displayOldChangedCount: number;
   displayNewChangedCount: number;
-  newAlignmentOffset?: { x: number; y: number };
-  alignedTopAnchors: {
-    old: Record<string, TopLevelAnchor> | undefined;
-    new: Record<string, TopLevelAnchor> | undefined;
-  };
-  alignmentBreakpoints: Record<string, AlignmentBreakpoint[]>;
 }
 
 export const computeViewBaseDerived = ({
@@ -45,10 +31,6 @@ export const computeViewBaseDerived = ({
   selectedFilePath,
   showChangesOnly,
   viewType,
-  oldTopAnchors,
-  newTopAnchors,
-  oldNodeAnchors,
-  newNodeAnchors,
 }: ViewBaseDerivedInput): ViewBaseDerivedResult => {
   const filteredOldGraph = computeFilteredOldGraph(oldGraph);
   const filteredNewGraph = computeFilteredNewGraph(newGraph);
@@ -63,9 +45,5 @@ export const computeViewBaseDerived = ({
     diffStats: computeDiffStats(oldGraph, newGraph, selectedFilePath),
     displayOldChangedCount: computeChangedNodeCount(displayOldGraph),
     displayNewChangedCount: computeChangedNodeCount(displayNewGraph),
-    newAlignmentOffset: computeNewAlignmentOffset(viewType, oldTopAnchors, newTopAnchors),
-    alignedTopAnchors: computeAlignedTopAnchors(viewType, oldTopAnchors, newTopAnchors),
-    alignmentBreakpoints: computeAlignmentBreakpoints(viewType, oldNodeAnchors, newNodeAnchors),
   };
 };
-

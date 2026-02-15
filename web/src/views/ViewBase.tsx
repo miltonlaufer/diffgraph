@@ -29,6 +29,9 @@ import { useInteractiveUpdate } from "./viewBase/useInteractiveUpdate";
 import { useViewBaseEffects } from "./viewBase/useViewBaseEffects";
 import {
   buildFileContentMap,
+  computeAlignmentBreakpoints,
+  computeAlignedTopAnchors,
+  computeNewAlignmentOffset,
   normalizePath,
 } from "./viewBase/selectors";
 
@@ -51,19 +54,11 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
       selectedFilePath: store.selectedFilePath,
       showChangesOnly,
       viewType,
-      oldTopAnchors: store.oldTopAnchors,
-      newTopAnchors: store.newTopAnchors,
-      oldNodeAnchors: store.oldNodeAnchors,
-      newNodeAnchors: store.newNodeAnchors,
     }),
     [
       showChangesOnly,
       store.newGraph,
-      store.newNodeAnchors,
-      store.newTopAnchors,
       store.oldGraph,
-      store.oldNodeAnchors,
-      store.oldTopAnchors,
       store.selectedFilePath,
       viewType,
     ],
@@ -75,10 +70,22 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     diffStats,
     displayOldChangedCount,
     displayNewChangedCount,
-    newAlignmentOffset,
-    alignedTopAnchors,
-    alignmentBreakpoints,
   } = useViewBaseDerivedWorker(derivedInput);
+
+  const newAlignmentOffset = useMemo(
+    () => computeNewAlignmentOffset(viewType, store.oldTopAnchors, store.newTopAnchors),
+    [viewType, store.oldTopAnchors, store.newTopAnchors],
+  );
+
+  const alignedTopAnchors = useMemo(
+    () => computeAlignedTopAnchors(viewType, store.oldTopAnchors, store.newTopAnchors),
+    [viewType, store.oldTopAnchors, store.newTopAnchors],
+  );
+
+  const alignmentBreakpoints = useMemo(
+    () => computeAlignmentBreakpoints(viewType, store.oldNodeAnchors, store.newNodeAnchors),
+    [viewType, store.oldNodeAnchors, store.newNodeAnchors],
+  );
 
   const isEmptyView = useMemo(
     () => displayOldGraph.nodes.length === 0 && displayNewGraph.nodes.length === 0,
