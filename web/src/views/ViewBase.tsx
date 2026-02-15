@@ -43,6 +43,7 @@ interface ViewBaseProps {
 
 export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBaseProps) => {
   const store = useLocalObservable(() => new ViewBaseStore());
+  const graphSectionRef = useRef<HTMLDivElement>(null);
   const codeDiffSectionRef = useRef<HTMLDivElement>(null);
   const highlightTimerRef = useRef<number | null>(null);
   const { isUiPending, commandContext } = useInteractiveUpdate(store);
@@ -313,6 +314,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
     diffId,
     viewType,
     hasSelectedFile: selectedFile !== null,
+    graphSectionRef,
     codeDiffSectionRef,
     graphDiffTargets,
     displayOldChangedCount,
@@ -360,7 +362,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
         )}
 
         <SplitGraphRuntimeProvider value={splitGraphRuntime}>
-          <div className="splitLayout">
+          <div ref={graphSectionRef} className="splitLayout">
             <SplitGraphPanel
               title="Old"
               side="old"

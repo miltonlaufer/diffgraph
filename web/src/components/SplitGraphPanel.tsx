@@ -33,7 +33,7 @@ import type { GraphDiffTarget, InternalNodeAnchor, SplitGraphPanelProps, TopLeve
 
 export type { AlignmentBreakpoint, GraphDiffTarget, InternalNodeAnchor, TopLevelAnchor } from "./splitGraph/types";
 
-const SEARCH_FLASH_MS = 3200;
+const SEARCH_FLASH_MS = 5000;
 const SEARCH_FLASH_STYLE = {
   outline: "5px solid #ffffff",
   outlineOffset: "3px",
@@ -402,10 +402,18 @@ export const SplitGraphPanel = observer(({
     return map;
   }, [splitGraphDerived.hoverNeighborhoodByNodeIdEntries]);
 
+  const hoverNeighborhoodSeedId = useMemo(() => {
+    if (hoveredNodeIdForPanel) return hoveredNodeIdForPanel;
+    const searchNodeId = store.searchHighlightedNodeId;
+    if (searchNodeId && positionedNodeById.has(searchNodeId)) return searchNodeId;
+    if (highlightedNodeId && positionedNodeById.has(highlightedNodeId)) return highlightedNodeId;
+    return "";
+  }, [highlightedNodeId, hoveredNodeIdForPanel, positionedNodeById, store.searchHighlightedNodeId]);
+
   const hoverNeighborhood = useMemo(() => {
-    if (!hoveredNodeIdForPanel) return null;
-    return hoverNeighborhoodByNodeId.get(hoveredNodeIdForPanel) ?? null;
-  }, [hoverNeighborhoodByNodeId, hoveredNodeIdForPanel]);
+    if (!hoverNeighborhoodSeedId) return null;
+    return hoverNeighborhoodByNodeId.get(hoverNeighborhoodSeedId) ?? null;
+  }, [hoverNeighborhoodByNodeId, hoverNeighborhoodSeedId]);
 
   const flowElements = useMemo(() => {
     const hasNodeHighlights = Boolean(selectedNodeId || highlightedNodeId || store.searchHighlightedNodeId);
@@ -429,7 +437,14 @@ export const SplitGraphPanel = observer(({
         if (isPrimarySelected || isHoveredNode) {
           nextNode = (node.type === "scope" || node.type === "diamond" || node.type === "pill" || node.type === "process" || node.type === "knowledge")
             ? { ...node, data: { ...node.data, selected: true } }
-            : { ...node, style: { ...(node.style ?? {}), border: "3px solid #38bdf8", boxShadow: "0 0 12px #38bdf8" } };
+            : {
+              ...node,
+              style: {
+                ...(node.style ?? {}),
+                border: "5px solid #f8fafc",
+                boxShadow: "0 0 0 2px rgba(56, 189, 248, 0.95), 0 0 22px rgba(56, 189, 248, 0.85)",
+              },
+            };
         }
         if (isSearchTarget) {
           nextNode = { ...nextNode, style: { ...(nextNode.style ?? {}), ...SEARCH_FLASH_STYLE } };

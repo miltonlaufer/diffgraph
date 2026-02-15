@@ -42,6 +42,7 @@ export const commandFocusGraphNode = (
   runInteractiveUpdate(() => {
     store.setSelectedNodeId(nodeId);
     store.focusNode(nodeId, sourceSide);
+    store.bumpGraphTopScrollTick();
   });
 };
 
@@ -143,7 +144,8 @@ interface LineClickContext extends CommandContext {
   highlightTimerRef: MutableRefObject<number | null>;
 }
 
-const NODE_HIGHLIGHT_MS = 1400;
+const NODE_HIGHLIGHT_MS = 4200;
+const GRAPH_DIFF_HIGHLIGHT_MS = 5000;
 
 export const commandCodeLineClick = (
   context: LineClickContext,
@@ -190,6 +192,7 @@ export const commandCodeLineClick = (
     const target = candidates[0];
     context.store.setSelectedNodeId(target.id);
     context.store.focusNode(target.id, side);
+    context.store.bumpGraphTopScrollTick();
     context.store.setHighlightedNodeId(target.id);
     if (context.highlightTimerRef.current !== null) {
       window.clearTimeout(context.highlightTimerRef.current);
@@ -225,7 +228,7 @@ export const commandGoToGraphDiff = (
     highlightTimerRef.current = window.setTimeout(() => {
       store.clearHighlightedNode();
       highlightTimerRef.current = null;
-    }, NODE_HIGHLIGHT_MS);
+    }, GRAPH_DIFF_HIGHLIGHT_MS);
 
     store.setSharedViewport({ x: target.viewportX, y: target.viewportY, zoom: target.viewportZoom });
   });

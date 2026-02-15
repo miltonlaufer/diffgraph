@@ -9,6 +9,7 @@ interface UseViewBaseEffectsArgs {
   diffId: string;
   viewType: ViewType;
   hasSelectedFile: boolean;
+  graphSectionRef: MutableRefObject<HTMLDivElement | null>;
   codeDiffSectionRef: MutableRefObject<HTMLDivElement | null>;
   graphDiffTargets: GraphDiffTarget[];
   displayOldChangedCount: number;
@@ -21,6 +22,7 @@ export const useViewBaseEffects = ({
   diffId,
   viewType,
   hasSelectedFile,
+  graphSectionRef,
   codeDiffSectionRef,
   graphDiffTargets,
   displayOldChangedCount,
@@ -72,6 +74,16 @@ export const useViewBaseEffects = ({
       window.cancelAnimationFrame(frame);
     };
   }, [codeDiffSectionRef, hasSelectedFile, store.scrollTick]);
+
+  useEffect(() => {
+    if (store.graphTopScrollTick <= 0) return;
+    const frame = window.requestAnimationFrame(() => {
+      graphSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [graphSectionRef, store.graphTopScrollTick]);
 
   useEffect(() => {
     if (graphDiffIdxRafRef.current !== null) {

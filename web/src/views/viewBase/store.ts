@@ -13,6 +13,7 @@ export class ViewBaseStore {
   targetLine = 0;
   targetSide: "old" | "new" = "new";
   scrollTick = 0;
+  graphTopScrollTick = 0;
   sharedViewport: ViewportState = { x: 0, y: 0, zoom: 0.8 };
   showCalls = true;
   oldDiffTargets: GraphDiffTarget[] = [];
@@ -73,6 +74,7 @@ export class ViewBaseStore {
     this.selectedFilePath = "";
     this.sharedViewport = { x: 20, y: 20, zoom: 0.5 };
     this.focusSourceSide = "new";
+    this.graphTopScrollTick = 0;
     this.loading = false;
     this.error = "";
   }
@@ -161,6 +163,10 @@ export class ViewBaseStore {
 
   bumpScrollTick(): void {
     this.scrollTick += 1;
+  }
+
+  bumpGraphTopScrollTick(): void {
+    this.graphTopScrollTick += 1;
   }
 
   setGraphDiffIdx(idx: number): void {
