@@ -140,7 +140,10 @@ interface LineClickContext extends CommandContext {
   selectedFilePath: string;
   displayOldGraph: ViewGraph;
   displayNewGraph: ViewGraph;
+  highlightTimerRef: MutableRefObject<number | null>;
 }
+
+const NODE_HIGHLIGHT_MS = 1400;
 
 export const commandCodeLineClick = (
   context: LineClickContext,
@@ -187,6 +190,14 @@ export const commandCodeLineClick = (
     const target = candidates[0];
     context.store.setSelectedNodeId(target.id);
     context.store.focusNode(target.id, side);
+    context.store.setHighlightedNodeId(target.id);
+    if (context.highlightTimerRef.current !== null) {
+      window.clearTimeout(context.highlightTimerRef.current);
+    }
+    context.highlightTimerRef.current = window.setTimeout(() => {
+      context.store.clearHighlightedNode();
+      context.highlightTimerRef.current = null;
+    }, NODE_HIGHLIGHT_MS);
   });
 };
 
@@ -214,7 +225,7 @@ export const commandGoToGraphDiff = (
     highlightTimerRef.current = window.setTimeout(() => {
       store.clearHighlightedNode();
       highlightTimerRef.current = null;
-    }, 1400);
+    }, NODE_HIGHLIGHT_MS);
 
     store.setSharedViewport({ x: target.viewportX, y: target.viewportY, zoom: target.viewportZoom });
   });

@@ -253,12 +253,13 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
           selectedFilePath: selectedFile?.path ?? store.selectedFilePath,
           displayOldGraph,
           displayNewGraph,
+          highlightTimerRef,
         },
         line,
         side,
       );
     },
-    [commandContext, selectedFile?.path, store.selectedFilePath, displayOldGraph, displayNewGraph],
+    [commandContext, selectedFile?.path, store.selectedFilePath, displayOldGraph, displayNewGraph, highlightTimerRef],
   );
 
   const viewBaseRuntime = useMemo<ViewBaseRuntimeContextValue>(() => ({
