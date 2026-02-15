@@ -93,6 +93,7 @@ export const SplitGraphPanel = observer(({
 
   const positionedLayoutResult = useMemo(() => {
     if (!alignmentOffset && !alignmentAnchors) return layoutResult;
+    const hasAlignmentAnchors = Boolean(alignmentAnchors && Object.keys(alignmentAnchors).length > 0);
     const graphNodeById = new Map(graph.nodes.map((n) => [n.id, n]));
     const nodes = layoutResult.nodes.map((node) => ({
       ...node,
@@ -105,6 +106,7 @@ export const SplitGraphPanel = observer(({
             const anchored = alignmentAnchors[anchorKey];
             if (anchored) return anchored.x;
           }
+          if (hasAlignmentAnchors) return node.position.x;
           return alignmentOffset ? node.position.x + alignmentOffset.x : node.position.x;
         })(),
         y: (() => {
@@ -115,6 +117,7 @@ export const SplitGraphPanel = observer(({
             const anchored = alignmentAnchors[anchorKey];
             if (anchored) return anchored.y;
           }
+          if (hasAlignmentAnchors) return node.position.y;
           return alignmentOffset ? node.position.y + alignmentOffset.y : node.position.y;
         })(),
       },
