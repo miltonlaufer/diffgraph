@@ -39,6 +39,7 @@ export interface GraphDiffTarget {
   viewportY: number;
   viewportZoom: number;
   diffStatus: "added" | "removed" | "modified";
+  kind?: string;
 }
 
 export interface TopLevelAnchor {
@@ -62,6 +63,7 @@ interface SplitGraphPanelProps {
   focusNodeId?: string;
   focusNodeTick?: number;
   focusFilePath: string;
+  focusFileTick?: number;
   diffStats?: DiffStats;
   fileContentMap: Map<string, string>;
   onDiffTargetsChange?: (side: "old" | "new", targets: GraphDiffTarget[]) => void;
@@ -534,7 +536,7 @@ const shortenPath = (filePath: string): string => {
 };
 
 export const SplitGraphPanel = ({
-  title, side, graph, viewType, showCalls = true, onNodeSelect, viewport, onViewportChange, selectedNodeId, highlightedNodeId, focusNodeId, focusNodeTick, focusFilePath, diffStats, fileContentMap, onDiffTargetsChange, alignmentOffset, alignmentAnchors, onTopLevelAnchorsChange,
+  title, side, graph, viewType, showCalls = true, onNodeSelect, viewport, onViewportChange, selectedNodeId, highlightedNodeId, focusNodeId, focusNodeTick, focusFilePath, focusFileTick = 0, diffStats, fileContentMap, onDiffTargetsChange, alignmentOffset, alignmentAnchors, onTopLevelAnchorsChange,
 }: SplitGraphPanelProps) => {
   /******************* STORE ***********************/
   const [searchQuery, setSearchQuery] = useState("");
@@ -808,7 +810,8 @@ export const SplitGraphPanel = ({
   const handleMove = useCallback((_e: MouseEvent | TouchEvent | null, v: Viewport) => { onViewportChange({ x: v.x, y: v.y, zoom: v.zoom }); }, [onViewportChange]);
 
   /******************* USEEFFECTS ***********************/
-  const prevFocusRef = useRef<string>("");
+  const lastAppliedFocusNodeSignatureRef = useRef("");
+  const lastAppliedFocusFileTickRef = useRef(0);
 
   useEffect(() => {
     const worker = new Worker(new URL("../workers/layoutWorker.ts", import.meta.url), { type: "module" });
@@ -904,6 +907,7 @@ export const SplitGraphPanel = ({
           viewportY: vp.y,
           viewportZoom: vp.zoom,
           diffStatus: gn.diffStatus,
+          kind: gn.kind,
         } as GraphDiffTarget;
       })
       .filter((entry): entry is GraphDiffTarget => entry !== null);
@@ -943,18 +947,23 @@ export const SplitGraphPanel = ({
   }, []);
 
   useEffect(() => {
-    if (focusFilePath && focusFilePath !== prevFocusRef.current && focusedViewport) {
-      prevFocusRef.current = focusFilePath;
-      onViewportChange(focusedViewport);
-    }
-  }, [focusFilePath, focusedViewport, onViewportChange]);
+    if (!focusFilePath || !focusedViewport || focusFileTick <= 0) return;
+    if (focusFileTick === lastAppliedFocusFileTickRef.current) return;
+    lastAppliedFocusFileTickRef.current = focusFileTick;
+    onViewportChange(focusedViewport);
+  }, [focusFilePath, focusFileTick, focusedViewport, onViewportChange]);
 
   useEffect(() => {
     if (!focusNodeId) return;
+    if ((focusNodeTick ?? 0) <= 0) return;
     const target = flowElements.nodes.find((node) => node.id === focusNodeId);
     if (!target) return;
+    const abs = nodeAbsolutePosition(target);
+    const signature = `${focusNodeTick ?? 0}:${focusNodeId}:${Math.round(abs.x)}:${Math.round(abs.y)}:${flowElements.nodes.length}`;
+    if (signature === lastAppliedFocusNodeSignatureRef.current) return;
+    lastAppliedFocusNodeSignatureRef.current = signature;
     onViewportChange(viewportForNode(target));
-  }, [focusNodeId, focusNodeTick, flowElements.nodes, onViewportChange, viewportForNode]);
+  }, [focusNodeId, focusNodeTick, flowElements.nodes, nodeAbsolutePosition, onViewportChange, viewportForNode]);
 
   useEffect(() => {
     setHoveredEdgeId("");

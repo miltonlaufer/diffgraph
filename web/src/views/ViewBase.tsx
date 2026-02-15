@@ -95,6 +95,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const [highlightedNodeId, setHighlightedNodeId] = useState<string>("");
   const [focusNodeId, setFocusNodeId] = useState<string>("");
   const [focusNodeTick, setFocusNodeTick] = useState(0);
+  const [focusFileTick, setFocusFileTick] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [interactionBusy, setInteractionBusy] = useState(false);
@@ -252,6 +253,14 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     const merged = [...oldDiffTargets, ...newDiffTargets];
     return merged.sort((a, b) => (a.y - b.y) || (a.x - b.x));
   }, [oldDiffTargets, newDiffTargets]);
+  const displayOldChangedCount = useMemo(
+    () => displayOldGraph.nodes.filter((node) => node.diffStatus !== "unchanged").length,
+    [displayOldGraph.nodes],
+  );
+  const displayNewChangedCount = useMemo(
+    () => displayNewGraph.nodes.filter((node) => node.diffStatus !== "unchanged").length,
+    [displayNewGraph.nodes],
+  );
   const newAlignmentOffset = useMemo(() => {
     if (viewType !== "logic") return undefined;
     const keys = Object.keys(oldTopAnchors).filter((key) => newTopAnchors[key] !== undefined);
@@ -378,6 +387,8 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
     (nodeId: string, sourceSide: "old" | "new") => {
       runInteractiveUpdate(() => {
         setSelectedNodeId(nodeId);
+        setFocusNodeId(nodeId);
+        setFocusNodeTick((prev) => prev + 1);
         const matchedOld = oldGraph.nodes.find((n) => n.id === nodeId);
         const matchedNew = newGraph.nodes.find((n) => n.id === nodeId);
         const primary = sourceSide === "old" ? matchedOld : matchedNew;
@@ -398,6 +409,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
   const handleFileSelect = useCallback((filePath: string) => {
     runInteractiveUpdate(() => {
       setSelectedFilePath(filePath);
+      setFocusFileTick((prev) => prev + 1);
     });
   }, [runInteractiveUpdate]);
 
@@ -516,6 +528,9 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
         if (!mounted) return;
         setOldGraph(payload.oldGraph);
         setNewGraph(payload.newGraph);
+        setOldDiffTargets([]);
+        setNewDiffTargets([]);
+        setGraphDiffIdx(0);
         setOldTopAnchors({});
         setNewTopAnchors({});
         setFileDiffs(files);
@@ -582,11 +597,18 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
         return;
       }
     }
-    const preferredTarget = oldDiffTargets[0] ?? newDiffTargets[0] ?? graphDiffTargets[0];
+    const oldTargetsReady = displayOldChangedCount === 0 || oldDiffTargets.length > 0;
+    const newTargetsReady = displayNewChangedCount === 0 || newDiffTargets.length > 0;
+    if (!oldTargetsReady || !newTargetsReady) return;
+
+    const sortedTargets = graphDiffTargets.length > 0
+      ? graphDiffTargets
+      : [...oldDiffTargets, ...newDiffTargets].sort((a, b) => (a.y - b.y) || (a.x - b.x));
+    const preferredTarget = sortedTargets.find((target) => target.kind !== "group") ?? sortedTargets[0];
     if (!preferredTarget) return;
-    didAutoViewportRef.current = true;
     autoViewportRafRef.current = window.requestAnimationFrame(() => {
       autoViewportRafRef.current = null;
+      didAutoViewportRef.current = true;
       setSharedViewport({
         x: preferredTarget.viewportX,
         y: preferredTarget.viewportY,
@@ -599,7 +621,18 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
         autoViewportRafRef.current = null;
       }
     };
-  }, [loading, newDiffTargets, oldDiffTargets, graphDiffTargets, viewType, oldTopAnchors, newTopAnchors, newAlignmentOffset]);
+  }, [
+    loading,
+    newDiffTargets,
+    oldDiffTargets,
+    graphDiffTargets,
+    viewType,
+    oldTopAnchors,
+    newTopAnchors,
+    newAlignmentOffset,
+    displayOldChangedCount,
+    displayNewChangedCount,
+  ]);
 
   useEffect(() => () => {
     cancelPendingFrames();
@@ -674,6 +707,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
           focusNodeId={focusNodeId}
           focusNodeTick={focusNodeTick}
           focusFilePath={selectedFilePath}
+          focusFileTick={focusFileTick}
           fileContentMap={oldFileContentMap}
           onDiffTargetsChange={handleDiffTargetsChange}
           alignmentAnchors={alignedTopAnchors.old}
@@ -693,6 +727,7 @@ export const ViewBase = ({ diffId, viewType, showChangesOnly }: ViewBaseProps) =
           focusNodeId={focusNodeId}
           focusNodeTick={focusNodeTick}
           focusFilePath={selectedFilePath}
+          focusFileTick={focusFileTick}
           diffStats={diffStats}
           fileContentMap={newFileContentMap}
           onDiffTargetsChange={handleDiffTargetsChange}
