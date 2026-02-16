@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { type DiffMeta, fetchDiffMeta, getDiffId } from "./api";
+import { MarkdownViewer } from "./components/MarkdownViewer";
 import LogicDiffView from "./views/LogicDiffView";
 import KnowledgeDiffView from "./views/KnowledgeDiffView";
 import ReactDiffView from "./views/ReactDiffView";
@@ -12,6 +13,7 @@ const App = () => {
   const [tab, setTab] = useState<Tab>("logic");
   const [changesOnly, setChangesOnly] = useState<boolean>(true);
   const [meta, setMeta] = useState<DiffMeta | null>(null);
+  const [prDescriptionOpen, setPrDescriptionOpen] = useState(false);
   const [interactionBusy, setInteractionBusy] = useState(false);
   const [isTransitionPending, startTransition] = useTransition();
   const startRafRef = useRef<number | null>(null);
@@ -58,10 +60,17 @@ const App = () => {
   const showReact = useCallback(() => {
     runInteractiveUpdate(() => setTab("react"));
   }, [runInteractiveUpdate]);
+  const openPrDescription = useCallback(() => {
+    setPrDescriptionOpen(true);
+  }, []);
+  const closePrDescription = useCallback(() => {
+    setPrDescriptionOpen(false);
+  }, []);
   const toggleChangesOnly = useCallback(() => {
     runInteractiveUpdate(() => setChangesOnly((current) => !current));
   }, [runInteractiveUpdate]);
   const canShowReact = meta?.hasReactView ?? true;
+  const isPullRequestMode = Boolean(meta?.pullRequestNumber);
   const activeTab: Tab = (!canShowReact && tab === "react") ? "logic" : tab;
   const isInteractionPending = interactionBusy || isTransitionPending;
 
@@ -74,6 +83,18 @@ const App = () => {
   useEffect(() => () => {
     cancelPendingFrames();
   }, [cancelPendingFrames]);
+  useEffect(() => {
+    if (!prDescriptionOpen) return undefined;
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        setPrDescriptionOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [prDescriptionOpen]);
 
   const diffGraph = useMemo(() => {
     return <h1><span style={{
@@ -121,6 +142,16 @@ const App = () => {
           </label>
         </div>
         <div className="tabBar">
+            {isPullRequestMode && (
+              <button
+                type="button"
+                onClick={openPrDescription}
+                className={prDescriptionOpen ? "active prDescriptionBtn" : "prDescriptionBtn"}
+                title={`Open PR #${meta?.pullRequestNumber ?? ""} description`}
+              >
+                PR Description
+              </button>
+            )}
 	          <button type="button" onClick={showLogic} className={activeTab === "logic" ? "active" : ""}>
 	            Logic
 	          </button>
@@ -156,6 +187,34 @@ const App = () => {
             pullRequestDescriptionExcerpt={meta?.pullRequestDescriptionExcerpt}
           />
         )}
+
+      {prDescriptionOpen && (
+        <div
+          className="prDescriptionModalBackdrop"
+          role="presentation"
+          onClick={closePrDescription}
+        >
+          <section
+            className="prDescriptionModal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Pull Request Description"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="prDescriptionModalHeader">
+              <h3 className="prDescriptionModalTitle">
+                PR Description {meta?.pullRequestNumber ? `#${meta.pullRequestNumber}` : ""}
+              </h3>
+              <button type="button" className="prDescriptionCloseBtn" onClick={closePrDescription}>
+                Close
+              </button>
+            </header>
+            <div className="prDescriptionModalBody">
+              <MarkdownViewer markdown={meta?.pullRequestDescription?.trim() || "_No PR description available._"} />
+            </div>
+          </section>
+        </div>
+      )}
 
       {isInteractionPending && (
         <div className="interactionOverlay interactionOverlayGlobal" role="status" aria-live="polite">

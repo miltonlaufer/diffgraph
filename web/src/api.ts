@@ -37,6 +37,7 @@ export interface DiffMeta {
   newRef: string;
   hasReactView: boolean;
   pullRequestNumber?: string;
+  pullRequestDescription?: string;
   pullRequestDescriptionExcerpt?: string;
   pullRequestDescriptionTruncated?: boolean;
 }
