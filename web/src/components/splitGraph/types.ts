@@ -48,5 +48,6 @@ export interface SplitGraphPanelProps {
   alignmentOffset?: { x: number; y: number };
   alignmentAnchors?: Record<string, TopLevelAnchor>;
   alignmentBreakpoints?: Record<string, AlignmentBreakpoint[]>;
+  pullRequestDescriptionExcerpt?: string;
   isViewportPrimary?: boolean;
 }

@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { runDiff } from "./commands/diff.js";
 import { runAnalyze } from "./commands/analyze.js";
+import { runInteractiveMenu } from "./interactive.js";
 
 const normalizedArgv = process.argv.map((arg) => {
   if (arg === "-ff") return "--file-file";
@@ -112,7 +113,21 @@ program
     process.exitCode = 1;
   });
 
-program.parseAsync(normalizedArgv).catch((error: unknown) => {
-  console.error(error);
+const hasExplicitArgs = normalizedArgv.length > 2;
+
+const runCli = async (): Promise<void> => {
+  if (!hasExplicitArgs) {
+    await runInteractiveMenu(process.cwd());
+    return;
+  }
+  await program.parseAsync(normalizedArgv);
+};
+
+runCli().catch((error: unknown) => {
+  if (error instanceof Error) {
+    console.error(error.message);
+  } else {
+    console.error(error);
+  }
   process.exitCode = 1;
 });

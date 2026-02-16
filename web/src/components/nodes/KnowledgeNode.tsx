@@ -17,11 +17,13 @@ interface KnowledgeNodeData {
   language?: string;
   askLlmNodeId?: string;
   onAskLlmForNode?: (nodeId: string) => Promise<boolean> | boolean;
+  onAskLlmHrefForNode?: (nodeId: string) => string;
 }
 
 const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
   /******************* STORE ***********************/
   const [hovered, setHovered] = useState(false);
+  const [hoveredActions, setHoveredActions] = useState(false);
 
   /******************* COMPUTED ***********************/
   const style = useMemo(
@@ -33,7 +35,7 @@ const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
       color: data.textColor,
       fontSize: 11,
       width: 200,
-      overflow: "hidden" as const,
+      overflow: "visible" as const,
       boxShadow: data.selected ? "0 0 0 2px rgba(56, 189, 248, 0.95), 0 0 22px rgba(56, 189, 248, 0.85)" : "none",
       cursor: "pointer",
       position: "relative" as const,
@@ -44,10 +46,17 @@ const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
   /******************* FUNCTIONS ***********************/
   const onEnter = useCallback(() => setHovered(true), []);
   const onLeave = useCallback(() => setHovered(false), []);
+  const handleActionsHoverChange = useCallback((isHovered: boolean) => {
+    setHoveredActions(isHovered);
+  }, []);
   const handleAskLlm = useCallback(() => {
     if (!data.askLlmNodeId || !data.onAskLlmForNode) return false;
     return data.onAskLlmForNode(data.askLlmNodeId);
   }, [data.askLlmNodeId, data.onAskLlmForNode]);
+  const askLlmHref = useMemo(
+    () => (data.askLlmNodeId && data.onAskLlmHrefForNode ? data.onAskLlmHrefForNode(data.askLlmNodeId) : ""),
+    [data.onAskLlmHrefForNode, data.askLlmNodeId],
+  );
   const hasAskLlm = Boolean(data.askLlmNodeId && data.onAskLlmForNode);
 
   return (
@@ -59,8 +68,10 @@ const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
         {data.shortPath}
       </div>
       <AskLlmButton
-        visible={hovered}
+        visible={hovered || hoveredActions}
         onAskLlm={hasAskLlm ? handleAskLlm : undefined}
+        askLlmHref={askLlmHref || undefined}
+        onHoverChange={handleActionsHoverChange}
       />
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />

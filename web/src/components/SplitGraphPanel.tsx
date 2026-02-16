@@ -53,9 +53,15 @@ const DIAMOND_BOUNDS = 146;
 const FLOW_NODE_W = 220;
 const FLOW_NODE_H = 72;
 const ASK_LLM_MESSAGE = "Can you explain the probable reason for doing this code change, what the consequences are, and suggest any improvement to it?";
-const ASK_LLM_CONTEXT_RADIUS = 2;
-const ASK_LLM_MAX_NODE_LINES = 24;
-const ASK_LLM_MAX_CONNECTED_NODES = 24;
+const ASK_LLM_CONTEXT_RADIUS = 4;
+const ASK_LLM_MAX_NODE_LINES = 64;
+const ASK_LLM_MAX_CONNECTED_NODES = 80;
+const ASK_LLM_URL_CONTEXT_RADIUS = 2;
+const ASK_LLM_URL_MAX_NODE_LINES = 28;
+const ASK_LLM_URL_MAX_CONNECTED_NODES = 24;
+const CHATGPT_URL_PREFIX = "https://chatgpt.com/?prompt=";
+const CHATGPT_URL_MAX_LENGTH = 7000;
+const CHATGPT_URL_TRUNCATION_NOTICE = "\n\n[PROMPT CUT BECAUSE OF URL LENGTH LIMIT]";
 
 interface PanelViewport {
   x: number;
@@ -81,6 +87,52 @@ const lineRangeText = (startLine?: number, endLine?: number): string => {
   if (!startLine || startLine < 1) return "unknown";
   if (!endLine || endLine < startLine) return `${startLine}`;
   return `${startLine}-${endLine}`;
+};
+
+const shortPathForPrompt = (filePath: string): string => {
+  const normalized = normPath(filePath);
+  const parts = normalized.split("/").filter((part) => part.length > 0);
+  if (parts.length <= 3) return normalized;
+  return parts.slice(-3).join("/");
+};
+
+const shortStatus = (status: string): string => {
+  if (status === "added") return "a";
+  if (status === "removed") return "r";
+  if (status === "modified") return "m";
+  return "u";
+};
+
+const buildCappedChatGptUrl = (prompt: string): string => {
+  const maxEncodedPromptLen = Math.max(256, CHATGPT_URL_MAX_LENGTH - CHATGPT_URL_PREFIX.length);
+  const encodedFullPrompt = encodeURIComponent(prompt);
+  if (encodedFullPrompt.length <= maxEncodedPromptLen) {
+    return `${CHATGPT_URL_PREFIX}${encodedFullPrompt}`;
+  }
+
+  const encodedNotice = encodeURIComponent(CHATGPT_URL_TRUNCATION_NOTICE);
+  const contentBudget = maxEncodedPromptLen - encodedNotice.length;
+  if (contentBudget <= 0) {
+    return `${CHATGPT_URL_PREFIX}${encodedNotice.slice(0, maxEncodedPromptLen)}`;
+  }
+
+  let low = 0;
+  let high = prompt.length;
+  let best = 0;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const encodedCandidate = encodeURIComponent(prompt.slice(0, mid));
+    if (encodedCandidate.length <= contentBudget) {
+      best = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  const truncatedPrompt = `${prompt.slice(0, best).trimEnd()}${CHATGPT_URL_TRUNCATION_NOTICE}`;
+  const encodedTruncatedPrompt = encodeURIComponent(truncatedPrompt);
+  return `${CHATGPT_URL_PREFIX}${encodedTruncatedPrompt.slice(0, maxEncodedPromptLen)}`;
 };
 
 const buildIndexedMatchKeyByNodeId = (nodes: ViewGraphNode[]): Map<string, string> => {
@@ -296,6 +348,7 @@ export const SplitGraphPanel = observer(({
   alignmentOffset,
   alignmentAnchors,
   alignmentBreakpoints,
+  pullRequestDescriptionExcerpt,
   isViewportPrimary = true,
 }: SplitGraphPanelProps) => {
   const { state: runtimeState, actions: runtimeActions } = useSplitGraphRuntime();
@@ -416,6 +469,84 @@ export const SplitGraphPanel = observer(({
     return lines.slice(sliceFrom, sliceTo).map((text, idx) => `${from + idx}: ${text}`);
   }, []);
 
+  const nodeSnippetFromMap = useCallback((
+    contentMap: Map<string, string> | undefined,
+    cache: Map<string, string[]>,
+    node: ViewGraphNode,
+    contextRadius: number,
+    maxNodeLines: number,
+  ): { startLine: number; lines: string[] } | null => {
+    const start = node.startLine ?? 0;
+    if (start < 1) return null;
+    const end = node.endLine && node.endLine >= start ? node.endLine : start;
+    const from = Math.max(1, start - contextRadius);
+    const to = Math.min(start + maxNodeLines - 1, end + contextRadius);
+    if (!contentMap) return null;
+    const normalizedPath = normPath(node.filePath);
+    const cacheKey = `${normalizedPath}:${node.filePath}`;
+    let sourceLines = cache.get(cacheKey);
+    if (!sourceLines) {
+      const content = contentMap.get(normalizedPath) ?? contentMap.get(node.filePath) ?? "";
+      sourceLines = content.length > 0 ? content.split("\n") : [];
+      cache.set(cacheKey, sourceLines);
+    }
+    if (sourceLines.length === 0) return null;
+    const sliceFrom = Math.max(0, from - 1);
+    const sliceTo = Math.min(sourceLines.length, to);
+    return { startLine: from, lines: sourceLines.slice(sliceFrom, sliceTo) };
+  }, []);
+
+  const buildMiniUnifiedDiff = useCallback((
+    oldSnippet: { startLine: number; lines: string[] } | null,
+    newSnippet: { startLine: number; lines: string[] } | null,
+  ): string[] => {
+    const oldLines = oldSnippet?.lines ?? [];
+    const newLines = newSnippet?.lines ?? [];
+    if (oldLines.length === 0 && newLines.length === 0) {
+      return ["@@ -0,0 +0,0 @@", "(code unavailable)"];
+    }
+
+    const maxLen = Math.max(oldLines.length, newLines.length);
+    const changedIndices: number[] = [];
+    for (let idx = 0; idx < maxLen; idx += 1) {
+      if ((oldLines[idx] ?? "") !== (newLines[idx] ?? "")) {
+        changedIndices.push(idx);
+      }
+    }
+    if (changedIndices.length === 0) {
+      return [`@@ -${oldSnippet?.startLine ?? 1},${oldLines.length} +${newSnippet?.startLine ?? 1},${newLines.length} @@`, " (unchanged snippet)"];
+    }
+
+    const include = new Set<number>();
+    for (const idx of changedIndices) {
+      include.add(idx);
+      include.add(idx - 1);
+      include.add(idx + 1);
+    }
+    const included = [...include]
+      .filter((idx) => idx >= 0 && idx < maxLen)
+      .sort((a, b) => a - b);
+    if (included.length === 0) {
+      return [`@@ -${oldSnippet?.startLine ?? 1},${oldLines.length} +${newSnippet?.startLine ?? 1},${newLines.length} @@`];
+    }
+
+    const first = included[0] ?? 0;
+    const oldStart = (oldSnippet?.startLine ?? 1) + first;
+    const newStart = (newSnippet?.startLine ?? 1) + first;
+    const diff: string[] = [`@@ -${oldStart},${oldLines.length} +${newStart},${newLines.length} @@`];
+    for (const idx of included) {
+      const oldText = oldLines[idx];
+      const newText = newLines[idx];
+      if (oldText !== undefined && newText !== undefined && oldText === newText) {
+        diff.push(` ${oldText}`);
+        continue;
+      }
+      if (oldText !== undefined) diff.push(`-${oldText}`);
+      if (newText !== undefined) diff.push(`+${newText}`);
+    }
+    return diff;
+  }, []);
+
   const nodePromptBlock = useCallback((
     node: ViewGraphNode,
     contentMap: Map<string, string> | undefined,
@@ -511,13 +642,11 @@ export const SplitGraphPanel = observer(({
 
     const selectedConnectedIds = connectedIds.slice(0, ASK_LLM_MAX_CONNECTED_NODES);
     const omittedCount = connectedIds.length - selectedConnectedIds.length;
-    const promptLines = [
-      ASK_LLM_MESSAGE,
-      "",
-      `Graph side: ${side}`,
-      "",
-      "Primary node:",
-    ];
+    const promptLines = [ASK_LLM_MESSAGE];
+    if (pullRequestDescriptionExcerpt && pullRequestDescriptionExcerpt.trim().length > 0) {
+      promptLines.push("", "PR description (excerpt):", pullRequestDescriptionExcerpt.trim());
+    }
+    promptLines.push("", `Graph side: ${side}`, "", "Primary node:");
     appendNodeWithVersions(promptLines, node);
     promptLines.push("");
     promptLines.push(`Connected nodes (${selectedConnectedIds.length}${omittedCount > 0 ? ` of ${connectedIds.length}` : ""}):`);
@@ -551,6 +680,114 @@ export const SplitGraphPanel = observer(({
     indexedMatchKeyByNodeId,
     nodePromptBlock,
     oppositeSide,
+    pullRequestDescriptionExcerpt,
+    side,
+  ]);
+
+  const buildAskLlmUrlPrompt = useCallback((nodeId: string): string => {
+    const node = graphNodeById.get(nodeId);
+    if (!node) {
+      return "Task: explain reason, consequences, improvements.\n(no node context)";
+    }
+
+    const resolveCounterpart = (currentNode: ViewGraphNode): ViewGraphNode | undefined => {
+      const indexedKey = indexedMatchKeyByNodeId.get(currentNode.id);
+      const counterpartNodeId = indexedKey ? counterpartNodeIdByIndexedMatchKey.get(indexedKey) : undefined;
+      return counterpartNodeId ? counterpartNodeById.get(counterpartNodeId) : undefined;
+    };
+
+    const primaryCounterpart = resolveCounterpart(node);
+    const currentSnippet = nodeSnippetFromMap(
+      fileContentMap,
+      fileLinesCacheRef.current,
+      node,
+      ASK_LLM_URL_CONTEXT_RADIUS,
+      ASK_LLM_URL_MAX_NODE_LINES,
+    );
+    const counterpartSnippet = primaryCounterpart
+      ? nodeSnippetFromMap(
+        counterpartFileContentMap,
+        counterpartFileLinesCacheRef.current,
+        primaryCounterpart,
+        ASK_LLM_URL_CONTEXT_RADIUS,
+        ASK_LLM_URL_MAX_NODE_LINES,
+      )
+      : null;
+    const oldSnippet = side === "old" ? currentSnippet : counterpartSnippet;
+    const newSnippet = side === "new" ? currentSnippet : counterpartSnippet;
+
+    const lines: string[] = ["Task: explain reason, consequences, improvements."];
+    if (pullRequestDescriptionExcerpt && pullRequestDescriptionExcerpt.trim().length > 0) {
+      lines.push(`pr:${oneLine(pullRequestDescriptionExcerpt)}`);
+    }
+    lines.push(`p|st:${shortStatus(node.diffStatus)}|k:${node.kind}|sym:${oneLine(node.label)}|f:${shortPathForPrompt(node.filePath)}`);
+    if (primaryCounterpart) {
+      lines.push(
+        `p2|st:${shortStatus(primaryCounterpart.diffStatus)}|k:${primaryCounterpart.kind}|sym:${oneLine(primaryCounterpart.label)}|f:${shortPathForPrompt(primaryCounterpart.filePath)}`,
+      );
+    }
+
+    lines.push("diff:");
+    lines.push(...buildMiniUnifiedDiff(oldSnippet, newSnippet));
+
+    const relatedById = new Map<string, { score: number; rels: Set<string> }>();
+    for (const edge of graph.edges) {
+      if (edge.source !== nodeId && edge.target !== nodeId) continue;
+      const relatedId = edge.source === nodeId ? edge.target : edge.source;
+      if (!relatedId || relatedId === nodeId) continue;
+      const relatedNode = graphNodeById.get(relatedId);
+      if (!relatedNode) continue;
+      const direction = edge.source === nodeId ? "out" : "in";
+      const rel = edge.relation ?? edge.kind;
+      const flow = edge.flowType ? `/${edge.flowType}` : "";
+      const relToken = `${direction}:${rel}${flow}`;
+      const base = relatedById.get(relatedId) ?? { score: 0, rels: new Set<string>() };
+      base.rels.add(relToken);
+      base.score = Math.max(
+        base.score,
+        (relatedNode.diffStatus !== "unchanged" ? 4 : 0)
+        + (edge.relation === "invoke" ? 2 : 0)
+        + (edge.relation === "flow" ? 1 : 0),
+      );
+      relatedById.set(relatedId, base);
+    }
+
+    const relatedEntries = [...relatedById.entries()]
+      .map(([relatedId, meta]) => ({
+        relatedId,
+        node: graphNodeById.get(relatedId),
+        score: meta.score,
+        rels: [...meta.rels].sort().join(","),
+      }))
+      .filter((entry): entry is { relatedId: string; node: ViewGraphNode; score: number; rels: string } => entry.node !== undefined)
+      .sort((a, b) => b.score - a.score || oneLine(a.node.label).localeCompare(oneLine(b.node.label)));
+
+    const selectedRelated = relatedEntries.slice(0, ASK_LLM_URL_MAX_CONNECTED_NODES);
+    lines.push(`ctx:${selectedRelated.length}`);
+    for (const [idx, related] of selectedRelated.entries()) {
+      const counterpart = resolveCounterpart(related.node);
+      const counterpartToken = counterpart ? `|p2:${oneLine(counterpart.label)}` : "";
+      lines.push(
+        `${idx + 1}|st:${shortStatus(related.node.diffStatus)}|rel:${related.rels}|sym:${oneLine(related.node.label)}|f:${shortPathForPrompt(related.node.filePath)}${counterpartToken}`,
+      );
+    }
+    const omitted = relatedEntries.length - selectedRelated.length;
+    if (omitted > 0) {
+      lines.push(`...+${omitted} more`);
+    }
+
+    return lines.join("\n");
+  }, [
+    buildMiniUnifiedDiff,
+    counterpartFileContentMap,
+    counterpartNodeById,
+    counterpartNodeIdByIndexedMatchKey,
+    fileContentMap,
+    graph.edges,
+    graphNodeById,
+    indexedMatchKeyByNodeId,
+    nodeSnippetFromMap,
+    pullRequestDescriptionExcerpt,
     side,
   ]);
 
@@ -558,6 +795,10 @@ export const SplitGraphPanel = observer(({
     const prompt = buildAskLlmPrompt(nodeId);
     return copyTextToClipboard(prompt);
   }, [buildAskLlmPrompt, copyTextToClipboard]);
+  const handleAskLlmHrefForNode = useCallback((nodeId: string): string => {
+    const prompt = buildAskLlmUrlPrompt(nodeId);
+    return buildCappedChatGptUrl(prompt);
+  }, [buildAskLlmUrlPrompt]);
 
   const topKeyByNodeId = useMemo(() => {
     const resolved = new Map<string, string>();
@@ -928,9 +1169,10 @@ export const SplitGraphPanel = observer(({
         ...(node.data as Record<string, unknown>),
         askLlmNodeId: node.id,
         onAskLlmForNode: handleAskLlmForNode,
+        onAskLlmHrefForNode: handleAskLlmHrefForNode,
       },
     })),
-    [handleAskLlmForNode, searchResultNodes.nodes],
+    [handleAskLlmForNode, handleAskLlmHrefForNode, searchResultNodes.nodes],
   );
 
   const flowNodeById = useMemo(() => new Map(flowElements.nodes.map((n) => [n.id, n])), [flowElements.nodes]);

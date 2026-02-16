@@ -19,26 +19,37 @@ npm run build
 npm link
 ```
 
-Then go to the repo you want to inspect and run:
+Then go to the repo you want to inspect and run this:
 
 ```bash
 cd /path/to/your-repo
+diffgraph
+```
+
+This is now the fastest path and the recommended one:
+- If the folder is not a Git repo, DiffGraph exits with a clear error.
+- Inside a Git repo, it opens an interactive menu (`numbers` + `Enter`, `q` or `esc` to exit):
+  - `1) Staged changes`
+  - `2) Only staged changes`
+  - `3) Branch to branch` (latest 10 branches)
+  - `4) Commit to commit` (latest 10 commits)
+  - `5) Pull requests` (latest 10 **open** PRs)
+  - `6) File to file` (prints the exact `-ff` command)
+
+You can still run direct commands:
+
+```bash
 diffgraph staged
+diffgraph staged --staged-only
 diffgraph -b main feature/your-feature-branch
 diffgraph -r <oldCommit> <newCommit>
 diffgraph -pr <number>
-diffgraph staged --staged-only
 ```
 
-Quick single-command example from any folder:
+From any folder, pass `--repo`:
 
 ```bash
 diffgraph staged --repo /path/to/your-repo
-```
-
-Or run from any folder by passing `--repo`:
-
-```bash
 diffgraph -b main feature/your-feature-branch --repo /path/to/your-repo
 ```
 
@@ -277,7 +288,7 @@ If the default port (4177) is busy, the server automatically finds the next avai
 
 ### Interactions
 
-- **NEW: ASK LLM from any hovered node** -- hover a node and click `ASK LLM` to copy a ready-to-send prompt that includes: (1) the node’s code context, (2) connected-node context, and (3) graph relation details. This is designed to accelerate intent/risk analysis for **large diffs**. After copy, DiffGraph shows a temporary confirmation message so you can paste directly into your LLM of choice.
+- **NEW: ASK LLM from any hovered node** -- hover a node and use the floating actions outside the node: `Copy prompt` (clipboard) or `Open ChatGPT ↗` (new tab). The generated prompt includes the current-side code, matching old/new counterpart code when available, connected-node context, and graph relation details. For very large prompts, the ChatGPT URL payload is capped and appends `[PROMPT CUT BECAUSE OF URL LENGTH LIMIT]` so truncation is explicit.
 - **Click a node** -- highlights it (cyan border + glow), selects its file below, and scrolls the code diff to that line
 - **Changed Files auto-collapse on node click** -- selecting a node collapses the Changed Files block; when collapsed it shows `Selected: <filename>` in the header
 - **Click a connector/edge** (Logic tab) -- first click focuses the source node; clicking the same connector again focuses the target node

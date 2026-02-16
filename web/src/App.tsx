@@ -135,9 +135,27 @@ const App = () => {
         </div>
       </header>
 
-	      {activeTab === "logic" && <LogicDiffView diffId={diffId} showChangesOnly={changesOnly} />}
-	      {activeTab === "knowledge" && <KnowledgeDiffView diffId={diffId} showChangesOnly={changesOnly} />}
-	      {activeTab === "react" && canShowReact && <ReactDiffView diffId={diffId} showChangesOnly={changesOnly} />}
+	      {activeTab === "logic" && (
+          <LogicDiffView
+            diffId={diffId}
+            showChangesOnly={changesOnly}
+            pullRequestDescriptionExcerpt={meta?.pullRequestDescriptionExcerpt}
+          />
+        )}
+	      {activeTab === "knowledge" && (
+          <KnowledgeDiffView
+            diffId={diffId}
+            showChangesOnly={changesOnly}
+            pullRequestDescriptionExcerpt={meta?.pullRequestDescriptionExcerpt}
+          />
+        )}
+	      {activeTab === "react" && canShowReact && (
+          <ReactDiffView
+            diffId={diffId}
+            showChangesOnly={changesOnly}
+            pullRequestDescriptionExcerpt={meta?.pullRequestDescriptionExcerpt}
+          />
+        )}
 
       {isInteractionPending && (
         <div className="interactionOverlay interactionOverlayGlobal" role="status" aria-live="polite">

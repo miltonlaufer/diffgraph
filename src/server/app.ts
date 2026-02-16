@@ -138,6 +138,8 @@ const riskLevel = (score: number): "low" | "medium" | "high" => {
   return "low";
 };
 
+const PR_DESCRIPTION_EXCERPT_LIMIT = 1600;
+
 export const createApp = (context: AppContext): express.Express => {
   const app = express();
   app.use(express.json({ limit: "5mb" }));
@@ -196,6 +198,11 @@ export const createApp = (context: AppContext): express.Express => {
       || node.kind === "Hook"
       || ((node.kind === "File") && (node.language === "ts" || node.language === "js"))
     );
+    const prDescription = result.pullRequest?.description?.trim() ?? "";
+    const hasPrDescription = prDescription.length > 0;
+    const prDescriptionExcerpt = hasPrDescription
+      ? prDescription.slice(0, PR_DESCRIPTION_EXCERPT_LIMIT)
+      : undefined;
     res.json({
       diffId: result.diffId,
       oldRef: result.oldGraph.ref,
@@ -203,6 +210,9 @@ export const createApp = (context: AppContext): express.Express => {
       oldSnapshotId: result.oldGraph.snapshotId,
       newSnapshotId: result.newGraph.snapshotId,
       hasReactView,
+      pullRequestNumber: result.pullRequest?.number,
+      pullRequestDescriptionExcerpt: prDescriptionExcerpt,
+      pullRequestDescriptionTruncated: hasPrDescription && prDescription.length > PR_DESCRIPTION_EXCERPT_LIMIT,
     });
   });
 

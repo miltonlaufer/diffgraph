@@ -22,6 +22,7 @@ export interface DiffResult {
   hunksByPath: Map<string, string[]>;
   oldFileContents: Map<string, string>;
   newFileContents: Map<string, string>;
+  pullRequest?: DiffPayload["pullRequest"];
 }
 
 const normalizePath = (value: string): string =>
@@ -91,6 +92,7 @@ export class DiffEngine {
       hunksByPath: payload.hunksByPath,
       oldFileContents,
       newFileContents,
+      pullRequest: payload.pullRequest,
     };
   }
 

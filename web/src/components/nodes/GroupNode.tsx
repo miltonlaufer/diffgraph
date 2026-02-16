@@ -19,11 +19,13 @@ interface GroupNodeData {
   documentation?: string;
   askLlmNodeId?: string;
   onAskLlmForNode?: (nodeId: string) => Promise<boolean> | boolean;
+  onAskLlmHrefForNode?: (nodeId: string) => string;
 }
 
 const GroupNode = ({ data }: { data: GroupNodeData }) => {
   /******************* STORE ***********************/
   const [hovered, setHovered] = useState(false);
+  const [hoveredActions, setHoveredActions] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
   /******************* COMPUTED ***********************/
@@ -148,11 +150,21 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
     setTooltipPos({ x: event.clientX, y: event.clientY });
   }, []);
   const onHeaderLeave = useCallback(() => setHovered(false), []);
-  const onNodeLeave = useCallback(() => setHovered(false), []);
+  const onNodeLeave = useCallback(() => {
+    setHovered(false);
+    setHoveredActions(false);
+  }, []);
+  const handleActionsHoverChange = useCallback((isHovered: boolean) => {
+    setHoveredActions(isHovered);
+  }, []);
   const handleAskLlm = useCallback(() => {
     if (!data.askLlmNodeId || !data.onAskLlmForNode) return false;
     return data.onAskLlmForNode(data.askLlmNodeId);
   }, [data.askLlmNodeId, data.onAskLlmForNode]);
+  const askLlmHref = useMemo(
+    () => (data.askLlmNodeId && data.onAskLlmHrefForNode ? data.onAskLlmHrefForNode(data.askLlmNodeId) : ""),
+    [data.onAskLlmHrefForNode, data.askLlmNodeId],
+  );
   const hasAskLlm = Boolean(data.askLlmNodeId && data.onAskLlmForNode);
 
   return (
@@ -160,9 +172,10 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
       <Handle type="target" position={Position.Top} style={{ opacity: 0, pointerEvents: "none" }} />
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0, pointerEvents: "none" }} />
       <AskLlmButton
-        visible={hovered}
+        visible={hovered || hoveredActions}
         onAskLlm={hasAskLlm ? handleAskLlm : undefined}
-        style={{ top: 8, right: 8 }}
+        askLlmHref={askLlmHref || undefined}
+        onHoverChange={handleActionsHoverChange}
       />
       <div
         data-group-header="true"

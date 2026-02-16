@@ -21,11 +21,13 @@ interface DiamondNodeData {
   filePath?: string;
   askLlmNodeId?: string;
   onAskLlmForNode?: (nodeId: string) => Promise<boolean> | boolean;
+  onAskLlmHrefForNode?: (nodeId: string) => string;
 }
 
 const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
   /******************* STORE ***********************/
   const [hovered, setHovered] = useState(false);
+  const [hoveredActions, setHoveredActions] = useState(false);
 
   /******************* COMPUTED ***********************/
   const parts = useMemo(() => splitLabel(data.label), [data.label]);
@@ -47,11 +49,21 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
 
   /******************* FUNCTIONS ***********************/
   const onEnter = useCallback(() => setHovered(true), []);
-  const onLeave = useCallback(() => setHovered(false), []);
+  const onLeave = useCallback(() => {
+    setHovered(false);
+    setHoveredActions(false);
+  }, []);
+  const handleActionsHoverChange = useCallback((isHovered: boolean) => {
+    setHoveredActions(isHovered);
+  }, []);
   const handleAskLlm = useCallback(() => {
     if (!data.askLlmNodeId || !data.onAskLlmForNode) return false;
     return data.onAskLlmForNode(data.askLlmNodeId);
   }, [data.askLlmNodeId, data.onAskLlmForNode]);
+  const askLlmHref = useMemo(
+    () => (data.askLlmNodeId && data.onAskLlmHrefForNode ? data.onAskLlmHrefForNode(data.askLlmNodeId) : ""),
+    [data.onAskLlmHrefForNode, data.askLlmNodeId],
+  );
   const hasAskLlm = Boolean(data.askLlmNodeId && data.onAskLlmForNode);
 
   return (
@@ -114,9 +126,11 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
         F
       </span>
       <AskLlmButton
-        visible={hovered}
+        visible={hovered || hoveredActions}
         onAskLlm={hasAskLlm ? handleAskLlm : undefined}
-        style={{ top: -20, right: -26, transform: "rotate(-45deg)" }}
+        askLlmHref={askLlmHref || undefined}
+        onHoverChange={handleActionsHoverChange}
+        style={{ top: -46, left: "calc(100% - 10px)", transform: "rotate(-45deg)" }}
       />
       <CodeTooltip
         visible={hovered}

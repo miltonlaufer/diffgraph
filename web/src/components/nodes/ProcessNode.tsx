@@ -21,11 +21,13 @@ interface ProcessNodeData {
   filePath?: string;
   askLlmNodeId?: string;
   onAskLlmForNode?: (nodeId: string) => Promise<boolean> | boolean;
+  onAskLlmHrefForNode?: (nodeId: string) => string;
 }
 
 const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
   /******************* STORE ***********************/
   const [hovered, setHovered] = useState(false);
+  const [hoveredActions, setHoveredActions] = useState(false);
 
   /******************* COMPUTED ***********************/
   const parts = useMemo(() => splitLabel(data.label), [data.label]);
@@ -48,10 +50,17 @@ const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
   /******************* FUNCTIONS ***********************/
   const onEnter = useCallback(() => setHovered(true), []);
   const onLeave = useCallback(() => setHovered(false), []);
+  const handleActionsHoverChange = useCallback((isHovered: boolean) => {
+    setHoveredActions(isHovered);
+  }, []);
   const handleAskLlm = useCallback(() => {
     if (!data.askLlmNodeId || !data.onAskLlmForNode) return false;
     return data.onAskLlmForNode(data.askLlmNodeId);
   }, [data.askLlmNodeId, data.onAskLlmForNode]);
+  const askLlmHref = useMemo(
+    () => (data.askLlmNodeId && data.onAskLlmHrefForNode ? data.onAskLlmHrefForNode(data.askLlmNodeId) : ""),
+    [data.onAskLlmHrefForNode, data.askLlmNodeId],
+  );
   const hasAskLlm = Boolean(data.askLlmNodeId && data.onAskLlmForNode);
 
   return (
@@ -63,8 +72,10 @@ const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
         </div>
       )}
       <AskLlmButton
-        visible={hovered}
+        visible={hovered || hoveredActions}
         onAskLlm={hasAskLlm ? handleAskLlm : undefined}
+        askLlmHref={askLlmHref || undefined}
+        onHoverChange={handleActionsHoverChange}
       />
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />

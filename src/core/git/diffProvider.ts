@@ -30,10 +30,19 @@ export interface DiffPayload {
   oldFiles: Array<{ path: string; content: string }>;
   newFiles: Array<{ path: string; content: string }>;
   hunksByPath: Map<string, string[]>;
+  pullRequest?: {
+    number: string;
+    description?: string;
+  };
 }
 
 const textFromGit = async (args: string[], cwd: string): Promise<string> => {
   const { stdout } = await execFileAsync("git", args, { cwd, maxBuffer: 1024 * 1024 * 50 });
+  return stdout;
+};
+
+const textFromGh = async (args: string[], cwd: string): Promise<string> => {
+  const { stdout } = await execFileAsync("gh", args, { cwd, maxBuffer: 1024 * 1024 * 10 });
   return stdout;
 };
 
@@ -170,7 +179,24 @@ export class DiffProvider {
       throw new Error(`Unable to compute merge-base between '${preferredBase}' and PR #${normalizedPr}.`);
     }
 
-    return this.fromRefs(mergeBase, prRef, repoPath);
+    const payload = await this.fromRefs(mergeBase, prRef, repoPath);
+    const prDescription = await this.readPullRequestDescription(repoPath, normalizedPr);
+    return {
+      ...payload,
+      pullRequest: {
+        number: normalizedPr,
+        description: prDescription,
+      },
+    };
+  }
+
+  private async readPullRequestDescription(repoPath: string, prNumber: string): Promise<string | undefined> {
+    try {
+      const body = (await textFromGh(["pr", "view", prNumber, "--json", "body", "--jq", ".body"], repoPath)).trim();
+      return body.length > 0 ? body : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private async resolvePreferredBaseRef(repoPath: string): Promise<string> {

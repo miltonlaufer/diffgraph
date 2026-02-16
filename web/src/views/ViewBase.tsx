@@ -42,9 +42,10 @@ interface ViewBaseProps {
   diffId: string;
   viewType: ViewType;
   showChangesOnly: boolean;
+  pullRequestDescriptionExcerpt?: string;
 }
 
-export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBaseProps) => {
+export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullRequestDescriptionExcerpt }: ViewBaseProps) => {
   const store = useLocalObservable(() => new ViewBaseStore());
   const graphSectionRef = useRef<HTMLDivElement>(null);
   const codeDiffSectionRef = useRef<HTMLDivElement>(null);
@@ -500,6 +501,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
               fileContentMap={oldFileContentMap}
               counterpartFileContentMap={newFileContentMap}
               alignmentAnchors={alignedTopAnchors.old}
+              pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
               isViewportPrimary={false}
             />
 
@@ -516,6 +518,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly }: ViewBas
               alignmentOffset={newAlignmentOffset}
               alignmentAnchors={alignedTopAnchors.new}
               alignmentBreakpoints={alignmentBreakpoints}
+              pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
               isViewportPrimary
             />
           </div>
