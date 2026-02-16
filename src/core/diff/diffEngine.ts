@@ -27,6 +27,7 @@ export interface DiffResult {
 
 const normalizePath = (value: string): string =>
   value.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
+const hashSignatureText = (value: string): string => stableHash(value.replace(/\s+/g, "") || "__empty__");
 
 const hasFileNode = (nodes: GraphNode[], filePath: string): boolean => {
   const normalizedTarget = normalizePath(filePath);
@@ -110,7 +111,7 @@ export class DiffEngine {
           qualifiedName: normalized,
           filePath: normalized,
           language: "unknown",
-          signatureHash: stableHash(oldFile?.content ?? ""),
+          signatureHash: hashSignatureText(oldFile?.content ?? ""),
           snapshotId: oldGraph.snapshotId,
           ref: oldGraph.ref,
         });
@@ -124,7 +125,7 @@ export class DiffEngine {
           qualifiedName: normalized,
           filePath: normalized,
           language: "unknown",
-          signatureHash: stableHash(newFile?.content ?? ""),
+          signatureHash: hashSignatureText(newFile?.content ?? ""),
           snapshotId: newGraph.snapshotId,
           ref: newGraph.ref,
         });

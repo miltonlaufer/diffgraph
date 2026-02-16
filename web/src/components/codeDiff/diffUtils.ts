@@ -17,13 +17,111 @@ export const computeSideBySide = (
 ): { oldLines: DiffLine[]; newLines: DiffLine[] } => {
   const oldArr = oldContent.split("\n");
   const newArr = newContent.split("\n");
-  const normalizeForCompare = (line: string): string => {
-    const fullyTrimmed = line.trim();
-    if (fullyTrimmed.length === 0) return "";
-    return line.trimEnd();
+  const compactLine = (line: string): string => {
+    const compact = line.replace(/\s+/g, "");
+    return compact.length === 0 ? "" : compact;
   };
-  const oldNorm = oldArr.map((line) => normalizeForCompare(line));
-  const newNorm = newArr.map((line) => normalizeForCompare(line));
+  const normalizeWrappedPythonHeader = (value: string): string =>
+    value.replace(/^(if|elif|while)\((.*)\):$/, "$1$2:");
+  const normalizeLinesForCompare = (
+    lines: string[],
+    side: "old" | "new",
+  ): { normalized: string[]; isBlankLine: boolean[]; isNeutralizedLine: boolean[] } => {
+    const compacted = lines.map(compactLine);
+    const normalized = [...compacted];
+    const isBlankLine = compacted.map((line) => line.length === 0);
+    const isNeutralizedLine = new Array(lines.length).fill(false);
+
+    for (let i = 0; i < compacted.length; i += 1) {
+      const current = compacted[i];
+      if (!current) {
+        normalized[i] = "";
+        continue;
+      }
+
+      const wrappedHeaderMatch = current.match(/^(if|elif|while)\($/);
+      if (!wrappedHeaderMatch) {
+        normalized[i] = normalizeWrappedPythonHeader(current);
+        continue;
+      }
+
+      const keyword = wrappedHeaderMatch[1];
+      let depth = 1;
+      let j = i;
+      const pieces: string[] = [];
+
+      while (j + 1 < compacted.length) {
+        j += 1;
+        const piece = compacted[j];
+        if (!piece) continue;
+        pieces.push(piece);
+
+        for (const char of piece) {
+          if (char === "(") depth += 1;
+          if (char === ")") depth -= 1;
+        }
+        if (depth <= 0) break;
+      }
+
+      if (depth <= 0) {
+        normalized[i] = normalizeWrappedPythonHeader(`${keyword}(${pieces.join("")}`);
+        for (let k = i + 1; k <= j; k += 1) {
+          normalized[k] = `__dg_wrap_cont__${side}__${k}`;
+          isNeutralizedLine[k] = true;
+        }
+        i = j;
+        continue;
+      }
+
+      normalized[i] = normalizeWrappedPythonHeader(current);
+    }
+
+    for (let i = 0; i < compacted.length; i += 1) {
+      if (isBlankLine[i]) continue;
+      const current = compacted[i] ?? "";
+      const open = (current.match(/\(/g) ?? []).length;
+      const close = (current.match(/\)/g) ?? []).length;
+      if (open <= close || !current.endsWith("(")) continue;
+
+      let depth = open - close;
+      let j = i;
+      const pieces: string[] = [current];
+      while (j + 1 < compacted.length && depth > 0) {
+        j += 1;
+        const piece = compacted[j] ?? "";
+        pieces.push(piece);
+        depth += (piece.match(/\(/g) ?? []).length;
+        depth -= (piece.match(/\)/g) ?? []).length;
+      }
+      if (depth > 0 || j <= i) continue;
+
+      normalized[i] = normalizeWrappedPythonHeader(pieces.join(""));
+      for (let k = i + 1; k <= j; k += 1) {
+        normalized[k] = `__dg_wrap_cont__${side}__${k}`;
+        isNeutralizedLine[k] = true;
+      }
+      i = j;
+    }
+
+    return { normalized, isBlankLine, isNeutralizedLine };
+  };
+  const oldNormalized = normalizeLinesForCompare(oldArr, "old");
+  const newNormalized = normalizeLinesForCompare(newArr, "new");
+  const oldNorm = oldNormalized.normalized;
+  const newNorm = newNormalized.normalized;
+  const oldIsBlankLine = oldNormalized.isBlankLine;
+  const newIsBlankLine = newNormalized.isBlankLine;
+  const oldIsNeutralizedLine = oldNormalized.isNeutralizedLine;
+  const newIsNeutralizedLine = newNormalized.isNeutralizedLine;
+
+  const pushNeutralOldLine = (oldIndex: number): void => {
+    oldLines.push({ text: oldArr[oldIndex], type: "same", lineNumber: oldIndex + 1 });
+    newLines.push({ text: "", type: "same", lineNumber: null });
+  };
+  const pushNeutralNewLine = (newIndex: number): void => {
+    oldLines.push({ text: "", type: "same", lineNumber: null });
+    newLines.push({ text: newArr[newIndex], type: "same", lineNumber: newIndex + 1 });
+  };
 
   const lcsWindow = (aStart: number, aEnd: number, bStart: number, bEnd: number): Array<[number, number]> => {
     const aLen = aEnd - aStart;
@@ -156,7 +254,12 @@ export const computeSideBySide = (
 
   for (const [matchOld, matchNew] of lcsIndices) {
     while (oi < matchOld) {
-      if (oldNorm[oi] === "") {
+      if (oldNorm[oi] === "" && oldIsBlankLine[oi]) {
+        oi += 1;
+        continue;
+      }
+      if (oldIsNeutralizedLine[oi]) {
+        pushNeutralOldLine(oi);
         oi += 1;
         continue;
       }
@@ -165,7 +268,12 @@ export const computeSideBySide = (
       oi += 1;
     }
     while (ni < matchNew) {
-      if (newNorm[ni] === "") {
+      if (newNorm[ni] === "" && newIsBlankLine[ni]) {
+        ni += 1;
+        continue;
+      }
+      if (newIsNeutralizedLine[ni]) {
+        pushNeutralNewLine(ni);
         ni += 1;
         continue;
       }
@@ -180,7 +288,12 @@ export const computeSideBySide = (
   }
 
   while (oi < oldArr.length) {
-    if (oldNorm[oi] === "") {
+    if (oldNorm[oi] === "" && oldIsBlankLine[oi]) {
+      oi += 1;
+      continue;
+    }
+    if (oldIsNeutralizedLine[oi]) {
+      pushNeutralOldLine(oi);
       oi += 1;
       continue;
     }
@@ -189,7 +302,12 @@ export const computeSideBySide = (
     oi += 1;
   }
   while (ni < newArr.length) {
-    if (newNorm[ni] === "") {
+    if (newNorm[ni] === "" && newIsBlankLine[ni]) {
+      ni += 1;
+      continue;
+    }
+    if (newIsNeutralizedLine[ni]) {
+      pushNeutralNewLine(ni);
       ni += 1;
       continue;
     }

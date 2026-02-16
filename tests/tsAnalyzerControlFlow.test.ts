@@ -188,4 +188,54 @@ describe("TsAnalyzer control flow", () => {
     expect(branchStarts.has(3)).toBe(true);
     expect(branchStarts.has(10)).toBe(true);
   });
+
+  it("ignores whitespace-only edits in signatures and keeps multiline if snippets readable", async () => {
+    const analyzer = new TsAnalyzer();
+    const oldGraph = await analyzer.analyze("repo", "old", "ref", [
+      {
+        path: "sample.ts",
+        content: [
+          "function demo(flag: boolean, retries: number) {",
+          "  if (",
+          "    flag &&",
+          "    retries > 0",
+          "  ) {",
+          "    return retries;",
+          "  }",
+          "  return 0;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ]);
+    const newGraph = await analyzer.analyze("repo", "new", "ref", [
+      {
+        path: "sample.ts",
+        content: [
+          "function demo( flag:boolean,retries:number ){",
+          "if(flag&&retries>0){",
+          "return retries;",
+          "}",
+          "return 0;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ]);
+
+    const oldFn = oldGraph.nodes.find((node) => node.kind === "Function" && node.name === "demo");
+    const newFn = newGraph.nodes.find((node) => node.kind === "Function" && node.name === "demo");
+    expect(oldFn?.signatureHash).toBeTruthy();
+    expect(newFn?.signatureHash).toBeTruthy();
+    expect(oldFn?.signatureHash).toBe(newFn?.signatureHash);
+
+    const oldIf = oldGraph.nodes.find(
+      (node) => node.kind === "Branch" && (node.metadata?.branchType as string | undefined) === "if",
+    );
+    const newIf = newGraph.nodes.find(
+      (node) => node.kind === "Branch" && (node.metadata?.branchType as string | undefined) === "if",
+    );
+    expect(oldIf?.signatureHash).toBe(newIf?.signatureHash);
+    expect((oldIf?.metadata?.codeSnippet as string | undefined) ?? "").toBe("if (flag && retries > 0)");
+  });
 });

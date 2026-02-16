@@ -141,4 +141,83 @@ describe("PyAnalyzer control flow", () => {
     expect(hasEdge(call4!, ret5!, "next")).toBe(true);
     expect(hasEdge(try2!, ret7!, "next")).toBe(true);
   });
+
+  it("keeps with-branch signature stable across formatting-only edits inside its body", async () => {
+    const analyzer = new PyAnalyzer();
+    const oldGraph = await analyzer.analyze("repo", "old", "ref", [
+      {
+        path: "sample.py",
+        content: [
+          "def demo(db, storyboard_id_int, now_ts):",
+          "    async with _LOCK:",
+          "        if _SEEDANCE_WATCHDOG_LAST_ENQUEUED_AT.get(storyboard_id_int) == now_ts:",
+          "            del _SEEDANCE_WATCHDOG_LAST_ENQUEUED_AT[storyboard_id_int]",
+          "",
+        ].join("\n"),
+      },
+    ]);
+    const newGraph = await analyzer.analyze("repo", "new", "ref", [
+      {
+        path: "sample.py",
+        content: [
+          "def demo(db, storyboard_id_int, now_ts):",
+          "    async with _LOCK:",
+          "        if (",
+          "            _SEEDANCE_WATCHDOG_LAST_ENQUEUED_AT.get(storyboard_id_int)",
+          "            == now_ts",
+          "        ):",
+          "            del _SEEDANCE_WATCHDOG_LAST_ENQUEUED_AT[storyboard_id_int]",
+          "",
+        ].join("\n"),
+      },
+    ]);
+
+    const findWithBranch = (graph: Awaited<ReturnType<PyAnalyzer["analyze"]>>) =>
+      graph.nodes.find(
+        (node) => node.kind === "Branch" && (node.metadata?.branchType as string | undefined) === "with",
+      );
+
+    const oldWith = findWithBranch(oldGraph);
+    const newWith = findWithBranch(newGraph);
+    expect(oldWith?.signatureHash).toBeTruthy();
+    expect(newWith?.signatureHash).toBeTruthy();
+    expect(oldWith?.signatureHash).toBe(newWith?.signatureHash);
+  });
+
+  it("keeps call-branch signature stable when a call assignment is wrapped across lines", async () => {
+    const analyzer = new PyAnalyzer();
+    const oldGraph = await analyzer.analyze("repo", "old", "ref", [
+      {
+        path: "sample.py",
+        content: [
+          "def demo(storyboard_props):",
+          "    use_dynamic_clip_timing = getattr(storyboard_props, 'use_dynamic_clip_timing', True)",
+          "",
+        ].join("\n"),
+      },
+    ]);
+    const newGraph = await analyzer.analyze("repo", "new", "ref", [
+      {
+        path: "sample.py",
+        content: [
+          "def demo(storyboard_props):",
+          "    use_dynamic_clip_timing = getattr(",
+          "        storyboard_props, 'use_dynamic_clip_timing', True",
+          "    )",
+          "",
+        ].join("\n"),
+      },
+    ]);
+
+    const findCallBranch = (graph: Awaited<ReturnType<PyAnalyzer["analyze"]>>) =>
+      graph.nodes.find(
+        (node) => node.kind === "Branch" && (node.metadata?.branchType as string | undefined) === "call",
+      );
+
+    const oldCall = findCallBranch(oldGraph);
+    const newCall = findCallBranch(newGraph);
+    expect(oldCall?.signatureHash).toBeTruthy();
+    expect(newCall?.signatureHash).toBeTruthy();
+    expect(oldCall?.signatureHash).toBe(newCall?.signatureHash);
+  });
 });

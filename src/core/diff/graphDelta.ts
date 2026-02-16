@@ -11,11 +11,7 @@ const branchOwnerFromQualifiedName = (qualifiedName: string): string =>
   qualifiedName.replace(/::[^:]+#\d+$/, "");
 
 const normalizeSignatureText = (value: string): string =>
-  value
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .filter((line) => line.trim().length > 0)
-    .join("\n");
+  value.replace(/\s+/g, "");
 
 const nodeKey = (node: GraphNode): string => {
   if (node.kind === "Branch") {

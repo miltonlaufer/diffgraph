@@ -49,11 +49,7 @@ interface PyResult {
 }
 
 const normalizeSignatureText = (value: string): string =>
-  value
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .filter((line) => line.trim().length > 0)
-    .join("\n");
+  value.replace(/\s+/g, "");
 
 const hashSignatureText = (value: string): string => stableHash(normalizeSignatureText(value) || "__empty__");
 

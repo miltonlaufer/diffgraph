@@ -1319,8 +1319,10 @@ export const SplitGraphPanel = observer(({
   }, [searchMatches, store, flashSearchTarget, onInteractionClick, onViewportChange, viewportForNode]);
 
   const handleNodeClick = useCallback<NodeMouseHandler>((_event, node) => {
+    const graphNode = graphNodeById.get(node.id);
+    if (graphNode?.kind === "group" && !isGroupHeaderTarget(_event)) return;
     onNodeSelect(node.id, side);
-  }, [onNodeSelect, side]);
+  }, [graphNodeById, onNodeSelect, side]);
 
   const handleNodeMouseEnter = useCallback<NodeMouseHandler>((_event, node) => {
     const graphNode = graphNodeById.get(node.id);

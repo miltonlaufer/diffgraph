@@ -36,6 +36,11 @@ export interface DiffPayload {
   };
 }
 
+interface PullRequestMetadata {
+  description?: string;
+  baseRefName?: string;
+}
+
 const textFromGit = async (args: string[], cwd: string): Promise<string> => {
   const { stdout } = await execFileAsync("git", args, { cwd, maxBuffer: 1024 * 1024 * 50 });
   return stdout;
@@ -173,34 +178,43 @@ export class DiffProvider {
       );
     }
 
-    const preferredBase = await this.resolvePreferredBaseRef(repoPath);
+    const prMetadata = await this.readPullRequestMetadata(repoPath, normalizedPr);
+    const preferredBase = await this.resolvePreferredBaseRef(repoPath, prMetadata.baseRefName);
     const mergeBase = (await textFromGit(["merge-base", preferredBase, prRef], repoPath)).trim();
     if (!mergeBase) {
       throw new Error(`Unable to compute merge-base between '${preferredBase}' and PR #${normalizedPr}.`);
     }
 
     const payload = await this.fromRefs(mergeBase, prRef, repoPath);
-    const prDescription = await this.readPullRequestDescription(repoPath, normalizedPr);
     return {
       ...payload,
       pullRequest: {
         number: normalizedPr,
-        description: prDescription,
+        description: prMetadata.description,
       },
     };
   }
 
-  private async readPullRequestDescription(repoPath: string, prNumber: string): Promise<string | undefined> {
+  private async readPullRequestMetadata(repoPath: string, prNumber: string): Promise<PullRequestMetadata> {
     try {
-      const body = (await textFromGh(["pr", "view", prNumber, "--json", "body", "--jq", ".body"], repoPath)).trim();
-      return body.length > 0 ? body : undefined;
+      const raw = await textFromGh(["pr", "view", prNumber, "--json", "body,baseRefName"], repoPath);
+      const parsed = JSON.parse(raw) as { body?: unknown; baseRefName?: unknown };
+      const body = typeof parsed.body === "string" ? parsed.body.trim() : "";
+      const baseRefName = typeof parsed.baseRefName === "string" ? parsed.baseRefName.trim() : "";
+      return {
+        description: body.length > 0 ? body : undefined,
+        baseRefName: baseRefName.length > 0 ? baseRefName : undefined,
+      };
     } catch {
-      return undefined;
+      return {};
     }
   }
 
-  private async resolvePreferredBaseRef(repoPath: string): Promise<string> {
+  private async resolvePreferredBaseRef(repoPath: string, prBaseRefName?: string): Promise<string> {
     const candidates: string[] = [];
+    if (prBaseRefName && prBaseRefName.length > 0) {
+      candidates.push(`origin/${prBaseRefName}`, prBaseRefName);
+    }
     try {
       const upstreamDefault = (await textFromGit(
         ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],

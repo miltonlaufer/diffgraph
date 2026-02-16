@@ -126,11 +126,7 @@ interface JsDocLike {
 
 const normalizeInline = (value: string): string => value.replace(/\s+/g, " ").trim();
 const normalizeSignatureText = (value: string): string =>
-  value
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .filter((line) => line.trim().length > 0)
-    .join("\n");
+  value.replace(/\s+/g, "");
 const hashSignatureText = (value: string): string => stableHash(normalizeSignatureText(value) || "__empty__");
 
 const extractParams = (
@@ -592,43 +588,41 @@ export class TsAnalyzer {
 
     const buildSnippet = (node: Node, branchKind: string): string => {
       const trim = (s: string, max: number): string => s.length > max ? `${s.slice(0, max - 3)}...` : s;
+      const normalizeSnippet = (s: string, max: number): string => trim(s.replace(/\s+/g, " ").trim(), max);
 
       if (branchKind === "return" && Node.isReturnStatement(node)) {
         const expr = node.getExpression();
         if (!expr) return "return (void)";
         const exprText = expr.getText();
         if (exprText.startsWith("(")) return trim(`return JSX`, 60);
-        if (exprText.includes("=>")) return trim(`return ${exprText.split("\n")[0]}`, 60);
-        return trim(`return ${exprText.split("\n")[0]}`, 60);
+        if (exprText.includes("=>")) return normalizeSnippet(`return ${exprText}`, 60);
+        return normalizeSnippet(`return ${exprText}`, 60);
       }
 
       if (branchKind === "if" && Node.isIfStatement(node)) {
-        const condition = node.getExpression().getText();
-        return trim(`if (${condition})`, 70);
+        const condition = node.getExpression().getText().replace(/\s+/g, " ").trim();
+        return normalizeSnippet(`if (${condition})`, 70);
       }
 
       if (branchKind === "for") {
-        const firstLine = node.getText().split("\n")[0] ?? "";
-        return trim(firstLine.replace(/\s*\{?\s*$/, ""), 70);
+        return normalizeSnippet(node.getText().replace(/\s*\{[\s\S]*$/, ""), 70);
       }
 
       if (branchKind === "while") {
-        const firstLine = node.getText().split("\n")[0] ?? "";
-        return trim(firstLine.replace(/\s*\{?\s*$/, ""), 70);
+        return normalizeSnippet(node.getText().replace(/\s*\{[\s\S]*$/, ""), 70);
       }
 
       if (branchKind === "switch" && Node.isSwitchStatement(node)) {
         const expr = node.getExpression().getText();
-        return trim(`switch (${expr})`, 60);
+        return normalizeSnippet(`switch (${expr})`, 60);
       }
 
       if (branchKind === "ternary" && Node.isConditionalExpression(node)) {
         const condition = node.getCondition().getText();
-        return trim(`${condition} ? ... : ...`, 60);
+        return normalizeSnippet(`${condition} ? ... : ...`, 60);
       }
 
-      const firstLine = node.getText().split("\n")[0] ?? "";
-      return trim(firstLine, 60);
+      return normalizeSnippet(node.getText(), 60);
     };
 
     const knownBooleanLiteral = (expr: Node): boolean | undefined => {

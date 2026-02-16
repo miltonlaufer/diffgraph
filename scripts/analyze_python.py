@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import ast
 import json
 import sys
@@ -20,6 +22,10 @@ class Collector(ast.NodeVisitor):
         self.current_scope = "module"
         self._branch_counter: dict[str, int] = {}
         self._branch_flow_keys: set[tuple[str, str, str]] = set()
+
+    def _compact(self, text: str, max_len: int = 70) -> str:
+        single = " ".join(text.split())
+        return single if len(single) <= max_len else single[: max_len - 3] + "..."
 
     def _semantic_signature(self, node: ast.AST) -> str:
         return ast.dump(node, annotate_fields=True, include_attributes=False)
@@ -116,14 +122,36 @@ class Collector(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _get_snippet(self, node: ast.AST) -> str:
+        if isinstance(node, ast.If):
+            return self._compact(f"if {ast.unparse(node.test)}:")
+        if isinstance(node, ast.For):
+            return self._compact(f"for {ast.unparse(node.target)} in {ast.unparse(node.iter)}:")
+        if isinstance(node, ast.AsyncFor):
+            return self._compact(
+                f"async for {ast.unparse(node.target)} in {ast.unparse(node.iter)}:"
+            )
+        if isinstance(node, ast.While):
+            return self._compact(f"while {ast.unparse(node.test)}:")
+        if isinstance(node, ast.With):
+            items = ", ".join(ast.unparse(item) for item in node.items)
+            return self._compact(f"with {items}:")
+        if isinstance(node, ast.AsyncWith):
+            items = ", ".join(ast.unparse(item) for item in node.items)
+            return self._compact(f"async with {items}:")
+        if isinstance(node, ast.Return):
+            if node.value is None:
+                return "return"
+            return self._compact(f"return {ast.unparse(node.value)}")
+        if isinstance(node, ast.Raise):
+            return self._compact(f"raise {ast.unparse(node.exc)}") if node.exc else "raise"
+
         source_segment = (
             ast.get_source_segment(self._source, node)
             if hasattr(self, "_source")
             else None
         )
         if source_segment:
-            first_line = source_segment.split("\n")[0]
-            return first_line[:70] if len(first_line) <= 70 else first_line[:67] + "..."
+            return self._compact(source_segment, 70)
         return ""
 
     def _extract_stmt_call(self, node: ast.AST) -> ast.Call | None:
@@ -188,7 +216,10 @@ class Collector(ast.NodeVisitor):
         self, owner: str, stmt_node: ast.AST, call_node: ast.Call
     ) -> str:
         callee = self._call_name(call_node)
-        snippet = self._get_snippet(stmt_node)
+        try:
+            snippet = self._compact(ast.unparse(stmt_node))
+        except Exception:
+            snippet = self._get_snippet(stmt_node)
         if not snippet:
             snippet = f"{callee}(...)"
         return self._add_branch(

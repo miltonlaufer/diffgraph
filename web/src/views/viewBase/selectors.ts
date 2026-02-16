@@ -40,6 +40,18 @@ const includeInvokeNeighbors = (graph: ViewGraph, seedIds: Set<string>): Set<str
   return keepIds;
 };
 
+const includeFlowNeighbors = (graph: ViewGraph, seedIds: Set<string>): Set<string> => {
+  const keepIds = new Set(seedIds);
+  for (const edge of graph.edges) {
+    if (edge.relation !== "flow") continue;
+    if (keepIds.has(edge.source) || keepIds.has(edge.target)) {
+      keepIds.add(edge.source);
+      keepIds.add(edge.target);
+    }
+  }
+  return keepIds;
+};
+
 const includeHierarchyDescendants = (graph: ViewGraph, seedIds: Set<string>): Set<string> => {
   const keepIds = new Set(seedIds);
   const childrenByParent = new Map<string, string[]>();
@@ -82,13 +94,18 @@ export const computeFilteredNewGraph = (newGraph: ViewGraph): ViewGraph => {
 };
 
 const applyLogicNeighborExpansion = (graph: ViewGraph, keepIds: Set<string>): Set<string> => {
+  let expanded = new Set(keepIds);
   const groupSeedIds = new Set(
     graph.nodes
-      .filter((n) => keepIds.has(n.id) && n.kind === "group")
+      .filter((n) => expanded.has(n.id) && n.kind === "group")
       .map((n) => n.id),
   );
-  let expanded = includeHierarchyDescendants(graph, groupSeedIds);
+  const groupDescendantIds = includeHierarchyDescendants(graph, groupSeedIds);
+  for (const id of groupDescendantIds) {
+    expanded.add(id);
+  }
   expanded = includeHierarchyAncestors(graph, expanded);
+  expanded = includeFlowNeighbors(graph, expanded);
   expanded = includeInvokeNeighbors(graph, expanded);
   expanded = includeHierarchyAncestors(graph, expanded);
   return expanded;
