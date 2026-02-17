@@ -1,7 +1,17 @@
-import { memo, type MutableRefObject } from "react";
+import { memo, type CSSProperties, type MutableRefObject } from "react";
 import { HighlightedCode } from "./HighlightedCode";
 import type { DiffLine } from "./types";
 import { extractSearchWordFromDoubleClick, lineStyle } from "./diffUtils";
+
+const GAP_MARKER_TEXT = "...";
+
+const gapRowCellStyle: CSSProperties = {
+  background: "rgba(148, 163, 184, 0.16)",
+  color: "#fcd34d",
+  fontWeight: 700,
+  letterSpacing: 2,
+  textAlign: "center",
+};
 
 interface SimpleRowProps {
   side: "old" | "new";
@@ -53,6 +63,7 @@ interface CodeDiffSingleFileViewProps {
   content: string;
   language: string;
   searchQuery: string;
+  visibleLineNumbers?: Set<number> | null;
   oldCodeScrollRef: MutableRefObject<HTMLDivElement | null>;
   newCodeScrollRef: MutableRefObject<HTMLDivElement | null>;
   onLineClick?: (line: number, side: "old" | "new") => void;
@@ -61,12 +72,17 @@ interface CodeDiffSingleFileViewProps {
   onLineDoubleClick?: (line: number, side: "old" | "new", word: string) => void;
 }
 
+type VisibleSingleFileRow =
+  | { kind: "line"; text: string; lineNum: number }
+  | { kind: "gap"; key: string };
+
 export const CodeDiffSingleFileView = ({
   mode,
   filePath,
   content,
   language,
   searchQuery,
+  visibleLineNumbers = null,
   oldCodeScrollRef,
   newCodeScrollRef,
   onLineClick,
@@ -75,34 +91,67 @@ export const CodeDiffSingleFileView = ({
   onLineDoubleClick,
 }: CodeDiffSingleFileViewProps) => {
   const isAdded = mode === "added";
-  const lineCount = content.split("\n").length;
+  const allLines = content.split("\n");
+  const visibleLineRows = allLines
+    .map((text, idx) => ({ text, lineNum: idx + 1 }))
+    .filter((row) => visibleLineNumbers === null || visibleLineNumbers.has(row.lineNum));
+  const visibleRows = visibleLineRows.reduce<VisibleSingleFileRow[]>((acc, row) => {
+    const previous = acc.length > 0 ? acc[acc.length - 1] : null;
+    if (previous && previous.kind === "line" && row.lineNum - previous.lineNum > 1) {
+      acc.push({ kind: "gap", key: `${previous.lineNum}-${row.lineNum}` });
+    }
+    acc.push({ kind: "line", text: row.text, lineNum: row.lineNum });
+    return acc;
+  }, []);
+  const lineCount = visibleLineRows.length;
+  const totalLineCount = allLines.length;
+  const hasLineFilter = visibleLineNumbers !== null;
 
   return (
     <>
-      <h4 className="codeDiffTitle">{filePath} <span className="diffCount">{lineCount} lines {isAdded ? "added" : "removed"}</span></h4>
+      <h4 className="codeDiffTitle">
+        {filePath}
+        <span className="diffCount">
+          {lineCount}
+          {hasLineFilter ? ` of ${totalLineCount}` : ""}
+          {" "}
+          lines
+          {" "}
+          {isAdded ? "added" : "removed"}
+        </span>
+      </h4>
       <div className="splitCodeLayout">
         <div className="codeColumn">
           <h5 className="codeColumnHeader oldHeader">{isAdded ? "Old" : "Old (file was deleted)"}</h5>
           <div className="codeScrollArea" ref={oldCodeScrollRef}>
             {isAdded ? (
               <p className="dimText">File did not exist.</p>
+            ) : lineCount === 0 ? (
+              <p className="dimText">No matching logic-tree lines for this file.</p>
             ) : (
               <table className="diffTable">
                 <tbody>
-                  {content.split("\n").map((line, i) => (
-                    <SimpleRow
-                      key={`old-${i}`}
-                      side="old"
-                      text={line}
-                      lineNum={i + 1}
-                      type="removed"
-                      language={language}
-                      searchQuery={searchQuery}
-                      onLineClick={onLineClick}
-                      onLineHover={onLineHover}
-                      onLineHoverLeave={onLineHoverLeave}
-                      onLineDoubleClick={onLineDoubleClick}
-                    />
+                  {visibleRows.map((row, i) => (
+                    row.kind === "gap" ? (
+                      <tr key={`old-gap-${row.key}-${i}`}>
+                        <td className="lineNum" style={gapRowCellStyle}>{GAP_MARKER_TEXT}</td>
+                        <td className="lineCode" style={gapRowCellStyle}>{GAP_MARKER_TEXT}</td>
+                      </tr>
+                    ) : (
+                      <SimpleRow
+                        key={`old-${i}`}
+                        side="old"
+                        text={row.text}
+                        lineNum={row.lineNum}
+                        type="removed"
+                        language={language}
+                        searchQuery={searchQuery}
+                        onLineClick={onLineClick}
+                        onLineHover={onLineHover}
+                        onLineHoverLeave={onLineHoverLeave}
+                        onLineDoubleClick={onLineDoubleClick}
+                      />
+                    )
                   ))}
                 </tbody>
               </table>
@@ -112,23 +161,32 @@ export const CodeDiffSingleFileView = ({
         <div className="codeColumn">
           <h5 className="codeColumnHeader newHeader">{isAdded ? "New (entire file is new)" : "New"}</h5>
           <div className="codeScrollArea" ref={newCodeScrollRef}>
-            {isAdded ? (
+            {isAdded ? lineCount === 0 ? (
+              <p className="dimText">No matching logic-tree lines for this file.</p>
+            ) : (
               <table className="diffTable">
                 <tbody>
-                  {content.split("\n").map((line, i) => (
-                    <SimpleRow
-                      key={`new-${i}`}
-                      side="new"
-                      text={line}
-                      lineNum={i + 1}
-                      type="added"
-                      language={language}
-                      searchQuery={searchQuery}
-                      onLineClick={onLineClick}
-                      onLineHover={onLineHover}
-                      onLineHoverLeave={onLineHoverLeave}
-                      onLineDoubleClick={onLineDoubleClick}
-                    />
+                  {visibleRows.map((row, i) => (
+                    row.kind === "gap" ? (
+                      <tr key={`new-gap-${row.key}-${i}`}>
+                        <td className="lineNum" style={gapRowCellStyle}>{GAP_MARKER_TEXT}</td>
+                        <td className="lineCode" style={gapRowCellStyle}>{GAP_MARKER_TEXT}</td>
+                      </tr>
+                    ) : (
+                      <SimpleRow
+                        key={`new-${i}`}
+                        side="new"
+                        text={row.text}
+                        lineNum={row.lineNum}
+                        type="added"
+                        language={language}
+                        searchQuery={searchQuery}
+                        onLineClick={onLineClick}
+                        onLineHover={onLineHover}
+                        onLineHoverLeave={onLineHoverLeave}
+                        onLineDoubleClick={onLineDoubleClick}
+                      />
+                    )
                   ))}
                 </tbody>
               </table>

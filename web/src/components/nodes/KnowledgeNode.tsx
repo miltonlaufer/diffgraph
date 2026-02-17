@@ -19,6 +19,7 @@ interface KnowledgeNodeData {
   askLlmNodeId?: string;
   onAskLlmForNode?: (nodeId: string) => Promise<boolean> | boolean;
   onAskLlmHrefForNode?: (nodeId: string) => string;
+  onShowCodeLogicTreeForNode?: (nodeId: string) => void;
 }
 
 const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
@@ -26,7 +27,7 @@ const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
   const [hovered, setHovered] = useState(false);
   const [hoveredActions, setHoveredActions] = useState(false);
   const tooltipVisible = useDebouncedValue(hovered, 500);
-  const { askLlmNodeId, onAskLlmForNode, onAskLlmHrefForNode } = data;
+  const { askLlmNodeId, onAskLlmForNode, onAskLlmHrefForNode, onShowCodeLogicTreeForNode } = data;
 
   /******************* COMPUTED ***********************/
   const style = useMemo(
@@ -60,7 +61,12 @@ const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
     () => (askLlmNodeId && onAskLlmHrefForNode ? onAskLlmHrefForNode(askLlmNodeId) : ""),
     [askLlmNodeId, onAskLlmHrefForNode],
   );
+  const handleShowCodeLogicTree = useCallback(() => {
+    if (!askLlmNodeId || !onShowCodeLogicTreeForNode) return;
+    onShowCodeLogicTreeForNode(askLlmNodeId);
+  }, [askLlmNodeId, onShowCodeLogicTreeForNode]);
   const hasAskLlm = Boolean(askLlmNodeId && onAskLlmForNode);
+  const hasCodeLogicTree = Boolean(askLlmNodeId && onShowCodeLogicTreeForNode);
 
   return (
     <div style={style} title={`${data.label}\n${data.fullPath}`} onMouseEnter={onEnter} onMouseLeave={onLeave}>
@@ -72,6 +78,7 @@ const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
       </div>
       <AskLlmButton
         visible={hovered || hoveredActions}
+        onShowCodeLogicTree={hasCodeLogicTree ? handleShowCodeLogicTree : undefined}
         onAskLlm={hasAskLlm ? handleAskLlm : undefined}
         askLlmHref={askLlmHref || undefined}
         onHoverChange={handleActionsHoverChange}

@@ -42,6 +42,9 @@ export class ViewBaseStore {
   codeSearchActive = false;
   codeSearchNavDirection: "next" | "prev" = "next";
   codeSearchNavTick = 0;
+  codeLogicTreeRequestTick = 0;
+  codeLogicTreeRequestSide: "old" | "new" = "new";
+  codeLogicTreeRequestLines: number[] = [];
   hoveredNodeId = "";
   hoveredNodeMatchKey = "";
   hoveredNodeSide: "old" | "new" | "" = "";
@@ -104,6 +107,9 @@ export class ViewBaseStore {
     this.codeSearchActive = false;
     this.codeSearchNavDirection = "next";
     this.codeSearchNavTick = 0;
+    this.codeLogicTreeRequestTick = 0;
+    this.codeLogicTreeRequestSide = "new";
+    this.codeLogicTreeRequestLines = [];
     this.graphTopScrollTick = 0;
     this.loading = false;
     this.error = "";
@@ -232,6 +238,12 @@ export class ViewBaseStore {
   requestCodeSearchNavigate(direction: "next" | "prev"): void {
     this.codeSearchNavDirection = direction;
     this.codeSearchNavTick += 1;
+  }
+
+  requestCodeLogicTree(side: "old" | "new", lineNumbers: number[]): void {
+    this.codeLogicTreeRequestSide = side;
+    this.codeLogicTreeRequestLines = lineNumbers;
+    this.codeLogicTreeRequestTick += 1;
   }
 
   setTarget(line: number, side: "old" | "new"): void {

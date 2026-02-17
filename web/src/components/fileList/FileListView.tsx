@@ -46,6 +46,8 @@ export const FileListView = ({
             </span>
             <span
               className="riskBadge"
+              title={`Risk score R${entry.riskScore ?? 0}: higher means this file is more likely to be impactful or risky.`}
+              aria-label={`Risk score ${entry.riskScore ?? 0}`}
               style={{
                 borderColor:
                   (entry.riskLevel === "high" || (entry.riskScore ?? 0) >= topRisk * 0.75)

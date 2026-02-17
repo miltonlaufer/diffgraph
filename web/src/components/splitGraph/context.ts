@@ -26,6 +26,7 @@ interface SplitGraphRuntimeActions {
   onInteractionClick?: () => void;
   onGraphNodeFocus?: (nodeId: string, side: "old" | "new") => void;
   onNodeSelect: (nodeId: string, side: "old" | "new") => void;
+  onOpenCodeLogicTree?: (nodeId: string, side: "old" | "new", lineNumbers: number[]) => void;
   onNodeHoverChange: (side: "old" | "new", nodeId: string, matchKey: string) => void;
   onViewportChange: (viewport: ViewportState) => void;
   onDiffTargetsChange?: (side: "old" | "new", targets: GraphDiffTarget[]) => void;

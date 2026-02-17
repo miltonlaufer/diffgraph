@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 
 interface AskLlmButtonProps {
   visible: boolean;
+  onShowCodeLogicTree?: () => void;
   onAskLlm?: () => Promise<boolean> | boolean;
   askLlmHref?: string;
   onHoverChange?: (hovered: boolean) => void;
@@ -56,14 +57,14 @@ const messageStyle: CSSProperties = {
 
 const anchorStyle: CSSProperties = {
   position: "absolute",
-  top: 2,
+  top: -12,
   left: "calc(100% + 4px)",
   zIndex: 5000,
 };
 
-const AskLlmButton = ({ visible, onAskLlm, askLlmHref, onHoverChange, style }: AskLlmButtonProps) => {
+const AskLlmButton = ({ visible, onShowCodeLogicTree, onAskLlm, askLlmHref, onHoverChange, style }: AskLlmButtonProps) => {
   const [status, setStatus] = useState<"idle" | "copying" | "copied" | "failed">("idle");
-  const [hoveredAction, setHoveredAction] = useState<"" | "copy" | "open">("");
+  const [hoveredAction, setHoveredAction] = useState<"" | "logic" | "copy" | "open">("");
   const [messagePosition, setMessagePosition] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const resetTimerRef = useRef<number | null>(null);
@@ -105,6 +106,7 @@ const AskLlmButton = ({ visible, onAskLlm, askLlmHref, onHoverChange, style }: A
   }, [askLlmHref]);
   const handleCopyHoverEnter = useCallback(() => setHoveredAction("copy"), []);
   const handleOpenHoverEnter = useCallback(() => setHoveredAction("open"), []);
+  const handleLogicHoverEnter = useCallback(() => setHoveredAction("logic"), []);
   const handleHoverLeave = useCallback(() => setHoveredAction(""), []);
   const handlePanelMouseEnter = useCallback(() => {
     onHoverChange?.(true);
@@ -134,7 +136,13 @@ const AskLlmButton = ({ visible, onAskLlm, askLlmHref, onHoverChange, style }: A
     };
   }, [status, updateMessagePosition]);
 
-  if (!visible || (!onAskLlm && !askLlmHref)) return null;
+  const handleShowCodeLogicTreeClick = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onShowCodeLogicTree?.();
+  }, [onShowCodeLogicTree]);
+
+  if (!visible || (!onShowCodeLogicTree && !onAskLlm && !askLlmHref)) return null;
 
   return (
     <div
@@ -144,6 +152,28 @@ const AskLlmButton = ({ visible, onAskLlm, askLlmHref, onHoverChange, style }: A
       onMouseLeave={handlePanelMouseLeave}
     >
       <div style={panelStyle}>
+        {onShowCodeLogicTree && (
+          <button
+            type="button"
+            onMouseDown={handleMouseDown}
+            onClick={handleShowCodeLogicTreeClick}
+            onMouseEnter={handleLogicHoverEnter}
+            onMouseLeave={handleHoverLeave}
+            style={{
+              ...actionStyle,
+              borderColor: hoveredAction === "logic" ? "#fcd34d" : "rgba(251, 191, 36, 0.7)",
+              background: hoveredAction === "logic" ? "#78350f" : "#713f12",
+              color: "#fef3c7",
+              boxShadow: hoveredAction === "logic"
+                ? "0 0 0 1px rgba(252, 211, 77, 0.3), 0 0 14px rgba(251, 191, 36, 0.28)"
+                : "none",
+              transform: hoveredAction === "logic" ? "translateY(-1px)" : "none",
+            }}
+            title="Open fullscreen code view focused on this node's highlighted logic ancestry lines"
+          >
+            See code logic tree
+          </button>
+        )}
         {onAskLlm && (
           <button
             type="button"

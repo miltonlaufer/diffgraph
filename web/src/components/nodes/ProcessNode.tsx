@@ -23,6 +23,7 @@ interface ProcessNodeData {
   askLlmNodeId?: string;
   onAskLlmForNode?: (nodeId: string) => Promise<boolean> | boolean;
   onAskLlmHrefForNode?: (nodeId: string) => string;
+  onShowCodeLogicTreeForNode?: (nodeId: string) => void;
 }
 
 const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
@@ -30,7 +31,7 @@ const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
   const [hovered, setHovered] = useState(false);
   const [hoveredActions, setHoveredActions] = useState(false);
   const tooltipVisible = useDebouncedValue(hovered, 500);
-  const { askLlmNodeId, onAskLlmForNode, onAskLlmHrefForNode } = data;
+  const { askLlmNodeId, onAskLlmForNode, onAskLlmHrefForNode, onShowCodeLogicTreeForNode } = data;
 
   /******************* COMPUTED ***********************/
   const parts = useMemo(() => splitLabel(data.label), [data.label]);
@@ -64,7 +65,12 @@ const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
     () => (askLlmNodeId && onAskLlmHrefForNode ? onAskLlmHrefForNode(askLlmNodeId) : ""),
     [askLlmNodeId, onAskLlmHrefForNode],
   );
+  const handleShowCodeLogicTree = useCallback(() => {
+    if (!askLlmNodeId || !onShowCodeLogicTreeForNode) return;
+    onShowCodeLogicTreeForNode(askLlmNodeId);
+  }, [askLlmNodeId, onShowCodeLogicTreeForNode]);
   const hasAskLlm = Boolean(askLlmNodeId && onAskLlmForNode);
+  const hasCodeLogicTree = Boolean(askLlmNodeId && onShowCodeLogicTreeForNode);
 
   return (
     <div style={style} onMouseEnter={onEnter} onMouseLeave={onLeave}>
@@ -76,6 +82,7 @@ const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
       )}
       <AskLlmButton
         visible={hovered || hoveredActions}
+        onShowCodeLogicTree={hasCodeLogicTree ? handleShowCodeLogicTree : undefined}
         onAskLlm={hasAskLlm ? handleAskLlm : undefined}
         askLlmHref={askLlmHref || undefined}
         onHoverChange={handleActionsHoverChange}

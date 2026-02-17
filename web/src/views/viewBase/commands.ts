@@ -10,6 +10,13 @@ interface CommandContext {
   runInteractiveUpdate: (update: () => void) => void;
 }
 
+const sanitizeLineNumbers = (lineNumbers: number[]): number[] => {
+  const normalized = lineNumbers
+    .map((value) => Math.floor(value))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  return [...new Set(normalized)].sort((a, b) => a - b);
+};
+
 export const commandSelectNode = (
   context: CommandContext,
   nodeId: string,
@@ -269,6 +276,42 @@ export const commandCodeLineDoubleClick = (
   context.runInteractiveUpdate(() => {
     context.store.requestGraphSearch(side, query);
     context.store.bumpGraphTopScrollTick();
+  });
+};
+
+export const commandOpenCodeLogicTree = (
+  context: CommandContext,
+  nodeId: string,
+  sourceSide: "old" | "new",
+  lineNumbers: number[],
+): void => {
+  const { store, runInteractiveUpdate } = context;
+  runInteractiveUpdate(() => {
+    store.setSelectedNodeId(nodeId);
+    store.setFileListCollapsed(true);
+    store.focusNode(nodeId, sourceSide);
+    const matchedOld = store.oldGraph.nodes.find((node) => node.id === nodeId);
+    const matchedNew = store.newGraph.nodes.find((node) => node.id === nodeId);
+    const primary = sourceSide === "old" ? matchedOld : matchedNew;
+    const fallback = sourceSide === "old" ? matchedNew : matchedOld;
+    const filePath = primary?.filePath ?? fallback?.filePath ?? "";
+    if (filePath.length > 0) {
+      store.setSelectedFilePath(normalizePath(filePath));
+    }
+
+    const fallbackLine = primary?.startLine ?? fallback?.startLine ?? 0;
+    const filteredLines = sanitizeLineNumbers(lineNumbers);
+    const targetLine = filteredLines[0] ?? fallbackLine;
+    if (targetLine > 0) {
+      store.setTarget(targetLine, sourceSide);
+      store.bumpScrollTick();
+    }
+    const requestLines = filteredLines.length > 0
+      ? filteredLines
+      : targetLine > 0
+        ? [targetLine]
+        : [];
+    store.requestCodeLogicTree(sourceSide, requestLines);
   });
 };
 

@@ -49,6 +49,33 @@ const diffComputation = createCachedComputation<DiffComputationInput, ReturnType
   compute: ({ oldContent, newContent }) => computeSideBySide(oldContent, newContent),
 });
 
+const GAP_MARKER_TEXT = "...";
+
+const buildGapMarkerRow = (): DiffMatrixRow => ({
+  old: { text: GAP_MARKER_TEXT, type: "same", lineNumber: null },
+  new: { text: GAP_MARKER_TEXT, type: "same", lineNumber: null },
+});
+
+const insertGapRows = (
+  rows: DiffMatrixRow[],
+  side: "old" | "new",
+): DiffMatrixRow[] => {
+  if (rows.length <= 1) return rows;
+  const withGaps: DiffMatrixRow[] = [];
+  let prevLine: number | null = null;
+  for (const row of rows) {
+    const currentLine = side === "old" ? row.old.lineNumber : row.new.lineNumber;
+    if (prevLine !== null && currentLine !== null && currentLine - prevLine > 1) {
+      withGaps.push(buildGapMarkerRow());
+    }
+    withGaps.push(row);
+    if (currentLine !== null) {
+      prevLine = currentLine;
+    }
+  }
+  return withGaps;
+};
+
 export const CodeDiffDrawer = observer(() => {
   const { state, actions } = useViewBaseRuntime();
   const {
@@ -60,6 +87,9 @@ export const CodeDiffDrawer = observer(() => {
     scrollTick,
     codeSearchNavDirection,
     codeSearchNavTick,
+    codeLogicTreeRequestTick,
+    codeLogicTreeRequestSide,
+    codeLogicTreeRequestLines,
   } = state;
   const { onCodeLineClick, onCodeSearchStateChange } = actions;
   const store = useLocalObservable(() => new CodeDiffDrawerStore());
@@ -68,6 +98,7 @@ export const CodeDiffDrawer = observer(() => {
   const syncingScrollRef = useRef(false);
   const pendingLineClickTimerRef = useRef<number | null>(null);
   const lastAppliedCodeSearchNavTickRef = useRef(0);
+  const lastAppliedCodeLogicTreeTickRef = useRef(0);
   const prevHoveredCodeLineRef = useRef(0);
   const SINGLE_CLICK_DELAY_MS = 450;
 
@@ -95,19 +126,32 @@ export const CodeDiffDrawer = observer(() => {
       : []),
     [diff],
   );
+  const codeLogicTreeLineSet = useMemo(
+    () => (store.codeLogicTreeMode ? new Set(store.codeLogicTreeLines) : null),
+    [store.codeLogicTreeLines, store.codeLogicTreeMode],
+  );
+  const visibleMatrixRows = useMemo<DiffMatrixRow[]>(() => {
+    if (!store.codeLogicTreeMode || !codeLogicTreeLineSet) return matrixRows;
+    const filterSide = store.codeLogicTreeSide;
+    const filteredRows = matrixRows.filter((row) => {
+      const lineNumber = filterSide === "old" ? row.old.lineNumber : row.new.lineNumber;
+      return lineNumber !== null && codeLogicTreeLineSet.has(lineNumber);
+    });
+    return insertGapRows(filteredRows, filterSide);
+  }, [codeLogicTreeLineSet, matrixRows, store.codeLogicTreeMode, store.codeLogicTreeSide]);
 
-  const hunkRows = useMemo(() => findDiffHunkStarts(matrixRows), [matrixRows]);
+  const hunkRows = useMemo(() => findDiffHunkStarts(visibleMatrixRows), [visibleMatrixRows]);
   const hunkCount = hunkRows.length;
 
   const textSearchMatches = useMemo(() => {
     if (!debouncedTextSearch || debouncedTextSearch.length < 2 || !diff) return [];
     const query = debouncedTextSearch.toLowerCase();
     const matches: number[] = [];
-    matrixRows.forEach((row, i) => {
+    visibleMatrixRows.forEach((row, i) => {
       if (row.new.text.toLowerCase().includes(query) || row.old.text.toLowerCase().includes(query)) matches.push(i);
     });
     return matches;
-  }, [debouncedTextSearch, diff, matrixRows]);
+  }, [debouncedTextSearch, diff, visibleMatrixRows]);
 
   const goToHunk = useCallback(
     (idx: number) => {
@@ -194,8 +238,11 @@ export const CodeDiffDrawer = observer(() => {
     pendingLineClickTimerRef.current = window.setTimeout(() => {
       pendingLineClickTimerRef.current = null;
       onCodeLineClick(line, side);
+      if (store.isFullscreen) {
+        store.setFullscreen(false);
+      }
     }, SINGLE_CLICK_DELAY_MS);
-  }, [onCodeLineClick, SINGLE_CLICK_DELAY_MS]);
+  }, [onCodeLineClick, SINGLE_CLICK_DELAY_MS, store]);
 
   const handleLineDoubleClick = useCallback((_line: number, _side: "old" | "new", word: string) => {
     if (pendingLineClickTimerRef.current !== null) {
@@ -208,13 +255,13 @@ export const CodeDiffDrawer = observer(() => {
     store.setTextSearchIdx(0);
 
     const normalized = query.toLowerCase();
-    const firstMatchIdx = matrixRows.findIndex(
+    const firstMatchIdx = visibleMatrixRows.findIndex(
       (row) => row.new.text.toLowerCase().includes(normalized) || row.old.text.toLowerCase().includes(normalized),
     );
     if (firstMatchIdx >= 0) {
       scrollToRowIndex(oldCodeScrollRef.current, firstMatchIdx);
     }
-  }, [matrixRows, store]);
+  }, [store, visibleMatrixRows]);
 
   useEffect(() => {
     store.resetHunkIdx();
@@ -278,6 +325,25 @@ export const CodeDiffDrawer = observer(() => {
     goToTextMatch(store.textSearchIdx - 1);
   }, [codeSearchNavDirection, codeSearchNavTick, goToTextMatch, store.textSearchIdx]);
 
+  useEffect(() => {
+    if (codeLogicTreeRequestTick <= 0) return;
+    if (codeLogicTreeRequestTick === lastAppliedCodeLogicTreeTickRef.current) return;
+    lastAppliedCodeLogicTreeTickRef.current = codeLogicTreeRequestTick;
+    const normalizedLines = [...new Set(
+      codeLogicTreeRequestLines
+        .map((line) => Math.floor(line))
+        .filter((line) => Number.isFinite(line) && line > 0),
+    )].sort((a, b) => a - b);
+    if (normalizedLines.length === 0) return;
+    store.setCodeLogicTreeMode(codeLogicTreeRequestSide, normalizedLines);
+    store.setFullscreen(true);
+  }, [
+    codeLogicTreeRequestLines,
+    codeLogicTreeRequestSide,
+    codeLogicTreeRequestTick,
+    store,
+  ]);
+
   useEffect(() => () => {
     onCodeSearchStateChange(false);
     if (pendingLineClickTimerRef.current !== null) {
@@ -325,6 +391,11 @@ export const CodeDiffDrawer = observer(() => {
           content={file.newContent}
           language={lang}
           searchQuery={store.textSearch}
+          visibleLineNumbers={
+            store.codeLogicTreeMode && store.codeLogicTreeSide === "new"
+              ? codeLogicTreeLineSet
+              : null
+          }
           oldCodeScrollRef={oldCodeScrollRef}
           newCodeScrollRef={newCodeScrollRef}
           onLineClick={handleDeferredLineClick}
@@ -346,6 +417,11 @@ export const CodeDiffDrawer = observer(() => {
           content={file.oldContent}
           language={lang}
           searchQuery={store.textSearch}
+          visibleLineNumbers={
+            store.codeLogicTreeMode && store.codeLogicTreeSide === "old"
+              ? codeLogicTreeLineSet
+              : null
+          }
           oldCodeScrollRef={oldCodeScrollRef}
           newCodeScrollRef={newCodeScrollRef}
           onLineClick={handleDeferredLineClick}
@@ -373,18 +449,23 @@ export const CodeDiffDrawer = observer(() => {
         onNextTextMatch={() => goToTextMatch(store.textSearchIdx + 1)}
         onPrevHunk={goToPrevHunk}
         onNextHunk={goToNextHunk}
+        showChangeNavigation={!store.codeLogicTreeMode}
       />
-      <CodeDiffMatrixView
-        matrixRows={matrixRows}
-        language={lang}
-        searchQuery={store.textSearch}
-        oldCodeScrollRef={oldCodeScrollRef}
-        newCodeScrollRef={newCodeScrollRef}
-        onOldScroll={handleOldScroll}
-        onNewScroll={handleNewScroll}
-        onLineClick={handleDeferredLineClick}
-        onLineDoubleClick={handleLineDoubleClick}
-      />
+      {store.codeLogicTreeMode && visibleMatrixRows.length === 0 ? (
+        <p className="dimText">No matching logic-tree lines for this file.</p>
+      ) : (
+        <CodeDiffMatrixView
+          matrixRows={visibleMatrixRows}
+          language={lang}
+          searchQuery={store.textSearch}
+          oldCodeScrollRef={oldCodeScrollRef}
+          newCodeScrollRef={newCodeScrollRef}
+          onOldScroll={handleOldScroll}
+          onNewScroll={handleNewScroll}
+          onLineClick={handleDeferredLineClick}
+          onLineDoubleClick={handleLineDoubleClick}
+        />
+      )}
     </section>
   );
 });

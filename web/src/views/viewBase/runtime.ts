@@ -13,6 +13,9 @@ interface ViewBaseRuntimeState {
   scrollTick: number;
   codeSearchNavDirection: "next" | "prev";
   codeSearchNavTick: number;
+  codeLogicTreeRequestTick: number;
+  codeLogicTreeRequestSide: "old" | "new";
+  codeLogicTreeRequestLines: number[];
 }
 
 interface ViewBaseRuntimeActions {

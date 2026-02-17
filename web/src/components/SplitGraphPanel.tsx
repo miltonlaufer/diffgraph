@@ -382,6 +382,7 @@ export const SplitGraphPanel = observer(({
     onInteractionClick,
     onGraphNodeFocus,
     onNodeSelect,
+    onOpenCodeLogicTree,
     onNodeHoverChange,
     onViewportChange,
     onDiffTargetsChange,
@@ -1035,6 +1036,41 @@ export const SplitGraphPanel = observer(({
     return hoverNeighborhoodByNodeId.get(hoverNeighborhoodSeedId) ?? null;
   }, [hoverNeighborhoodByNodeId, hoverNeighborhoodSeedId]);
 
+  const codeLogicTreeLinesForNode = useCallback((nodeId: string): number[] => {
+    const seedNode = graphNodeById.get(nodeId);
+    if (!seedNode) return [];
+    const targetFilePath = normPath(seedNode.filePath);
+    if (!targetFilePath) return [];
+
+    const neighborhood = hoverNeighborhoodByNodeId.get(nodeId);
+    const relatedIds = new Set<string>([nodeId]);
+    if (neighborhood) {
+      for (const directId of neighborhood.directNodeIds) relatedIds.add(directId);
+      for (const ancestorId of neighborhood.ancestorNodeIds) relatedIds.add(ancestorId);
+    }
+
+    const lines = new Set<number>();
+    for (const relatedId of relatedIds) {
+      const relatedNode = graphNodeById.get(relatedId);
+      if (!relatedNode || relatedNode.kind === "group") continue;
+      if (normPath(relatedNode.filePath) !== targetFilePath) continue;
+      const start = relatedNode.startLine ?? 0;
+      if (start < 1) continue;
+      const end = Math.max(start, relatedNode.endLine ?? start);
+      for (let line = start; line <= end; line += 1) {
+        lines.add(line);
+      }
+    }
+
+    return [...lines].sort((a, b) => a - b);
+  }, [graphNodeById, hoverNeighborhoodByNodeId]);
+
+  const handleShowCodeLogicTreeForNode = useCallback((nodeId: string) => {
+    if (!onOpenCodeLogicTree) return;
+    const lineNumbers = codeLogicTreeLinesForNode(nodeId);
+    onOpenCodeLogicTree(nodeId, side, lineNumbers);
+  }, [codeLogicTreeLinesForNode, onOpenCodeLogicTree, side]);
+
   const flowElements = useMemo(() => {
     const hasNodeHighlights = Boolean(selectedNodeId || highlightedNodeId || store.searchHighlightedNodeId);
     const hasHoverNeighborhood = hoverNeighborhood !== null;
@@ -1242,10 +1278,11 @@ export const SplitGraphPanel = observer(({
         askLlmNodeId: node.id,
         onAskLlmForNode: handleAskLlmForNode,
         onAskLlmHrefForNode: handleAskLlmHrefForNode,
+        onShowCodeLogicTreeForNode: handleShowCodeLogicTreeForNode,
         onGroupHeaderHoverChange: handleGroupHeaderHoverChange,
       },
     })),
-    [handleAskLlmForNode, handleAskLlmHrefForNode, handleGroupHeaderHoverChange, searchResultNodes.nodes],
+    [handleAskLlmForNode, handleAskLlmHrefForNode, handleShowCodeLogicTreeForNode, handleGroupHeaderHoverChange, searchResultNodes.nodes],
   );
 
   const flowNodeById = useMemo(() => new Map(flowElements.nodes.map((n) => [n.id, n])), [flowElements.nodes]);

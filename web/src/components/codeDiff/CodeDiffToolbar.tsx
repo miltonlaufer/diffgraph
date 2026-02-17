@@ -13,6 +13,7 @@ interface CodeDiffToolbarProps {
   onNextTextMatch: () => void;
   onPrevHunk: () => void;
   onNextHunk: () => void;
+  showChangeNavigation?: boolean;
 }
 
 export const CodeDiffToolbar = ({
@@ -28,6 +29,7 @@ export const CodeDiffToolbar = ({
   onNextTextMatch,
   onPrevHunk,
   onNextHunk,
+  showChangeNavigation = true,
 }: CodeDiffToolbarProps) => (
   <div className="diffNavBar">
     <h4 className="codeDiffTitle">{filePath}</h4>
@@ -49,14 +51,18 @@ export const CodeDiffToolbar = ({
           </span>
         )}
       </div>
-      <span className="diffCount">{hunkCount} change{hunkCount !== 1 ? "s" : ""}</span>
-      <button type="button" className="diffNavBtn" onClick={onPrevHunk} disabled={hunkCount === 0} title="Previous change">
-        &#9650;
-      </button>
-      <span className="diffNavPos">{hunkCount > 0 ? `${currentHunkIdx + 1}/${hunkCount}` : "0/0"}</span>
-      <button type="button" className="diffNavBtn" onClick={onNextHunk} disabled={hunkCount === 0} title="Next change">
-        &#9660;
-      </button>
+      {showChangeNavigation && (
+        <>
+          <span className="diffCount">{hunkCount} change{hunkCount !== 1 ? "s" : ""}</span>
+          <button type="button" className="diffNavBtn" onClick={onPrevHunk} disabled={hunkCount === 0} title="Previous change">
+            &#9650;
+          </button>
+          <span className="diffNavPos">{hunkCount > 0 ? `${currentHunkIdx + 1}/${hunkCount}` : "0/0"}</span>
+          <button type="button" className="diffNavBtn" onClick={onNextHunk} disabled={hunkCount === 0} title="Next change">
+            &#9660;
+          </button>
+        </>
+      )}
     </div>
   </div>
 );

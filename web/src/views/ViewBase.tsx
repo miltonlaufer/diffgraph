@@ -14,6 +14,7 @@ import {
   commandCodeLineDoubleClick,
   commandFocusGraphNode,
   commandGoToGraphDiff,
+  commandOpenCodeLogicTree,
   commandSelectFile,
   commandSelectNode,
   commandSelectSymbol,
@@ -130,6 +131,13 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     [commandContext],
   );
 
+  const handleOpenCodeLogicTree = useCallback(
+    (nodeId: string, sourceSide: "old" | "new", lineNumbers: number[]) => {
+      commandOpenCodeLogicTree(commandContext, nodeId, sourceSide, lineNumbers);
+    },
+    [commandContext],
+  );
+
   const handleGraphNodeFocus = useCallback(
     (nodeId: string, sourceSide: "old" | "new") => {
       commandFocusGraphNode(commandContext, nodeId, sourceSide);
@@ -239,6 +247,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
       onInteractionClick: handleInteractionClick,
       onGraphNodeFocus: handleGraphNodeFocus,
       onNodeSelect: handleNodeSelect,
+      onOpenCodeLogicTree: handleOpenCodeLogicTree,
       onNodeHoverChange: handleNodeHoverChange,
       onViewportChange: handleViewportChange,
       onDiffTargetsChange: handleDiffTargetsChange,
@@ -252,6 +261,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     handleGraphNodeFocus,
     handleInteractionClick,
     handleLayoutPendingChange,
+    handleOpenCodeLogicTree,
     handleSearchStateChange,
     handleNodeHoverChange,
     handleNodeSelect,
@@ -341,6 +351,9 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
       scrollTick: store.scrollTick,
       codeSearchNavDirection: store.codeSearchNavDirection,
       codeSearchNavTick: store.codeSearchNavTick,
+      codeLogicTreeRequestTick: store.codeLogicTreeRequestTick,
+      codeLogicTreeRequestSide: store.codeLogicTreeRequestSide,
+      codeLogicTreeRequestLines: store.codeLogicTreeRequestLines,
     },
     actions: {
       onFileSelect: handleFileSelect,
@@ -361,6 +374,9 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     handleToggleFileListCollapsed,
     store.codeSearchNavDirection,
     store.codeSearchNavTick,
+    store.codeLogicTreeRequestTick,
+    store.codeLogicTreeRequestSide,
+    store.codeLogicTreeRequestLines,
     store.fileListCollapsed,
     store.hoveredCodeLine,
     store.hoveredCodeSide,

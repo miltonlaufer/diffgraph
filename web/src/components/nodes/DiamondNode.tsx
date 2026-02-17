@@ -23,6 +23,7 @@ interface DiamondNodeData {
   askLlmNodeId?: string;
   onAskLlmForNode?: (nodeId: string) => Promise<boolean> | boolean;
   onAskLlmHrefForNode?: (nodeId: string) => string;
+  onShowCodeLogicTreeForNode?: (nodeId: string) => void;
 }
 
 const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
@@ -30,7 +31,7 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
   const [hovered, setHovered] = useState(false);
   const [hoveredActions, setHoveredActions] = useState(false);
   const tooltipVisible = useDebouncedValue(hovered, 500);
-  const { askLlmNodeId, onAskLlmForNode, onAskLlmHrefForNode } = data;
+  const { askLlmNodeId, onAskLlmForNode, onAskLlmHrefForNode, onShowCodeLogicTreeForNode } = data;
 
   /******************* COMPUTED ***********************/
   const parts = useMemo(() => splitLabel(data.label), [data.label]);
@@ -67,7 +68,12 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
     () => (askLlmNodeId && onAskLlmHrefForNode ? onAskLlmHrefForNode(askLlmNodeId) : ""),
     [askLlmNodeId, onAskLlmHrefForNode],
   );
+  const handleShowCodeLogicTree = useCallback(() => {
+    if (!askLlmNodeId || !onShowCodeLogicTreeForNode) return;
+    onShowCodeLogicTreeForNode(askLlmNodeId);
+  }, [askLlmNodeId, onShowCodeLogicTreeForNode]);
   const hasAskLlm = Boolean(askLlmNodeId && onAskLlmForNode);
+  const hasCodeLogicTree = Boolean(askLlmNodeId && onShowCodeLogicTreeForNode);
 
   return (
     <div style={outerStyle} onMouseEnter={onEnter} onMouseLeave={onLeave}>
@@ -130,6 +136,7 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
       </span>
       <AskLlmButton
         visible={hovered || hoveredActions}
+        onShowCodeLogicTree={hasCodeLogicTree ? handleShowCodeLogicTree : undefined}
         onAskLlm={hasAskLlm ? handleAskLlm : undefined}
         askLlmHref={askLlmHref || undefined}
         onHoverChange={handleActionsHoverChange}

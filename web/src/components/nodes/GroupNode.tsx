@@ -21,6 +21,7 @@ interface GroupNodeData {
   askLlmNodeId?: string;
   onAskLlmForNode?: (nodeId: string) => Promise<boolean> | boolean;
   onAskLlmHrefForNode?: (nodeId: string) => string;
+  onShowCodeLogicTreeForNode?: (nodeId: string) => void;
   onGroupHeaderHoverChange?: (nodeId: string, isHovering: boolean) => void;
 }
 
@@ -34,6 +35,7 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
     askLlmNodeId,
     onAskLlmForNode,
     onAskLlmHrefForNode,
+    onShowCodeLogicTreeForNode,
     onGroupHeaderHoverChange,
   } = data;
 
@@ -177,7 +179,12 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
     () => (askLlmNodeId && onAskLlmHrefForNode ? onAskLlmHrefForNode(askLlmNodeId) : ""),
     [onAskLlmHrefForNode, askLlmNodeId],
   );
+  const handleShowCodeLogicTree = useCallback(() => {
+    if (!askLlmNodeId || !onShowCodeLogicTreeForNode) return;
+    onShowCodeLogicTreeForNode(askLlmNodeId);
+  }, [askLlmNodeId, onShowCodeLogicTreeForNode]);
   const hasAskLlm = Boolean(askLlmNodeId && onAskLlmForNode);
+  const hasCodeLogicTree = Boolean(askLlmNodeId && onShowCodeLogicTreeForNode);
 
   return (
     <div style={style} onMouseLeave={onNodeLeave}>
@@ -185,6 +192,7 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0, pointerEvents: "none" }} />
       <AskLlmButton
         visible={hovered || hoveredActions}
+        onShowCodeLogicTree={hasCodeLogicTree ? handleShowCodeLogicTree : undefined}
         onAskLlm={hasAskLlm ? handleAskLlm : undefined}
         askLlmHref={askLlmHref || undefined}
         onHoverChange={handleActionsHoverChange}

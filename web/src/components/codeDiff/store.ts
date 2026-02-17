@@ -5,6 +5,9 @@ export class CodeDiffDrawerStore {
   currentHunkIdx = 0;
   textSearch = "";
   textSearchIdx = 0;
+  codeLogicTreeMode = false;
+  codeLogicTreeSide: "old" | "new" = "new";
+  codeLogicTreeLines: number[] = [];
 
   constructor() {
     makeAutoObservable(this, {}, { autoBind: true });
@@ -12,10 +15,13 @@ export class CodeDiffDrawerStore {
 
   setFullscreen(next: boolean): void {
     this.isFullscreen = next;
+    if (!next) {
+      this.clearCodeLogicTreeMode();
+    }
   }
 
   toggleFullscreen(): void {
-    this.isFullscreen = !this.isFullscreen;
+    this.setFullscreen(!this.isFullscreen);
   }
 
   setCurrentHunkIdx(idx: number): void {
@@ -33,5 +39,17 @@ export class CodeDiffDrawerStore {
 
   setTextSearchIdx(idx: number): void {
     this.textSearchIdx = idx;
+  }
+
+  setCodeLogicTreeMode(side: "old" | "new", lines: number[]): void {
+    this.codeLogicTreeMode = true;
+    this.codeLogicTreeSide = side;
+    this.codeLogicTreeLines = lines;
+  }
+
+  clearCodeLogicTreeMode(): void {
+    this.codeLogicTreeMode = false;
+    this.codeLogicTreeLines = [];
+    this.codeLogicTreeSide = "new";
   }
 }

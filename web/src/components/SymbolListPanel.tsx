@@ -76,6 +76,8 @@ export const SymbolListPanel = ({ symbols, onSymbolClick }: SymbolListPanelProps
               <span className="symbolName">{sym.name}</span>
               <span
                 className="riskBadge riskBadgeSymbol"
+                title={`Risk score R${sym.riskScore}: higher means this symbol is more likely to be impactful or risky.`}
+                aria-label={`Risk score ${sym.riskScore}`}
                 style={{
                   borderColor: sym.riskScore >= Math.max(8, topRisk * 0.75) ? "#fca5a5" : sym.riskScore >= 4 ? "#facc15" : "#86efac",
                   color: sym.riskScore >= Math.max(8, topRisk * 0.75) ? "#fecaca" : sym.riskScore >= 4 ? "#fde68a" : "#bbf7d0",
