@@ -230,6 +230,25 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
   }, []);
 
   useEffect(() => {
+    if (!performanceModalOpen) return undefined;
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
+      closePerformanceModal();
+    };
+
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, { capture: true });
+    };
+  }, [closePerformanceModal, performanceModalOpen]);
+
+  useEffect(() => {
     setPerformanceModalOpen(false);
     setPerformanceGuardLevel(0);
     setGraphRenderMode("both");
