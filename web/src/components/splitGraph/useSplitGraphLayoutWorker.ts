@@ -3,7 +3,8 @@ import type { Edge, Node } from "@xyflow/react";
 import type { ViewGraph } from "#/types/graph";
 import type { LayoutWorkerRequest, LayoutWorkerResponse } from "#/workers/layoutTypes";
 import { SplitGraphPanelStore } from "./store";
-import { hashBoolean, hashFinalize, hashInit, hashNumber, hashString, lruSet } from "#/lib/memoHash";
+import { createSignatureCache } from "#/lib/cachedComputation";
+import { hashBoolean, hashFinalize, hashInit, hashNumber, hashString } from "#/lib/memoHash";
 
 interface LayoutResult {
   nodes: Node[];
@@ -95,7 +96,7 @@ export const useSplitGraphLayoutWorker = ({
   const forcedRecoverySignatureRef = useRef("");
   const inFlightSignatureRef = useRef("");
   const signatureByRequestIdRef = useRef<Map<number, string>>(new Map());
-  const resultCacheRef = useRef<Map<string, LayoutResult>>(new Map());
+  const resultCacheRef = useRef(createSignatureCache<LayoutResult>(LAYOUT_CACHE_MAX_ENTRIES));
   const appliedSignatureRef = useRef("");
 
   useEffect(() => {
@@ -126,7 +127,7 @@ export const useSplitGraphLayoutWorker = ({
       store.setLayoutPending(false);
       const result = { nodes: data.result.nodes as Node[], edges: data.result.edges as Edge[] };
       if (inputSignature) {
-        lruSet(resultCacheRef.current, inputSignature, result, LAYOUT_CACHE_MAX_ENTRIES);
+        resultCacheRef.current.set(inputSignature, result);
         appliedSignatureRef.current = inputSignature;
       }
       store.setLayoutResult(result);
@@ -173,7 +174,7 @@ export const useSplitGraphLayoutWorker = ({
     if (graph.nodes.length === 0) {
       store.setLayoutPending(false);
       const emptyResult = { nodes: [], edges: [] };
-      lruSet(resultCacheRef.current, inputSignature, emptyResult, LAYOUT_CACHE_MAX_ENTRIES);
+      resultCacheRef.current.set(inputSignature, emptyResult);
       if (appliedSignatureRef.current !== inputSignature) {
         store.setLayoutResult(emptyResult);
         appliedSignatureRef.current = inputSignature;
@@ -199,7 +200,7 @@ export const useSplitGraphLayoutWorker = ({
         if (requestId !== layoutRequestIdRef.current) return;
         try {
           const computed = computeLayoutSync();
-          lruSet(resultCacheRef.current, inputSignature, computed, LAYOUT_CACHE_MAX_ENTRIES);
+          resultCacheRef.current.set(inputSignature, computed);
           store.setLayoutResult(computed);
           appliedSignatureRef.current = inputSignature;
         } catch {
@@ -256,7 +257,7 @@ export const useSplitGraphLayoutWorker = ({
         if (!store.layoutPending) return;
         try {
           const computed = computeLayoutSync();
-          lruSet(resultCacheRef.current, inputSignature, computed, LAYOUT_CACHE_MAX_ENTRIES);
+          resultCacheRef.current.set(inputSignature, computed);
           store.setLayoutResult(computed);
           appliedSignatureRef.current = inputSignature;
           store.setLayoutPending(false);

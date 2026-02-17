@@ -987,12 +987,35 @@ export const SplitGraphPanel = observer(({
     return candidateId;
   }, [graphNodeById, hoveredNodeId, hoveredNodeMatchKey, nodeIdsByMatchKey, positionedNodeById]);
 
+  const handleGroupHeaderHoverChange = useCallback((nodeId: string, isHovering: boolean) => {
+    const graphNode = graphNodeById.get(nodeId);
+    if (!graphNode || graphNode.kind !== "group") return;
+    if (isHovering) {
+      onNodeHoverChange(side, nodeId, nodeMatchKeyById.get(nodeId) ?? "");
+      return;
+    }
+    if (hoveredNodeId === nodeId) {
+      onNodeHoverChange(side, "", "");
+    }
+  }, [graphNodeById, hoveredNodeId, nodeMatchKeyById, onNodeHoverChange, side]);
+
   const hoverNeighborhoodByNodeId = useMemo(() => {
-    const map = new Map<string, { keepNodeIds: Set<string>; keepEdgeIds: Set<string> }>();
+    const map = new Map<string, {
+      keepNodeIds: Set<string>;
+      keepEdgeIds: Set<string>;
+      directNodeIds: Set<string>;
+      directEdgeIds: Set<string>;
+      ancestorNodeIds: Set<string>;
+      ancestorEdgeIds: Set<string>;
+    }>();
     for (const entry of splitGraphDerived.hoverNeighborhoodByNodeIdEntries) {
       map.set(entry.nodeId, {
         keepNodeIds: new Set(entry.keepNodeIds),
         keepEdgeIds: new Set(entry.keepEdgeIds),
+        directNodeIds: new Set(entry.directNodeIds),
+        directEdgeIds: new Set(entry.directEdgeIds),
+        ancestorNodeIds: new Set(entry.ancestorNodeIds),
+        ancestorEdgeIds: new Set(entry.ancestorEdgeIds),
       });
     }
     return map;
@@ -1023,8 +1046,11 @@ export const SplitGraphPanel = observer(({
         const isSearchTarget = node.id === store.searchHighlightedNodeId;
         const isHoveredNode = node.id === hoveredNodeIdForPanel;
         const graphNode = graphNodeById.get(node.id);
-        const isHoverRelated =
-          Boolean(hasHoverNeighborhood && hoverNeighborhood?.keepNodeIds.has(node.id))
+        const isHoverDirect =
+          Boolean(hasHoverNeighborhood && hoverNeighborhood?.directNodeIds.has(node.id))
+          && graphNode?.kind !== "group";
+        const isHoverAncestor =
+          Boolean(hasHoverNeighborhood && hoverNeighborhood?.ancestorNodeIds.has(node.id))
           && graphNode?.kind !== "group";
         const isPrimarySelected =
           node.id === selectedNodeId
@@ -1046,7 +1072,18 @@ export const SplitGraphPanel = observer(({
         if (isSearchTarget) {
           nextNode = { ...nextNode, style: { ...(nextNode.style ?? {}), ...SEARCH_FLASH_STYLE } };
         }
-        if (isHoverRelated && !isPrimarySelected && !isHoveredNode) {
+        if (isHoverAncestor && !isHoverDirect && !isPrimarySelected && !isHoveredNode) {
+          nextNode = {
+            ...nextNode,
+            style: {
+              ...(nextNode.style ?? {}),
+              outline: "2px solid #60a5fa",
+              outlineOffset: "2px",
+              boxShadow: "0 0 0 1px rgba(96,165,250,0.9), 0 0 14px rgba(96,165,250,0.55)",
+            },
+          };
+        }
+        if (isHoverDirect && !isPrimarySelected && !isHoveredNode) {
           nextNode = {
             ...nextNode,
             style: {
@@ -1077,7 +1114,9 @@ export const SplitGraphPanel = observer(({
         const isHovered = edge.id === store.hoveredEdgeId;
         const isClicked = edge.id === store.clickedEdgeId;
         const isPrimaryEdge = isHovered || isClicked;
-        const isInHoverNeighborhood = Boolean(hasHoverNeighborhood && hoverNeighborhood?.keepEdgeIds.has(edge.id));
+        const isHoverDirectEdge = Boolean(hasHoverNeighborhood && hoverNeighborhood?.directEdgeIds.has(edge.id));
+        const isHoverAncestorEdge = Boolean(hasHoverNeighborhood && hoverNeighborhood?.ancestorEdgeIds.has(edge.id));
+        const isInHoverNeighborhood = isHoverDirectEdge || isHoverAncestorEdge;
         if (!isPrimaryEdge && !isInHoverNeighborhood && !hasEdgeEmphasis) return edge;
         const baseStyle = edge.style ?? {};
         const baseLabelStyle = edge.labelStyle ?? {};
@@ -1088,8 +1127,10 @@ export const SplitGraphPanel = observer(({
             : Number(baseStyle.strokeWidth ?? 1.5);
         const nextStrokeWidth = isPrimaryEdge
           ? Math.max(baseStrokeWidth + 2.6, 4.2)
-          : isInHoverNeighborhood
+          : isHoverDirectEdge
             ? Math.max(baseStrokeWidth + 1.8, 3.2)
+            : isHoverAncestorEdge
+              ? Math.max(baseStrokeWidth + 2.1, 3.6)
             : baseStrokeWidth;
         const nextStrokeOpacity = isPrimaryEdge
           ? 1
@@ -1103,8 +1144,10 @@ export const SplitGraphPanel = observer(({
             : 0.35;
         const nextStroke = isPrimaryEdge
           ? "#f8fafc"
-          : isInHoverNeighborhood
+          : isHoverDirectEdge
             ? "#c084fc"
+            : isHoverAncestorEdge
+              ? "#60a5fa"
             : baseStyle.stroke;
         return {
           ...edge,
@@ -1115,19 +1158,33 @@ export const SplitGraphPanel = observer(({
             strokeOpacity: nextStrokeOpacity,
             filter: isPrimaryEdge
               ? "drop-shadow(0 0 8px rgba(248,250,252,0.95))"
-              : isInHoverNeighborhood
+              : isHoverDirectEdge
                 ? "drop-shadow(0 0 7px rgba(192,132,252,0.9))"
+                : isHoverAncestorEdge
+                  ? "drop-shadow(0 0 7px rgba(96,165,250,0.9))"
                 : baseStyle.filter,
           },
           labelStyle: {
             ...baseLabelStyle,
-            fill: isPrimaryEdge ? "#ffffff" : isInHoverNeighborhood ? "#f3e8ff" : baseLabelStyle.fill,
+            fill: isPrimaryEdge
+              ? "#ffffff"
+              : isHoverDirectEdge
+                ? "#f3e8ff"
+                : isHoverAncestorEdge
+                  ? "#dbeafe"
+                  : baseLabelStyle.fill,
             opacity: nextLabelOpacity,
           },
           labelBgStyle: {
             ...baseLabelBgStyle,
             fillOpacity: isPrimaryEdge ? 0.98 : isInHoverNeighborhood ? 0.68 : 0.5,
-            stroke: isPrimaryEdge ? "#f8fafc" : isInHoverNeighborhood ? "#c084fc" : baseLabelBgStyle.stroke,
+            stroke: isPrimaryEdge
+              ? "#f8fafc"
+              : isHoverDirectEdge
+                ? "#c084fc"
+                : isHoverAncestorEdge
+                  ? "#60a5fa"
+                  : baseLabelBgStyle.stroke,
           },
         };
       })
@@ -1185,9 +1242,10 @@ export const SplitGraphPanel = observer(({
         askLlmNodeId: node.id,
         onAskLlmForNode: handleAskLlmForNode,
         onAskLlmHrefForNode: handleAskLlmHrefForNode,
+        onGroupHeaderHoverChange: handleGroupHeaderHoverChange,
       },
     })),
-    [handleAskLlmForNode, handleAskLlmHrefForNode, searchResultNodes.nodes],
+    [handleAskLlmForNode, handleAskLlmHrefForNode, handleGroupHeaderHoverChange, searchResultNodes.nodes],
   );
 
   const flowNodeById = useMemo(() => new Map(flowElements.nodes.map((n) => [n.id, n])), [flowElements.nodes]);
@@ -1363,24 +1421,14 @@ export const SplitGraphPanel = observer(({
     store.clearHoveredEdge();
     const graphNode = graphNodeById.get(node.id);
     if (!graphNode) return;
-    if (graphNode.kind === "group" && !isGroupHeaderTarget(_event)) return;
+    if (graphNode.kind === "group") return;
     onNodeHoverChange(side, node.id, nodeMatchKeyById.get(node.id) ?? "");
   }, [graphNodeById, nodeMatchKeyById, onNodeHoverChange, side, store]);
 
-  const handleNodeMouseMove = useCallback<NodeMouseHandler>((event, node) => {
+  const handleNodeMouseMove = useCallback<NodeMouseHandler>((_event, node) => {
     const graphNode = graphNodeById.get(node.id);
-    if (!graphNode || graphNode.kind !== "group") return;
-    const matchKey = nodeMatchKeyById.get(node.id) ?? "";
-    const onHeader = isGroupHeaderTarget(event);
-    if (onHeader) {
-      if (hoveredNodeId === node.id && hoveredNodeMatchKey === matchKey) return;
-      onNodeHoverChange(side, node.id, matchKey);
-      return;
-    }
-    if (hoveredNodeId === node.id) {
-      onNodeHoverChange(side, "", "");
-    }
-  }, [graphNodeById, hoveredNodeId, hoveredNodeMatchKey, nodeMatchKeyById, onNodeHoverChange, side]);
+    if (!graphNode || graphNode.kind === "group") return;
+  }, [graphNodeById]);
 
   const handleNodeMouseLeave = useCallback<NodeMouseHandler>((event) => {
     const related = (event as { relatedTarget?: EventTarget | null }).relatedTarget ?? null;

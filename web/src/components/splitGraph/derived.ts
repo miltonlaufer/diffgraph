@@ -1,5 +1,8 @@
 import { buildCrossGraphNodeMatchKey } from "#/lib/nodeIdentity";
+import { createCachedComputation } from "#/lib/cachedComputation";
+import { hashBoolean, hashFinalize, hashInit, hashNumber, hashString } from "#/lib/memoHash";
 import type { ViewGraphNode } from "#/types/graph";
+import { buildNeighborhoodPlan } from "./neighborhood/strategyRegistry";
 
 interface SplitGraphEdge {
   id: string;
@@ -20,6 +23,10 @@ export interface SplitGraphDerivedNeighborhood {
   nodeId: string;
   keepNodeIds: string[];
   keepEdgeIds: string[];
+  directNodeIds: string[];
+  directEdgeIds: string[];
+  ancestorNodeIds: string[];
+  ancestorEdgeIds: string[];
 }
 
 export interface SplitGraphDerivedResult {
@@ -29,7 +36,27 @@ export interface SplitGraphDerivedResult {
   searchMatchIds: string[];
 }
 
-export const computeSplitGraphDerived = ({
+const SPLIT_GRAPH_DERIVED_CACHE_MAX_ENTRIES = 24;
+
+export const buildSplitGraphDerivedInputSignature = (input: SplitGraphDerivedInput): string => {
+  let hash = hashInit();
+  hash = hashString(hash, input.searchQuery);
+  hash = hashBoolean(hash, input.searchExclude);
+  hash = hashNumber(hash, input.positionedNodeIds.length);
+  for (const nodeId of input.positionedNodeIds) {
+    hash = hashString(hash, nodeId);
+  }
+  hash = hashNumber(hash, input.positionedEdges.length);
+  for (const edge of input.positionedEdges) {
+    hash = hashString(hash, edge.id);
+    hash = hashString(hash, edge.source);
+    hash = hashString(hash, edge.target);
+    hash = hashString(hash, edge.relation ?? "-");
+  }
+  return `${hashFinalize(hash)}:${input.positionedNodeIds.length}:${input.positionedEdges.length}`;
+};
+
+const computeSplitGraphDerivedUncached = ({
   graphNodes,
   positionedNodeIds,
   positionedEdges,
@@ -92,21 +119,17 @@ export const computeSplitGraphDerived = ({
   }
 
   const neighborNodeIdsByNode = new Map<string, Set<string>>();
-  const incidentEdgeIdsByNode = new Map<string, Set<string>>();
   for (const nodeId of positionedNodeIds) {
     if (!nodeMatchKeyById.has(nodeId)) continue;
     neighborNodeIdsByNode.set(nodeId, new Set());
-    incidentEdgeIdsByNode.set(nodeId, new Set());
   }
 
   for (const edge of positionedEdges) {
     if (neighborNodeIdsByNode.has(edge.source)) {
       neighborNodeIdsByNode.get(edge.source)?.add(edge.target);
-      incidentEdgeIdsByNode.get(edge.source)?.add(edge.id);
     }
     if (neighborNodeIdsByNode.has(edge.target)) {
       neighborNodeIdsByNode.get(edge.target)?.add(edge.source);
-      incidentEdgeIdsByNode.get(edge.target)?.add(edge.id);
     }
   }
 
@@ -118,53 +141,85 @@ export const computeSplitGraphDerived = ({
     incomingFlowEdgeByTarget.set(edge.target, list);
   }
 
+  const childrenByParent = new Map<string, string[]>();
+  for (const nodeId of positionedNodeIds) {
+    const node = graphNodeById.get(nodeId);
+    const parentId = node?.parentId;
+    if (!parentId) continue;
+    const list = childrenByParent.get(parentId) ?? [];
+    list.push(nodeId);
+    childrenByParent.set(parentId, list);
+  }
+
+  const descendantsByGroupId = new Map<string, Set<string>>();
+  const collectGroupDescendants = (groupId: string): Set<string> => {
+    const cached = descendantsByGroupId.get(groupId);
+    if (cached) return cached;
+    const descendants = new Set<string>();
+    const queue: string[] = [groupId];
+    while (queue.length > 0) {
+      const currentParentId = queue.shift();
+      if (!currentParentId) continue;
+      for (const childId of childrenByParent.get(currentParentId) ?? []) {
+        if (descendants.has(childId)) continue;
+        descendants.add(childId);
+        const childNode = graphNodeById.get(childId);
+        if (childNode?.kind === "group") {
+          queue.push(childId);
+        }
+      }
+    }
+    descendantsByGroupId.set(groupId, descendants);
+    return descendants;
+  };
+
   const hoverNeighborhoodByNodeIdEntries: SplitGraphDerivedNeighborhood[] = [];
   for (const nodeId of neighborNodeIdsByNode.keys()) {
     const graphNode = graphNodeById.get(nodeId);
-    if (graphNode?.kind === "group") {
-      hoverNeighborhoodByNodeIdEntries.push({
-        nodeId,
-        keepNodeIds: [nodeId],
-        keepEdgeIds: [...(incidentEdgeIdsByNode.get(nodeId) ?? [])],
-      });
-      continue;
-    }
-
-    const keepNodeIds = new Set<string>([nodeId]);
-    for (const neighborId of neighborNodeIdsByNode.get(nodeId) ?? []) {
-      if (nodeMatchKeyById.has(neighborId)) {
-        keepNodeIds.add(neighborId);
-      }
-    }
-
-    const seedScopeKey = scopeKeyForNode(nodeId);
-    const ancestorQueue: string[] = [nodeId];
-    const seenAncestorIds = new Set<string>([nodeId]);
+    const plan = buildNeighborhoodPlan(graphNode?.kind, {
+      nodeId,
+      neighborNodeIdsByNode,
+      nodeMatchKeyById,
+      scopeKeyForNode,
+      collectGroupDescendants,
+    });
+    const keepNodeIds = new Set(plan.directNodeIds);
+    const ancestorNodeIds = new Set<string>();
+    const ancestorEdgeIds = new Set<string>();
+    const ancestorQueue = [...plan.ancestorSeedIds];
+    const seenAncestorIds = new Set<string>(plan.ancestorSeedIds);
     while (ancestorQueue.length > 0) {
       const currentId = ancestorQueue.shift();
       if (!currentId) continue;
       for (const edge of incomingFlowEdgeByTarget.get(currentId) ?? []) {
         const sourceId = edge.source;
         if (!nodeMatchKeyById.has(sourceId)) continue;
-        if (scopeKeyForNode(sourceId) !== seedScopeKey) continue;
+        if (!plan.canTraverseAncestor(sourceId, currentId)) continue;
         keepNodeIds.add(sourceId);
+        ancestorNodeIds.add(sourceId);
+        ancestorEdgeIds.add(edge.id);
         if (seenAncestorIds.has(sourceId)) continue;
         seenAncestorIds.add(sourceId);
         ancestorQueue.push(sourceId);
       }
     }
 
-    const keepEdgeIds = new Set<string>();
+    const directEdgeIds = new Set<string>();
     for (const edge of positionedEdges) {
-      if (keepNodeIds.has(edge.source) && keepNodeIds.has(edge.target)) {
-        keepEdgeIds.add(edge.id);
+      if (plan.directNodeIds.has(edge.source) && plan.directNodeIds.has(edge.target)) {
+        directEdgeIds.add(edge.id);
       }
     }
+    const keepEdgeIds = new Set<string>([...directEdgeIds, ...ancestorEdgeIds]);
 
     hoverNeighborhoodByNodeIdEntries.push({
       nodeId,
       keepNodeIds: [...keepNodeIds],
       keepEdgeIds: [...keepEdgeIds],
+      directNodeIds: [...plan.directNodeIds],
+      directEdgeIds: [...directEdgeIds],
+      ancestorNodeIds: [...ancestorNodeIds],
+      ancestorEdgeIds: [...ancestorEdgeIds],
     });
   }
 
@@ -190,16 +245,6 @@ export const computeSplitGraphDerived = ({
         if (!matchesByNodeId.get(nodeId)) {
           keepIds.add(nodeId);
         }
-      }
-
-      const childrenByParent = new Map<string, string[]>();
-      for (const nodeId of positionedNodeIds) {
-        const node = graphNodeById.get(nodeId);
-        const parentId = node?.parentId;
-        if (!parentId) continue;
-        const list = childrenByParent.get(parentId) ?? [];
-        list.push(nodeId);
-        childrenByParent.set(parentId, list);
       }
 
       const excludedGroupQueue: string[] = [];
@@ -238,3 +283,12 @@ export const computeSplitGraphDerived = ({
     searchMatchIds,
   };
 };
+
+const splitGraphDerivedCache = createCachedComputation<SplitGraphDerivedInput, SplitGraphDerivedResult>({
+  maxEntries: SPLIT_GRAPH_DERIVED_CACHE_MAX_ENTRIES,
+  buildSignature: buildSplitGraphDerivedInputSignature,
+  compute: computeSplitGraphDerivedUncached,
+});
+
+export const computeSplitGraphDerived = (input: SplitGraphDerivedInput): SplitGraphDerivedResult =>
+  splitGraphDerivedCache.run(input);

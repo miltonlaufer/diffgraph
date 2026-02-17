@@ -21,6 +21,7 @@ interface GroupNodeData {
   askLlmNodeId?: string;
   onAskLlmForNode?: (nodeId: string) => Promise<boolean> | boolean;
   onAskLlmHrefForNode?: (nodeId: string) => string;
+  onGroupHeaderHoverChange?: (nodeId: string, isHovering: boolean) => void;
 }
 
 const GroupNode = ({ data }: { data: GroupNodeData }) => {
@@ -147,11 +148,22 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
   const onHeaderEnter = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     setHovered(true);
     setTooltipPos({ x: event.clientX, y: event.clientY });
-  }, []);
+    if (data.askLlmNodeId) {
+      data.onGroupHeaderHoverChange?.(data.askLlmNodeId, true);
+    }
+  }, [data.askLlmNodeId, data.onGroupHeaderHoverChange]);
   const onHeaderMove = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     setTooltipPos({ x: event.clientX, y: event.clientY });
-  }, []);
-  const onHeaderLeave = useCallback(() => setHovered(false), []);
+    if (data.askLlmNodeId) {
+      data.onGroupHeaderHoverChange?.(data.askLlmNodeId, true);
+    }
+  }, [data.askLlmNodeId, data.onGroupHeaderHoverChange]);
+  const onHeaderLeave = useCallback(() => {
+    setHovered(false);
+    if (data.askLlmNodeId) {
+      data.onGroupHeaderHoverChange?.(data.askLlmNodeId, false);
+    }
+  }, [data.askLlmNodeId, data.onGroupHeaderHoverChange]);
   const onNodeLeave = useCallback(() => {
     setHovered(false);
     setHoveredActions(false);

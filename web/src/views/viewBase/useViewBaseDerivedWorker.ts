@@ -1,48 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { computeViewBaseDerived, type ViewBaseDerivedInput, type ViewBaseDerivedResult } from "./derived";
+import {
+  buildViewBaseDerivedInputSignature,
+  computeViewBaseDerived,
+  type ViewBaseDerivedInput,
+  type ViewBaseDerivedResult,
+} from "./derived";
+import { createSignatureCache } from "#/lib/cachedComputation";
 import type { ViewBaseDerivedWorkerRequest, ViewBaseDerivedWorkerResponse } from "#/workers/viewBaseDerivedTypes";
-import { hashBoolean, hashFinalize, hashInit, hashNumber, hashString, lruSet } from "#/lib/memoHash";
 
 const VIEW_BASE_DERIVED_CACHE_MAX_ENTRIES = 12;
-
-const hashGraphForSignature = (
-  hash: number,
-  graph: ViewBaseDerivedInput["oldGraph"],
-): number => {
-  let next = hashNumber(hash, graph.nodes.length);
-  for (const node of graph.nodes) {
-    next = hashString(next, node.id);
-    next = hashString(next, node.kind);
-    next = hashString(next, node.label);
-    next = hashString(next, node.filePath);
-    next = hashString(next, node.diffStatus);
-    next = hashString(next, node.parentId ?? "");
-    next = hashString(next, node.branchType ?? "");
-    next = hashNumber(next, node.startLine ?? -1);
-    next = hashNumber(next, node.endLine ?? -1);
-  }
-  next = hashNumber(next, graph.edges.length);
-  for (const edge of graph.edges) {
-    next = hashString(next, edge.id);
-    next = hashString(next, edge.source);
-    next = hashString(next, edge.target);
-    next = hashString(next, edge.kind);
-    next = hashString(next, edge.relation ?? "");
-    next = hashString(next, edge.flowType ?? "");
-    next = hashString(next, edge.diffStatus);
-  }
-  return next;
-};
-
-const buildViewBaseInputSignature = (input: ViewBaseDerivedInput): string => {
-  let hash = hashInit();
-  hash = hashGraphForSignature(hash, input.oldGraph);
-  hash = hashGraphForSignature(hash, input.newGraph);
-  hash = hashString(hash, input.selectedFilePath);
-  hash = hashBoolean(hash, input.showChangesOnly);
-  hash = hashString(hash, input.viewType);
-  return `${hashFinalize(hash)}:${input.oldGraph.nodes.length}:${input.newGraph.nodes.length}`;
-};
 
 export const useViewBaseDerivedWorker = (
   input: ViewBaseDerivedInput,
@@ -53,15 +19,18 @@ export const useViewBaseDerivedWorker = (
   }
   const initialSignatureRef = useRef("");
   if (!initialSignatureRef.current) {
-    initialSignatureRef.current = buildViewBaseInputSignature(input);
+    initialSignatureRef.current = buildViewBaseDerivedInputSignature(input);
   }
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
   const inFlightSignatureRef = useRef("");
   const signatureByRequestIdRef = useRef<Map<number, string>>(new Map());
-  const resultCacheRef = useRef<Map<string, ViewBaseDerivedResult>>(new Map([
-    [initialSignatureRef.current, initialResultRef.current!],
-  ]));
+  const resultCacheRef = useRef(createSignatureCache<ViewBaseDerivedResult>(VIEW_BASE_DERIVED_CACHE_MAX_ENTRIES));
+  const resultCacheSeededRef = useRef(false);
+  if (!resultCacheSeededRef.current) {
+    resultCacheRef.current.set(initialSignatureRef.current, initialResultRef.current!);
+    resultCacheSeededRef.current = true;
+  }
   const appliedSignatureRef = useRef(initialSignatureRef.current);
   const [workerFailed, setWorkerFailed] = useState(false);
   const [derived, setDerived] = useState<ViewBaseDerivedResult>(initialResultRef.current!);
@@ -83,7 +52,7 @@ export const useViewBaseDerivedWorker = (
         return;
       }
       if (inputSignature) {
-        lruSet(resultCacheRef.current, inputSignature, data.result, VIEW_BASE_DERIVED_CACHE_MAX_ENTRIES);
+        resultCacheRef.current.set(inputSignature, data.result);
         appliedSignatureRef.current = inputSignature;
       }
       setDerived(data.result);
@@ -106,7 +75,7 @@ export const useViewBaseDerivedWorker = (
   }, []);
 
   useEffect(() => {
-    const inputSignature = buildViewBaseInputSignature(input);
+    const inputSignature = buildViewBaseDerivedInputSignature(input);
     const cached = resultCacheRef.current.get(inputSignature);
     if (cached) {
       if (appliedSignatureRef.current !== inputSignature) {
@@ -118,7 +87,7 @@ export const useViewBaseDerivedWorker = (
 
     if (workerFailed || !workerRef.current) {
       const computed = computeViewBaseDerived(input);
-      lruSet(resultCacheRef.current, inputSignature, computed, VIEW_BASE_DERIVED_CACHE_MAX_ENTRIES);
+      resultCacheRef.current.set(inputSignature, computed);
       appliedSignatureRef.current = inputSignature;
       setDerived(computed);
       return;

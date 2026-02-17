@@ -22,12 +22,19 @@ import {
 import { CodeDiffDrawerStore } from "./codeDiff/store";
 import type { DiffMatrixRow } from "./codeDiff/types";
 import { useViewBaseRuntime } from "../views/viewBase/runtime";
-import { hashFinalize, hashInit, hashString, lruSet } from "#/lib/memoHash";
+import { createCachedComputation } from "#/lib/cachedComputation";
+import { hashFinalize, hashInit, hashString } from "#/lib/memoHash";
 import { useDebouncedValue } from "./useDebouncedValue";
 
 const DIFF_CACHE_MAX_ENTRIES = 12;
 
-const buildDiffSignature = (filePath: string, oldContent: string, newContent: string): string => {
+interface DiffComputationInput {
+  filePath: string;
+  oldContent: string;
+  newContent: string;
+}
+
+const buildDiffSignature = ({ filePath, oldContent, newContent }: DiffComputationInput): string => {
   let hash = hashInit();
   hash = hashString(hash, filePath);
   hash = hashString(hash, oldContent);
@@ -35,6 +42,12 @@ const buildDiffSignature = (filePath: string, oldContent: string, newContent: st
   hash = hashString(hash, newContent);
   return `${hashFinalize(hash)}:${oldContent.length}:${newContent.length}`;
 };
+
+const diffComputation = createCachedComputation<DiffComputationInput, ReturnType<typeof computeSideBySide>>({
+  maxEntries: DIFF_CACHE_MAX_ENTRIES,
+  buildSignature: buildDiffSignature,
+  compute: ({ oldContent, newContent }) => computeSideBySide(oldContent, newContent),
+});
 
 export const CodeDiffDrawer = observer(() => {
   const { state, actions } = useViewBaseRuntime();
@@ -56,7 +69,6 @@ export const CodeDiffDrawer = observer(() => {
   const pendingLineClickTimerRef = useRef<number | null>(null);
   const lastAppliedCodeSearchNavTickRef = useRef(0);
   const prevHoveredCodeLineRef = useRef(0);
-  const diffCacheRef = useRef<Map<string, ReturnType<typeof computeSideBySide>>>(new Map());
   const SINGLE_CLICK_DELAY_MS = 450;
 
   const lang = useMemo(() => langFromPath(file?.path ?? ""), [file?.path]);
@@ -64,19 +76,14 @@ export const CodeDiffDrawer = observer(() => {
   const newContent = file?.newContent ?? "";
   const hasOld = useMemo(() => oldContent.length > 0, [oldContent]);
   const hasNew = useMemo(() => newContent.length > 0, [newContent]);
-  const diffSignature = useMemo(
-    () => buildDiffSignature(file?.path ?? "", oldContent, newContent),
-    [file?.path, oldContent, newContent],
-  );
-
   const diff = useMemo(() => {
     if (!file || (!hasOld && !hasNew)) return null;
-    const cached = diffCacheRef.current.get(diffSignature);
-    if (cached) return cached;
-    const computed = computeSideBySide(oldContent, newContent);
-    lruSet(diffCacheRef.current, diffSignature, computed, DIFF_CACHE_MAX_ENTRIES);
-    return computed;
-  }, [diffSignature, file, hasNew, hasOld, newContent, oldContent]);
+    return diffComputation.run({
+      filePath: file.path ?? "",
+      oldContent,
+      newContent,
+    });
+  }, [file, hasNew, hasOld, newContent, oldContent]);
   const debouncedTextSearch = useDebouncedValue(store.textSearch, 200);
 
   const matrixRows = useMemo<DiffMatrixRow[]>(
