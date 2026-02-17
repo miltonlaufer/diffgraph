@@ -23,6 +23,7 @@ interface DiamondNodeData {
   askLlmNodeId?: string;
   onAskLlmForNode?: (nodeId: string) => Promise<boolean> | boolean;
   onAskLlmHrefForNode?: (nodeId: string) => string;
+  onShowGraphLogicTreeForNode?: (nodeId: string) => void;
   onShowCodeLogicTreeForNode?: (nodeId: string) => void;
 }
 
@@ -31,7 +32,13 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
   const [hovered, setHovered] = useState(false);
   const [hoveredActions, setHoveredActions] = useState(false);
   const tooltipVisible = useDebouncedValue(hovered, 500);
-  const { askLlmNodeId, onAskLlmForNode, onAskLlmHrefForNode, onShowCodeLogicTreeForNode } = data;
+  const {
+    askLlmNodeId,
+    onAskLlmForNode,
+    onAskLlmHrefForNode,
+    onShowGraphLogicTreeForNode,
+    onShowCodeLogicTreeForNode,
+  } = data;
 
   /******************* COMPUTED ***********************/
   const parts = useMemo(() => splitLabel(data.label), [data.label]);
@@ -68,11 +75,16 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
     () => (askLlmNodeId && onAskLlmHrefForNode ? onAskLlmHrefForNode(askLlmNodeId) : ""),
     [askLlmNodeId, onAskLlmHrefForNode],
   );
+  const handleShowGraphLogicTree = useCallback(() => {
+    if (!askLlmNodeId || !onShowGraphLogicTreeForNode) return;
+    onShowGraphLogicTreeForNode(askLlmNodeId);
+  }, [askLlmNodeId, onShowGraphLogicTreeForNode]);
   const handleShowCodeLogicTree = useCallback(() => {
     if (!askLlmNodeId || !onShowCodeLogicTreeForNode) return;
     onShowCodeLogicTreeForNode(askLlmNodeId);
   }, [askLlmNodeId, onShowCodeLogicTreeForNode]);
   const hasAskLlm = Boolean(askLlmNodeId && onAskLlmForNode);
+  const hasGraphLogicTree = Boolean(askLlmNodeId && onShowGraphLogicTreeForNode);
   const hasCodeLogicTree = Boolean(askLlmNodeId && onShowCodeLogicTreeForNode);
 
   return (
@@ -136,6 +148,7 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
       </span>
       <AskLlmButton
         visible={hovered || hoveredActions}
+        onShowGraphLogicTree={hasGraphLogicTree ? handleShowGraphLogicTree : undefined}
         onShowCodeLogicTree={hasCodeLogicTree ? handleShowCodeLogicTree : undefined}
         onAskLlm={hasAskLlm ? handleAskLlm : undefined}
         askLlmHref={askLlmHref || undefined}

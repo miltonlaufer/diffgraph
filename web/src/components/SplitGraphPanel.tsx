@@ -9,6 +9,7 @@ import {
 } from "@xyflow/react";
 import { observer, useLocalObservable } from "mobx-react-lite";
 import { GraphCanvas } from "./splitGraph/GraphCanvas";
+import GraphLogicTreeModal from "./GraphLogicTreeModal";
 import { useSplitGraphRuntime } from "./splitGraph/context";
 import { GraphPanelHeader } from "./splitGraph/GraphPanelHeader";
 import {
@@ -405,6 +406,11 @@ export const SplitGraphPanel = observer(({
   const lastNodeAnchorSignatureRef = useRef("");
   const viewportOverrideBaseRef = useRef<PanelViewport | null>(null);
   const [viewportOverride, setViewportOverride] = useState<PanelViewport | null>(null);
+  const [graphLogicTreeModal, setGraphLogicTreeModal] = useState<{
+    openerNodeId: string;
+    nodes: Node[];
+    edges: Edge[];
+  } | null>(null);
   const layoutResult = store.layoutResult;
   const effectiveViewport = viewportOverride ?? viewport;
   const debouncedSearchQuery = useDebouncedValue(store.searchQuery, 200);
@@ -1036,18 +1042,37 @@ export const SplitGraphPanel = observer(({
     return hoverNeighborhoodByNodeId.get(hoverNeighborhoodSeedId) ?? null;
   }, [hoverNeighborhoodByNodeId, hoverNeighborhoodSeedId]);
 
+  const logicTreeNodeIdsForNode = useCallback((nodeId: string): string[] => {
+    const seedNode = graphNodeById.get(nodeId);
+    if (!seedNode) return [];
+
+    const relatedIds = new Set<string>([nodeId]);
+    const neighborhood = hoverNeighborhoodByNodeId.get(nodeId);
+    if (neighborhood) {
+      for (const directId of neighborhood.directNodeIds) relatedIds.add(directId);
+      for (const ancestorId of neighborhood.ancestorNodeIds) relatedIds.add(ancestorId);
+    }
+
+    const queue = [...relatedIds];
+    while (queue.length > 0) {
+      const currentId = queue.pop();
+      if (!currentId) continue;
+      const parentId = graphNodeById.get(currentId)?.parentId;
+      if (!parentId || relatedIds.has(parentId)) continue;
+      relatedIds.add(parentId);
+      queue.push(parentId);
+    }
+
+    return [...relatedIds];
+  }, [graphNodeById, hoverNeighborhoodByNodeId]);
+
   const codeLogicTreeLinesForNode = useCallback((nodeId: string): number[] => {
     const seedNode = graphNodeById.get(nodeId);
     if (!seedNode) return [];
     const targetFilePath = normPath(seedNode.filePath);
     if (!targetFilePath) return [];
 
-    const neighborhood = hoverNeighborhoodByNodeId.get(nodeId);
-    const relatedIds = new Set<string>([nodeId]);
-    if (neighborhood) {
-      for (const directId of neighborhood.directNodeIds) relatedIds.add(directId);
-      for (const ancestorId of neighborhood.ancestorNodeIds) relatedIds.add(ancestorId);
-    }
+    const relatedIds = logicTreeNodeIdsForNode(nodeId);
 
     const lines = new Set<number>();
     for (const relatedId of relatedIds) {
@@ -1063,13 +1088,40 @@ export const SplitGraphPanel = observer(({
     }
 
     return [...lines].sort((a, b) => a - b);
-  }, [graphNodeById, hoverNeighborhoodByNodeId]);
+  }, [graphNodeById, logicTreeNodeIdsForNode]);
 
   const handleShowCodeLogicTreeForNode = useCallback((nodeId: string) => {
     if (!onOpenCodeLogicTree) return;
     const lineNumbers = codeLogicTreeLinesForNode(nodeId);
     onOpenCodeLogicTree(nodeId, side, lineNumbers);
   }, [codeLogicTreeLinesForNode, onOpenCodeLogicTree, side]);
+
+  const handleShowGraphLogicTreeForNode = useCallback((nodeId: string) => {
+    const logicTreeNodeIds = logicTreeNodeIdsForNode(nodeId);
+    if (logicTreeNodeIds.length === 0) return;
+    const logicTreeNodeIdSet = new Set(logicTreeNodeIds);
+    const treeGraph = {
+      nodes: graph.nodes.filter((node) => logicTreeNodeIdSet.has(node.id)),
+      edges: graph.edges.filter((edge) => logicTreeNodeIdSet.has(edge.source) && logicTreeNodeIdSet.has(edge.target)),
+    };
+    if (treeGraph.nodes.length === 0) return;
+    const treeLayout = computeLayoutByView(viewType, treeGraph, nodeId, fileContentMap, showCalls);
+    setGraphLogicTreeModal({
+      openerNodeId: nodeId,
+      nodes: treeLayout.nodes,
+      edges: treeLayout.edges,
+    });
+  }, [fileContentMap, graph.edges, graph.nodes, logicTreeNodeIdsForNode, showCalls, viewType]);
+
+  const closeGraphLogicTreeModal = useCallback(() => {
+    setGraphLogicTreeModal(null);
+  }, []);
+
+  const handleGraphLogicTreeNodeClick = useCallback(() => {
+    if (!graphLogicTreeModal) return;
+    setGraphLogicTreeModal(null);
+    onNodeSelect(graphLogicTreeModal.openerNodeId, side);
+  }, [graphLogicTreeModal, onNodeSelect, side]);
 
   const flowElements = useMemo(() => {
     const hasNodeHighlights = Boolean(selectedNodeId || highlightedNodeId || store.searchHighlightedNodeId);
@@ -1278,11 +1330,19 @@ export const SplitGraphPanel = observer(({
         askLlmNodeId: node.id,
         onAskLlmForNode: handleAskLlmForNode,
         onAskLlmHrefForNode: handleAskLlmHrefForNode,
+        onShowGraphLogicTreeForNode: handleShowGraphLogicTreeForNode,
         onShowCodeLogicTreeForNode: handleShowCodeLogicTreeForNode,
         onGroupHeaderHoverChange: handleGroupHeaderHoverChange,
       },
     })),
-    [handleAskLlmForNode, handleAskLlmHrefForNode, handleShowCodeLogicTreeForNode, handleGroupHeaderHoverChange, searchResultNodes.nodes],
+    [
+      handleAskLlmForNode,
+      handleAskLlmHrefForNode,
+      handleShowGraphLogicTreeForNode,
+      handleShowCodeLogicTreeForNode,
+      handleGroupHeaderHoverChange,
+      searchResultNodes.nodes,
+    ],
   );
 
   const flowNodeById = useMemo(() => new Map(flowElements.nodes.map((n) => [n.id, n])), [flowElements.nodes]);
@@ -1810,6 +1870,7 @@ export const SplitGraphPanel = observer(({
     lastEdgeNavigationRef.current = null;
     viewportOverrideBaseRef.current = null;
     setViewportOverride(null);
+    setGraphLogicTreeModal(null);
     if (edgeClickHighlightTimerRef.current !== null) {
       window.clearTimeout(edgeClickHighlightTimerRef.current);
       edgeClickHighlightTimerRef.current = null;
@@ -1872,6 +1933,17 @@ export const SplitGraphPanel = observer(({
           </div>
           <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{edgeDebugText}</pre>
         </div>
+      )}
+      {graphLogicTreeModal && (
+        <GraphLogicTreeModal
+          open
+          side={side}
+          nodes={graphLogicTreeModal.nodes}
+          edges={graphLogicTreeModal.edges}
+          nodeTypes={nodeTypesForFlow}
+          onClose={closeGraphLogicTreeModal}
+          onNodeClick={handleGraphLogicTreeNodeClick}
+        />
       )}
       <GraphCanvas
         side={side}

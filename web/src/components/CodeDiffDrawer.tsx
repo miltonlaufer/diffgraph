@@ -5,11 +5,13 @@ import {
   useRef,
   type ChangeEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from "react";
 import { observer, useLocalObservable } from "mobx-react-lite";
 import { CodeDiffMatrixView } from "./codeDiff/CodeDiffMatrixView";
 import { CodeDiffSingleFileView } from "./codeDiff/CodeDiffSingleFileView";
 import { CodeDiffToolbar } from "./codeDiff/CodeDiffToolbar";
+import FullscreenModal from "./FullscreenModal";
 import {
   computeSideBySide,
   findDiffHunkStarts,
@@ -299,22 +301,6 @@ export const CodeDiffDrawer = observer(() => {
   }, [hoveredCodeLine, hoveredCodeSide, targetLine, targetSide]);
 
   useEffect(() => {
-    if (!store.isFullscreen) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        store.setFullscreen(false);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [store.isFullscreen, store]);
-
-  useEffect(() => {
     if (codeSearchNavTick <= 0) return;
     if (codeSearchNavTick === lastAppliedCodeSearchNavTickRef.current) return;
     lastAppliedCodeSearchNavTickRef.current = codeSearchNavTick;
@@ -355,32 +341,45 @@ export const CodeDiffDrawer = observer(() => {
   const panelClassName = store.isFullscreen ? "codeDiffPanel codeDiffPanelFullscreen" : "codeDiffPanel";
   const fullscreenTitle = store.isFullscreen ? "Exit full screen" : "Full screen";
   const fullscreenIcon = store.isFullscreen ? "\u2921" : "\u2922";
+  const renderPanel = (content: ReactNode) => {
+    if (!store.isFullscreen) return content;
+    return (
+      <FullscreenModal
+        open
+        onClose={() => store.setFullscreen(false)}
+        ariaLabel="Code viewer"
+        className="fullscreenModalSurfaceCodeDiff"
+      >
+        {content}
+      </FullscreenModal>
+    );
+  };
 
   if (!file) {
-    return (
+    return renderPanel(
       <section className={panelClassName}>
         <button type="button" className="codeDiffFullscreenBtn" onClick={store.toggleFullscreen} title={fullscreenTitle}>
           {fullscreenIcon}
         </button>
         <p className="dimText">Select a file to see its diff.</p>
-      </section>
+      </section>,
     );
   }
 
   if (!diff) {
-    return (
+    return renderPanel(
       <section className={panelClassName}>
         <button type="button" className="codeDiffFullscreenBtn" onClick={store.toggleFullscreen} title={fullscreenTitle}>
           {fullscreenIcon}
         </button>
         <h4 className="codeDiffTitle">{file.path}</h4>
         <p className="dimText">No textual diff available for this file.</p>
-      </section>
+      </section>,
     );
   }
 
   if (!hasOld && hasNew) {
-    return (
+    return renderPanel(
       <section className={panelClassName}>
         <button type="button" className="codeDiffFullscreenBtn" onClick={store.toggleFullscreen} title={fullscreenTitle}>
           {fullscreenIcon}
@@ -401,12 +400,12 @@ export const CodeDiffDrawer = observer(() => {
           onLineClick={handleDeferredLineClick}
           onLineDoubleClick={handleLineDoubleClick}
         />
-      </section>
+      </section>,
     );
   }
 
   if (hasOld && !hasNew) {
-    return (
+    return renderPanel(
       <section className={panelClassName}>
         <button type="button" className="codeDiffFullscreenBtn" onClick={store.toggleFullscreen} title={fullscreenTitle}>
           {fullscreenIcon}
@@ -427,11 +426,11 @@ export const CodeDiffDrawer = observer(() => {
           onLineClick={handleDeferredLineClick}
           onLineDoubleClick={handleLineDoubleClick}
         />
-      </section>
+      </section>,
     );
   }
 
-  return (
+  return renderPanel(
     <section className={panelClassName}>
       <button type="button" className="codeDiffFullscreenBtn" onClick={store.toggleFullscreen} title={fullscreenTitle}>
         {fullscreenIcon}
@@ -466,6 +465,6 @@ export const CodeDiffDrawer = observer(() => {
           onLineDoubleClick={handleLineDoubleClick}
         />
       )}
-    </section>
+    </section>,
   );
 });

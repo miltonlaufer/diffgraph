@@ -107,7 +107,7 @@ const FloatingTooltip = ({
       position: "fixed",
       left: position.left,
       top: position.top,
-      zIndex: 1000,
+      zIndex: 3000,
       pointerEvents: "none",
       visibility: tooltipSize.width > 0 && tooltipSize.height > 0 ? "visible" : "hidden",
       ...style,

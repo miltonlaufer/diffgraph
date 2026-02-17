@@ -21,6 +21,7 @@ interface GroupNodeData {
   askLlmNodeId?: string;
   onAskLlmForNode?: (nodeId: string) => Promise<boolean> | boolean;
   onAskLlmHrefForNode?: (nodeId: string) => string;
+  onShowGraphLogicTreeForNode?: (nodeId: string) => void;
   onShowCodeLogicTreeForNode?: (nodeId: string) => void;
   onGroupHeaderHoverChange?: (nodeId: string, isHovering: boolean) => void;
 }
@@ -35,6 +36,7 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
     askLlmNodeId,
     onAskLlmForNode,
     onAskLlmHrefForNode,
+    onShowGraphLogicTreeForNode,
     onShowCodeLogicTreeForNode,
     onGroupHeaderHoverChange,
   } = data;
@@ -179,11 +181,16 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
     () => (askLlmNodeId && onAskLlmHrefForNode ? onAskLlmHrefForNode(askLlmNodeId) : ""),
     [onAskLlmHrefForNode, askLlmNodeId],
   );
+  const handleShowGraphLogicTree = useCallback(() => {
+    if (!askLlmNodeId || !onShowGraphLogicTreeForNode) return;
+    onShowGraphLogicTreeForNode(askLlmNodeId);
+  }, [askLlmNodeId, onShowGraphLogicTreeForNode]);
   const handleShowCodeLogicTree = useCallback(() => {
     if (!askLlmNodeId || !onShowCodeLogicTreeForNode) return;
     onShowCodeLogicTreeForNode(askLlmNodeId);
   }, [askLlmNodeId, onShowCodeLogicTreeForNode]);
   const hasAskLlm = Boolean(askLlmNodeId && onAskLlmForNode);
+  const hasGraphLogicTree = Boolean(askLlmNodeId && onShowGraphLogicTreeForNode);
   const hasCodeLogicTree = Boolean(askLlmNodeId && onShowCodeLogicTreeForNode);
 
   return (
@@ -192,6 +199,7 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0, pointerEvents: "none" }} />
       <AskLlmButton
         visible={hovered || hoveredActions}
+        onShowGraphLogicTree={hasGraphLogicTree ? handleShowGraphLogicTree : undefined}
         onShowCodeLogicTree={hasCodeLogicTree ? handleShowCodeLogicTree : undefined}
         onAskLlm={hasAskLlm ? handleAskLlm : undefined}
         askLlmHref={askLlmHref || undefined}

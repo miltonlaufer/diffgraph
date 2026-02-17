@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 
 interface AskLlmButtonProps {
   visible: boolean;
+  onShowGraphLogicTree?: () => void;
   onShowCodeLogicTree?: () => void;
   onAskLlm?: () => Promise<boolean> | boolean;
   askLlmHref?: string;
@@ -62,9 +63,9 @@ const anchorStyle: CSSProperties = {
   zIndex: 5000,
 };
 
-const AskLlmButton = ({ visible, onShowCodeLogicTree, onAskLlm, askLlmHref, onHoverChange, style }: AskLlmButtonProps) => {
+const AskLlmButton = ({ visible, onShowGraphLogicTree, onShowCodeLogicTree, onAskLlm, askLlmHref, onHoverChange, style }: AskLlmButtonProps) => {
   const [status, setStatus] = useState<"idle" | "copying" | "copied" | "failed">("idle");
-  const [hoveredAction, setHoveredAction] = useState<"" | "logic" | "copy" | "open">("");
+  const [hoveredAction, setHoveredAction] = useState<"" | "graphLogic" | "logic" | "copy" | "open">("");
   const [messagePosition, setMessagePosition] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const resetTimerRef = useRef<number | null>(null);
@@ -106,6 +107,7 @@ const AskLlmButton = ({ visible, onShowCodeLogicTree, onAskLlm, askLlmHref, onHo
   }, [askLlmHref]);
   const handleCopyHoverEnter = useCallback(() => setHoveredAction("copy"), []);
   const handleOpenHoverEnter = useCallback(() => setHoveredAction("open"), []);
+  const handleGraphLogicHoverEnter = useCallback(() => setHoveredAction("graphLogic"), []);
   const handleLogicHoverEnter = useCallback(() => setHoveredAction("logic"), []);
   const handleHoverLeave = useCallback(() => setHoveredAction(""), []);
   const handlePanelMouseEnter = useCallback(() => {
@@ -136,13 +138,19 @@ const AskLlmButton = ({ visible, onShowCodeLogicTree, onAskLlm, askLlmHref, onHo
     };
   }, [status, updateMessagePosition]);
 
+  const handleShowGraphLogicTreeClick = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onShowGraphLogicTree?.();
+  }, [onShowGraphLogicTree]);
+
   const handleShowCodeLogicTreeClick = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
     onShowCodeLogicTree?.();
   }, [onShowCodeLogicTree]);
 
-  if (!visible || (!onShowCodeLogicTree && !onAskLlm && !askLlmHref)) return null;
+  if (!visible || (!onShowGraphLogicTree && !onShowCodeLogicTree && !onAskLlm && !askLlmHref)) return null;
 
   return (
     <div
@@ -152,6 +160,28 @@ const AskLlmButton = ({ visible, onShowCodeLogicTree, onAskLlm, askLlmHref, onHo
       onMouseLeave={handlePanelMouseLeave}
     >
       <div style={panelStyle}>
+        {onShowGraphLogicTree && (
+          <button
+            type="button"
+            onMouseDown={handleMouseDown}
+            onClick={handleShowGraphLogicTreeClick}
+            onMouseEnter={handleGraphLogicHoverEnter}
+            onMouseLeave={handleHoverLeave}
+            style={{
+              ...actionStyle,
+              borderColor: hoveredAction === "graphLogic" ? "#fca5a5" : "rgba(251, 113, 133, 0.7)",
+              background: hoveredAction === "graphLogic" ? "#881337" : "#7f1d1d",
+              color: "#ffe4e6",
+              boxShadow: hoveredAction === "graphLogic"
+                ? "0 0 0 1px rgba(251, 113, 133, 0.3), 0 0 14px rgba(251, 113, 133, 0.28)"
+                : "none",
+              transform: hoveredAction === "graphLogic" ? "translateY(-1px)" : "none",
+            }}
+            title="Open fullscreen graph view focused on this node's logic-tree nodes only"
+          >
+            See graph logic tree
+          </button>
+        )}
         {onShowCodeLogicTree && (
           <button
             type="button"
