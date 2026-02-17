@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 
 interface AskLlmButtonProps {
   visible: boolean;
@@ -39,9 +40,7 @@ const actionStyle: CSSProperties = {
 };
 
 const messageStyle: CSSProperties = {
-  position: "absolute",
-  top: "calc(100% + 7px)",
-  left: 0,
+  position: "fixed",
   background: "#064e3b",
   border: "1px solid #34d399",
   color: "#d1fae5",
@@ -52,6 +51,7 @@ const messageStyle: CSSProperties = {
   minWidth: 210,
   boxShadow: "0 6px 14px rgba(2, 6, 23, 0.4)",
   pointerEvents: "none",
+  zIndex: 14000,
 };
 
 const anchorStyle: CSSProperties = {
@@ -64,6 +64,8 @@ const anchorStyle: CSSProperties = {
 const AskLlmButton = ({ visible, onAskLlm, askLlmHref, onHoverChange, style }: AskLlmButtonProps) => {
   const [status, setStatus] = useState<"idle" | "copying" | "copied" | "failed">("idle");
   const [hoveredAction, setHoveredAction] = useState<"" | "copy" | "open">("");
+  const [messagePosition, setMessagePosition] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
+  const anchorRef = useRef<HTMLDivElement | null>(null);
   const resetTimerRef = useRef<number | null>(null);
 
   useEffect(() => () => {
@@ -111,11 +113,32 @@ const AskLlmButton = ({ visible, onAskLlm, askLlmHref, onHoverChange, style }: A
     onHoverChange?.(false);
     setHoveredAction("");
   }, [onHoverChange]);
+  const updateMessagePosition = useCallback(() => {
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    setMessagePosition({
+      left: rect.left,
+      top: rect.bottom + 7,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (status !== "copied") return;
+    updateMessagePosition();
+    window.addEventListener("resize", updateMessagePosition);
+    window.addEventListener("scroll", updateMessagePosition, true);
+    return () => {
+      window.removeEventListener("resize", updateMessagePosition);
+      window.removeEventListener("scroll", updateMessagePosition, true);
+    };
+  }, [status, updateMessagePosition]);
 
   if (!visible || (!onAskLlm && !askLlmHref)) return null;
 
   return (
     <div
+      ref={anchorRef}
       style={{ ...anchorStyle, ...style }}
       onMouseEnter={handlePanelMouseEnter}
       onMouseLeave={handlePanelMouseLeave}
@@ -173,10 +196,11 @@ const AskLlmButton = ({ visible, onAskLlm, askLlmHref, onHoverChange, style }: A
           </a>
         )}
       </div>
-      {status === "copied" && (
-        <div style={messageStyle}>
+      {status === "copied" && typeof document !== "undefined" && createPortal(
+        <div style={{ ...messageStyle, left: messagePosition.left, top: messagePosition.top }}>
           Copied! Paste it into your LLM of choice to get an answer.
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

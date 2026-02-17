@@ -5,6 +5,7 @@ interface SplitGraphEdge {
   id: string;
   source: string;
   target: string;
+  relation?: "flow" | "invoke" | "hierarchy";
 }
 
 export interface SplitGraphDerivedInput {
@@ -36,6 +37,10 @@ export const computeSplitGraphDerived = ({
   searchExclude,
 }: SplitGraphDerivedInput): SplitGraphDerivedResult => {
   const graphNodeById = new Map(graphNodes.map((node) => [node.id, node]));
+  const scopeKeyForNode = (nodeId: string): string => {
+    const node = graphNodeById.get(nodeId);
+    return node?.parentId ?? "__root__";
+  };
 
   const baseMatchKeyById = new Map<string, string>();
   for (const node of graphNodes) {
@@ -105,6 +110,14 @@ export const computeSplitGraphDerived = ({
     }
   }
 
+  const incomingFlowEdgeByTarget = new Map<string, SplitGraphEdge[]>();
+  for (const edge of positionedEdges) {
+    if (edge.relation !== "flow") continue;
+    const list = incomingFlowEdgeByTarget.get(edge.target) ?? [];
+    list.push(edge);
+    incomingFlowEdgeByTarget.set(edge.target, list);
+  }
+
   const hoverNeighborhoodByNodeIdEntries: SplitGraphDerivedNeighborhood[] = [];
   for (const nodeId of neighborNodeIdsByNode.keys()) {
     const graphNode = graphNodeById.get(nodeId);
@@ -121,6 +134,23 @@ export const computeSplitGraphDerived = ({
     for (const neighborId of neighborNodeIdsByNode.get(nodeId) ?? []) {
       if (nodeMatchKeyById.has(neighborId)) {
         keepNodeIds.add(neighborId);
+      }
+    }
+
+    const seedScopeKey = scopeKeyForNode(nodeId);
+    const ancestorQueue: string[] = [nodeId];
+    const seenAncestorIds = new Set<string>([nodeId]);
+    while (ancestorQueue.length > 0) {
+      const currentId = ancestorQueue.shift();
+      if (!currentId) continue;
+      for (const edge of incomingFlowEdgeByTarget.get(currentId) ?? []) {
+        const sourceId = edge.source;
+        if (!nodeMatchKeyById.has(sourceId)) continue;
+        if (scopeKeyForNode(sourceId) !== seedScopeKey) continue;
+        keepNodeIds.add(sourceId);
+        if (seenAncestorIds.has(sourceId)) continue;
+        seenAncestorIds.add(sourceId);
+        ancestorQueue.push(sourceId);
       }
     }
 

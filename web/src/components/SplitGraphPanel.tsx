@@ -934,6 +934,11 @@ export const SplitGraphPanel = observer(({
     [positionedLayoutResult.nodes],
   );
 
+  const graphEdgeById = useMemo(
+    () => new Map(graph.edges.map((edge) => [edge.id, edge])),
+    [graph.edges],
+  );
+
   const splitGraphDerivedInput = useMemo(
     () => ({
       graphNodes: graph.nodes,
@@ -942,11 +947,12 @@ export const SplitGraphPanel = observer(({
         id: edge.id,
         source: edge.source,
         target: edge.target,
+        relation: graphEdgeById.get(edge.id)?.relation,
       })),
       searchQuery: store.searchQuery,
       searchExclude: store.searchExclude,
     }),
-    [graph.nodes, positionedLayoutResult.edges, positionedLayoutResult.nodes, store.searchExclude, store.searchQuery],
+    [graph.nodes, graphEdgeById, positionedLayoutResult.edges, positionedLayoutResult.nodes, store.searchExclude, store.searchQuery],
   );
 
   const splitGraphDerived = useSplitGraphDerivedWorker(splitGraphDerivedInput);
@@ -996,8 +1002,9 @@ export const SplitGraphPanel = observer(({
     const searchNodeId = store.searchHighlightedNodeId;
     if (searchNodeId && positionedNodeById.has(searchNodeId)) return searchNodeId;
     if (highlightedNodeId && positionedNodeById.has(highlightedNodeId)) return highlightedNodeId;
+    if (selectedNodeId && positionedNodeById.has(selectedNodeId)) return selectedNodeId;
     return "";
-  }, [highlightedNodeId, hoveredNodeIdForPanel, positionedNodeById, store.searchHighlightedNodeId]);
+  }, [highlightedNodeId, hoveredNodeIdForPanel, positionedNodeById, selectedNodeId, store.searchHighlightedNodeId]);
 
   const hoverNeighborhood = useMemo(() => {
     if (!hoverNeighborhoodSeedId) return null;

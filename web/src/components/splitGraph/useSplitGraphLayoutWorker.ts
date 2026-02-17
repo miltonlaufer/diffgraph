@@ -3,6 +3,7 @@ import type { Edge, Node } from "@xyflow/react";
 import type { ViewGraph } from "#/types/graph";
 import type { LayoutWorkerRequest, LayoutWorkerResponse } from "#/workers/layoutTypes";
 import { SplitGraphPanelStore } from "./store";
+import { hashBoolean, hashFinalize, hashInit, hashNumber, hashString, lruSet } from "#/lib/memoHash";
 
 interface LayoutResult {
   nodes: Node[];
@@ -18,6 +19,67 @@ interface UseSplitGraphLayoutWorkerArgs {
   computeLayoutSync: () => LayoutResult;
 }
 
+const LAYOUT_CACHE_MAX_ENTRIES = 10;
+
+const hashGraphForLayoutSignature = (hash: number, graph: ViewGraph): number => {
+  let next = hashNumber(hash, graph.nodes.length);
+  for (const node of graph.nodes) {
+    next = hashString(next, node.id);
+    next = hashString(next, node.kind);
+    next = hashString(next, node.label);
+    next = hashString(next, node.filePath);
+    next = hashString(next, node.diffStatus);
+    next = hashString(next, node.parentId ?? "");
+    next = hashString(next, node.branchType ?? "");
+    next = hashString(next, node.fileName ?? "");
+    next = hashString(next, node.className ?? "");
+    next = hashString(next, node.functionParams ?? "");
+    next = hashString(next, node.returnType ?? "");
+    next = hashNumber(next, node.startLine ?? -1);
+    next = hashNumber(next, node.endLine ?? -1);
+  }
+  next = hashNumber(next, graph.edges.length);
+  for (const edge of graph.edges) {
+    next = hashString(next, edge.id);
+    next = hashString(next, edge.source);
+    next = hashString(next, edge.target);
+    next = hashString(next, edge.kind);
+    next = hashString(next, edge.relation ?? "");
+    next = hashString(next, edge.flowType ?? "");
+    next = hashString(next, edge.diffStatus);
+  }
+  return next;
+};
+
+const hashFileEntriesForLayoutSignature = (hash: number, fileEntries: Array<[string, string]>): number => {
+  let next = hashNumber(hash, fileEntries.length);
+  for (const [path, content] of fileEntries) {
+    next = hashString(next, path);
+    next = hashNumber(next, content.length);
+    if (content.length > 0) {
+      const head = content.slice(0, 64);
+      const tail = content.slice(-64);
+      next = hashString(next, head);
+      next = hashString(next, tail);
+    }
+  }
+  return next;
+};
+
+const buildLayoutInputSignature = (
+  graph: ViewGraph,
+  viewType: "logic" | "knowledge" | "react",
+  showCalls: boolean,
+  fileEntries: Array<[string, string]>,
+): string => {
+  let hash = hashInit();
+  hash = hashString(hash, viewType);
+  hash = hashBoolean(hash, showCalls);
+  hash = hashGraphForLayoutSignature(hash, graph);
+  hash = hashFileEntriesForLayoutSignature(hash, fileEntries);
+  return `${hashFinalize(hash)}:${graph.nodes.length}:${graph.edges.length}:${fileEntries.length}`;
+};
+
 export const useSplitGraphLayoutWorker = ({
   store,
   graph,
@@ -31,6 +93,10 @@ export const useSplitGraphLayoutWorker = ({
   const layoutWatchdogTimerRef = useRef<number | null>(null);
   const layoutSoftFallbackTimerRef = useRef<number | null>(null);
   const forcedRecoverySignatureRef = useRef("");
+  const inFlightSignatureRef = useRef("");
+  const signatureByRequestIdRef = useRef<Map<number, string>>(new Map());
+  const resultCacheRef = useRef<Map<string, LayoutResult>>(new Map());
+  const appliedSignatureRef = useRef("");
 
   useEffect(() => {
     const worker = new Worker(new URL("../../workers/layoutWorker.ts", import.meta.url), { type: "module" });
@@ -38,6 +104,11 @@ export const useSplitGraphLayoutWorker = ({
 
     const handleMessage = (event: MessageEvent<LayoutWorkerResponse>): void => {
       const data = event.data;
+      const inputSignature = signatureByRequestIdRef.current.get(data.requestId) ?? "";
+      signatureByRequestIdRef.current.delete(data.requestId);
+      if (inputSignature && inFlightSignatureRef.current === inputSignature) {
+        inFlightSignatureRef.current = "";
+      }
       if (data.requestId !== layoutRequestIdRef.current) return;
       if (layoutWatchdogTimerRef.current !== null) {
         window.clearTimeout(layoutWatchdogTimerRef.current);
@@ -53,10 +124,16 @@ export const useSplitGraphLayoutWorker = ({
         return;
       }
       store.setLayoutPending(false);
-      store.setLayoutResult({ nodes: data.result.nodes as Node[], edges: data.result.edges as Edge[] });
+      const result = { nodes: data.result.nodes as Node[], edges: data.result.edges as Edge[] };
+      if (inputSignature) {
+        lruSet(resultCacheRef.current, inputSignature, result, LAYOUT_CACHE_MAX_ENTRIES);
+        appliedSignatureRef.current = inputSignature;
+      }
+      store.setLayoutResult(result);
     };
 
     const handleError = (): void => {
+      inFlightSignatureRef.current = "";
       if (layoutWatchdogTimerRef.current !== null) {
         window.clearTimeout(layoutWatchdogTimerRef.current);
         layoutWatchdogTimerRef.current = null;
@@ -91,21 +168,40 @@ export const useSplitGraphLayoutWorker = ({
   }, [store]);
 
   useEffect(() => {
-    const requestId = layoutRequestIdRef.current + 1;
-    layoutRequestIdRef.current = requestId;
+    const inputSignature = buildLayoutInputSignature(graph, viewType, showCalls, fileEntries);
 
     if (graph.nodes.length === 0) {
       store.setLayoutPending(false);
-      store.setLayoutResult({ nodes: [], edges: [] });
+      const emptyResult = { nodes: [], edges: [] };
+      lruSet(resultCacheRef.current, inputSignature, emptyResult, LAYOUT_CACHE_MAX_ENTRIES);
+      if (appliedSignatureRef.current !== inputSignature) {
+        store.setLayoutResult(emptyResult);
+        appliedSignatureRef.current = inputSignature;
+      }
+      return;
+    }
+
+    const cachedResult = resultCacheRef.current.get(inputSignature);
+    if (cachedResult) {
+      if (appliedSignatureRef.current !== inputSignature) {
+        store.setLayoutResult(cachedResult);
+        appliedSignatureRef.current = inputSignature;
+      }
+      store.setLayoutPending(false);
       return;
     }
 
     if (store.workerFailed) {
+      const requestId = layoutRequestIdRef.current + 1;
+      layoutRequestIdRef.current = requestId;
       store.setLayoutPending(true);
       const fallbackTimer = window.setTimeout(() => {
         if (requestId !== layoutRequestIdRef.current) return;
         try {
-          store.setLayoutResult(computeLayoutSync());
+          const computed = computeLayoutSync();
+          lruSet(resultCacheRef.current, inputSignature, computed, LAYOUT_CACHE_MAX_ENTRIES);
+          store.setLayoutResult(computed);
+          appliedSignatureRef.current = inputSignature;
         } catch {
           store.setWorkerFailed(true);
         }
@@ -124,6 +220,10 @@ export const useSplitGraphLayoutWorker = ({
       return;
     }
 
+    if (inFlightSignatureRef.current === inputSignature) return;
+
+    const requestId = layoutRequestIdRef.current + 1;
+    layoutRequestIdRef.current = requestId;
     const payload: LayoutWorkerRequest = {
       requestId,
       graph,
@@ -131,6 +231,8 @@ export const useSplitGraphLayoutWorker = ({
       showCalls,
       fileEntries,
     };
+    inFlightSignatureRef.current = inputSignature;
+    signatureByRequestIdRef.current.set(requestId, inputSignature);
     store.setLayoutPending(true);
     if (layoutWatchdogTimerRef.current !== null) {
       window.clearTimeout(layoutWatchdogTimerRef.current);
@@ -153,7 +255,10 @@ export const useSplitGraphLayoutWorker = ({
         if (requestId !== layoutRequestIdRef.current) return;
         if (!store.layoutPending) return;
         try {
-          store.setLayoutResult(computeLayoutSync());
+          const computed = computeLayoutSync();
+          lruSet(resultCacheRef.current, inputSignature, computed, LAYOUT_CACHE_MAX_ENTRIES);
+          store.setLayoutResult(computed);
+          appliedSignatureRef.current = inputSignature;
           store.setLayoutPending(false);
         } catch {
           store.setWorkerFailed(true);
