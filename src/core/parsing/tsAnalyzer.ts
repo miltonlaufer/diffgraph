@@ -58,6 +58,15 @@ const calleeNameFromExpression = (expr: Node): string | null => {
   return null;
 };
 
+const callBranchTypeFromExpression = (expr: Node): "then" | "catch" | "finally" | "call" | null => {
+  const callee = calleeNameFromExpression(expr);
+  if (!callee) return null;
+  if (callee === "then") return "then";
+  if (callee === "catch") return "catch";
+  if (callee === "finally") return "finally";
+  return "call";
+};
+
 const buildBranchName = (node: Node): string | null => {
   if (Node.isIfStatement(node)) {
     return "if";
@@ -74,6 +83,12 @@ const buildBranchName = (node: Node): string | null => {
   if (Node.isConditionalExpression(node)) {
     return "ternary";
   }
+  if (Node.isTryStatement(node)) {
+    return "try";
+  }
+  if (Node.isCatchClause(node)) {
+    return "catch";
+  }
   if (Node.isReturnStatement(node)) {
     return "return";
   }
@@ -81,15 +96,18 @@ const buildBranchName = (node: Node): string | null => {
     return "throw";
   }
   if (Node.isExpressionStatement(node) && isCallLikeExpression(node.getExpression())) {
-    return "call";
+    return callBranchTypeFromExpression(node.getExpression()) ?? "call";
   }
   if (Node.isVariableStatement(node)) {
-    const hasCallInitializer = node.getDeclarations().some((decl) => {
+    const firstCallInitializer = node.getDeclarations().find((decl) => {
       const init = decl.getInitializer();
       return init ? isCallLikeExpression(init) : false;
     });
-    if (hasCallInitializer) {
-      return "call";
+    if (firstCallInitializer) {
+      const init = firstCallInitializer.getInitializer();
+      if (init) {
+        return callBranchTypeFromExpression(init) ?? "call";
+      }
     }
   }
   return null;
@@ -622,6 +640,20 @@ export class TsAnalyzer {
         return normalizeSnippet(`${condition} ? ... : ...`, 60);
       }
 
+      if (branchKind === "try") {
+        return "try";
+      }
+
+      if (branchKind === "catch" && Node.isCatchClause(node)) {
+        const variable = node.getVariableDeclaration();
+        if (!variable) return "catch";
+        return normalizeSnippet(`catch (${variable.getText()})`, 60);
+      }
+
+      if (branchKind === "finally") {
+        return "finally";
+      }
+
       return normalizeSnippet(node.getText(), 60);
     };
 
@@ -654,8 +686,8 @@ export class TsAnalyzer {
       });
     };
 
-    const makeBranchNode = (node: Node): GraphNode => {
-      let branchKind = buildBranchName(node) ?? "unknown";
+    const makeBranchNode = (node: Node, forcedBranchKind?: string): GraphNode => {
+      let branchKind = forcedBranchKind ?? buildBranchName(node) ?? "unknown";
       if (branchKind === "if" && Node.isIfStatement(node)) {
         const parentIf = node.getParentIfKind(SyntaxKind.IfStatement);
         if (parentIf && parentIf.getElseStatement() === node) {
@@ -802,6 +834,70 @@ export class TsAnalyzer {
     };
 
     const collectStatement = (stmt: Node): { entryId: string | null; exits: ExitAnchor[]; fallsThrough: boolean } => {
+      if (Node.isTryStatement(stmt)) {
+        const tryNode = makeBranchNode(stmt);
+        nodes.push(tryNode);
+        addDeclaresEdge(tryNode);
+
+        const tryResult = collectBlock(stmt.getTryBlock());
+        if (tryResult.entryId) {
+          addFlowEdge(tryNode.id, tryResult.entryId, "next");
+        }
+
+        let exits: ExitAnchor[] = [];
+        if (tryResult.entryId) {
+          exits.push(...tryResult.exits);
+        } else if (tryResult.fallsThrough) {
+          exits.push({ sourceId: tryNode.id, flowType: "next" });
+        }
+
+        const catchClause = stmt.getCatchClause();
+        if (catchClause) {
+          const clause = catchClause;
+          const catchNode = makeBranchNode(clause);
+          nodes.push(catchNode);
+          addDeclaresEdge(catchNode);
+          addFlowEdge(tryNode.id, catchNode.id, "false");
+
+          const catchResult = collectBlock(clause.getBlock());
+          if (catchResult.entryId) {
+            addFlowEdge(catchNode.id, catchResult.entryId, "next");
+            exits.push(...catchResult.exits);
+          } else if (catchResult.fallsThrough) {
+            exits.push({ sourceId: catchNode.id, flowType: "next" });
+          }
+        }
+
+        const finallyBlock = stmt.getFinallyBlock();
+        if (finallyBlock) {
+          const finallyNode = makeBranchNode(finallyBlock, "finally");
+          nodes.push(finallyNode);
+          addDeclaresEdge(finallyNode);
+
+          const uniqueExitsToFinally = dedupExits(exits);
+          if (uniqueExitsToFinally.length > 0) {
+            for (const exit of uniqueExitsToFinally) {
+              addFlowEdge(exit.sourceId, finallyNode.id, exit.flowType);
+            }
+          } else {
+            addFlowEdge(tryNode.id, finallyNode.id, "next");
+          }
+
+          const finalResult = collectBlock(finallyBlock);
+          if (finalResult.entryId) {
+            addFlowEdge(finallyNode.id, finalResult.entryId, "next");
+            exits = [...finalResult.exits];
+          } else if (finalResult.fallsThrough) {
+            exits = [{ sourceId: finallyNode.id, flowType: "next" }];
+          } else if (!finalResult.fallsThrough) {
+            exits = [];
+          }
+        }
+
+        const deduped = dedupExits(exits);
+        return { entryId: tryNode.id, exits: deduped, fallsThrough: deduped.length > 0 };
+      }
+
       const branchKind = buildBranchName(stmt);
       if (!branchKind) {
         return { entryId: null, exits: [], fallsThrough: statementFallsThrough(stmt) };

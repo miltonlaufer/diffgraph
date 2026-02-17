@@ -2,6 +2,7 @@ import { Handle, Position } from "@xyflow/react";
 import { memo, useMemo, useState, useCallback } from "react";
 import AskLlmButton from "./AskLlmButton";
 import CodeTooltip from "./CodeTooltip";
+import { useDebouncedValue } from "../useDebouncedValue";
 
 const splitLabel = (label: string): { title: string; code: string } => {
   const idx = label.indexOf("\n");
@@ -28,6 +29,7 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
   /******************* STORE ***********************/
   const [hovered, setHovered] = useState(false);
   const [hoveredActions, setHoveredActions] = useState(false);
+  const tooltipVisible = useDebouncedValue(hovered, 500);
 
   /******************* COMPUTED ***********************/
   const parts = useMemo(() => splitLabel(data.label), [data.label]);
@@ -133,7 +135,7 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
         style={{ top: -46, left: "calc(100% - 10px)", transform: "rotate(-45deg)" }}
       />
       <CodeTooltip
-        visible={hovered}
+        visible={tooltipVisible}
         codeContext={data.codeContext as string | undefined}
         language={data.language}
         functionName={data.functionName}

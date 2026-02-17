@@ -429,13 +429,15 @@ const computeLogicLayout = (
                 ? "#f87171"
                 : "#94a3b8";
       const strokeWidth = isInvoke ? 2.5 : 1.5;
-      const sourceHandle = flowType === "true"
-        ? "yes"
-        : flowType === "false"
-          ? "no"
-          : flowType === "next" && sourceIsDecision
-            ? "next"
-            : undefined;
+      const sourceHandle = sourceIsDecision
+        ? flowType === "true"
+          ? "yes"
+          : flowType === "false"
+            ? "no"
+            : flowType === "next"
+              ? "next"
+              : undefined
+        : undefined;
       const label = isInvoke
         ? "calls"
         : flowType === "next"

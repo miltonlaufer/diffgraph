@@ -21,6 +21,7 @@ import {
   normPath,
   stableNodeKey,
 } from "./splitGraph/layout";
+import { useDebouncedValue } from "./useDebouncedValue";
 import { SplitGraphPanelStore } from "./splitGraph/store";
 import { useSplitGraphDerivedWorker } from "./splitGraph/useSplitGraphDerivedWorker";
 import { useFlowContainerSize } from "./splitGraph/useFlowContainerSize";
@@ -46,6 +47,7 @@ const SEARCH_FLASH_STYLE = {
 const EDGE_TOOLTIP_OFFSET_X = 12;
 const EDGE_TOOLTIP_OFFSET_Y = 14;
 const EDGE_CLICK_HIGHLIGHT_MS = 5000;
+const EDGE_DEBUG_MAX_ROWS = 120;
 const GROUP_BLOCK_GAP = 22;
 const VIEWPORT_EPSILON = 0.5;
 const VIEWPORT_ZOOM_EPSILON = 0.001;
@@ -163,6 +165,11 @@ const buildIndexedMatchKeyByNodeId = (nodes: ViewGraphNode[]): Map<string, strin
     }
   }
   return indexedMatchKeyByNodeId;
+};
+
+const hasDebugEdgesFlag = (): boolean => {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("debugEdges") === "1";
 };
 
 const isGroupHeaderTarget = (event: unknown): boolean => {
@@ -1206,10 +1213,12 @@ export const SplitGraphPanel = observer(({
       modified: graph.nodes.filter((n) => n.diffStatus === "modified").length,
     };
   }, [diffStats, graph.nodes]);
+  const debouncedHoveredEdgeId = useDebouncedValue(store.hoveredEdgeId, 500);
 
   const hoveredEdgeTooltip = useMemo(() => {
-    if (!store.hoveredEdgeId) return null;
-    const edge = flowElements.edges.find((candidate) => candidate.id === store.hoveredEdgeId);
+    const edgeId = debouncedHoveredEdgeId;
+    if (!edgeId) return null;
+    const edge = flowElements.edges.find((candidate) => candidate.id === edgeId);
     if (!edge) return null;
 
     const sourceGraphNode = graphNodeById.get(edge.source);
@@ -1223,7 +1232,7 @@ export const SplitGraphPanel = observer(({
       sourceText: `${sourceKind}${sourceLabel}`,
       targetText: `${targetKind}${targetLabel}`,
     };
-  }, [flowElements.edges, graphNodeById, store.hoveredEdgeId]);
+  }, [debouncedHoveredEdgeId, flowElements.edges, graphNodeById]);
 
   const edgeTooltipStyle = useMemo(
     () => ({
@@ -1248,6 +1257,24 @@ export const SplitGraphPanel = observer(({
   );
 
   const nodeTypesForFlow = isLogic ? logicNodeTypes : knowledgeNodeTypes;
+  const showEdgeDebugOverlay = useMemo(() => hasDebugEdgesFlag(), []);
+  const edgeDebugText = useMemo(() => {
+    if (!showEdgeDebugOverlay) return "";
+    const graphEdgeById = new Map(graph.edges.map((edge) => [edge.id, edge]));
+    const rows = positionedLayoutResult.edges.map((edge) => {
+      const graphEdge = graphEdgeById.get(edge.id);
+      const flowType = graphEdge?.relation === "flow" ? (graphEdge.flowType ?? "-") : "-";
+      const label = typeof edge.label === "string" ? edge.label : "";
+      const sourceHandle = edge.sourceHandle ?? "";
+      const targetHandle = edge.targetHandle ?? "";
+      return `${edge.id} | ${edge.source} -> ${edge.target} | rel=${graphEdge?.relation ?? "-"} flow=${flowType} label=${label || "-"} sh=${sourceHandle || "-"} th=${targetHandle || "-"}`;
+    });
+    const shown = rows.slice(0, EDGE_DEBUG_MAX_ROWS);
+    const truncated = rows.length > EDGE_DEBUG_MAX_ROWS
+      ? `\n... truncated ${rows.length - EDGE_DEBUG_MAX_ROWS} more edges`
+      : "";
+    return shown.join("\n") + truncated;
+  }, [graph.edges, positionedLayoutResult.edges, showEdgeDebugOverlay]);
   const hasInputNodes = graph.nodes.length > 0;
   const hasRenderedNodes = positionedLayoutResult.nodes.length > 0;
   const showLayoutStatus = hasInputNodes && store.layoutPending;
@@ -1325,11 +1352,12 @@ export const SplitGraphPanel = observer(({
   }, [graphNodeById, onNodeSelect, side]);
 
   const handleNodeMouseEnter = useCallback<NodeMouseHandler>((_event, node) => {
+    store.clearHoveredEdge();
     const graphNode = graphNodeById.get(node.id);
     if (!graphNode) return;
     if (graphNode.kind === "group" && !isGroupHeaderTarget(_event)) return;
     onNodeHoverChange(side, node.id, nodeMatchKeyById.get(node.id) ?? "");
-  }, [graphNodeById, nodeMatchKeyById, onNodeHoverChange, side]);
+  }, [graphNodeById, nodeMatchKeyById, onNodeHoverChange, side, store]);
 
   const handleNodeMouseMove = useCallback<NodeMouseHandler>((event, node) => {
     const graphNode = graphNodeById.get(node.id);
@@ -1724,6 +1752,33 @@ export const SplitGraphPanel = observer(({
           <div><strong>Target:</strong> {hoveredEdgeTooltip.targetText}</div>
         </div>,
         document.body,
+      )}
+      {showEdgeDebugOverlay && (
+        <div
+          style={{
+            position: "absolute",
+            left: 10,
+            bottom: 10,
+            zIndex: 1300,
+            width: "min(760px, calc(100% - 20px))",
+            maxHeight: "36vh",
+            overflow: "auto",
+            border: "1px solid #334155",
+            borderRadius: 8,
+            background: "rgba(2, 6, 23, 0.94)",
+            boxShadow: "0 8px 24px rgba(2, 6, 23, 0.8)",
+            padding: "8px 10px",
+            fontSize: 11,
+            lineHeight: 1.35,
+            fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace",
+            color: "#e2e8f0",
+          }}
+        >
+          <div style={{ marginBottom: 6, color: "#93c5fd" }}>
+            edge-debug ({positionedLayoutResult.edges.length}) enabled via `?debugEdges=1`
+          </div>
+          <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{edgeDebugText}</pre>
+        </div>
       )}
       <GraphCanvas
         side={side}

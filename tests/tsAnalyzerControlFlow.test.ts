@@ -238,4 +238,101 @@ describe("TsAnalyzer control flow", () => {
     expect(oldIf?.signatureHash).toBe(newIf?.signatureHash);
     expect((oldIf?.metadata?.codeSnippet as string | undefined) ?? "").toBe("if (flag && retries > 0)");
   });
+
+  it("includes try/catch/finally blocks and their inner flow in the logic graph", async () => {
+    const analyzer = new TsAnalyzer();
+    const graph = await analyzer.analyze("repo", "snap", "ref", [
+      {
+        path: "sample.ts",
+        content: [
+          "async function demo(request: Request) {",
+          "  try {",
+          "    const res = await fetch(request);",
+          "    if (res.ok) return res;",
+          "  } catch (err) {",
+          "    console.error('failed', err);",
+          "  } finally {",
+          "    await closeResource();",
+          "  }",
+          "  return request;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ]);
+
+    const branchNodes = graph.nodes.filter((node) => node.kind === "Branch");
+    const branchTypeOf = (node: { metadata?: Record<string, unknown> }): string =>
+      (node.metadata?.branchType as string | undefined) ?? "";
+    const byType = (type: string): Array<(typeof branchNodes)[number]> =>
+      branchNodes.filter((node) => branchTypeOf(node) === type);
+
+    const tryNode = byType("try")[0];
+    const catchNode = byType("catch")[0];
+    const finallyNode = byType("finally")[0];
+    const callNodes = byType("call");
+    const ifNode = byType("if")[0];
+    const returnNodes = byType("return");
+
+    expect(tryNode).toBeTruthy();
+    expect(catchNode).toBeTruthy();
+    expect(finallyNode).toBeTruthy();
+    expect(callNodes.length).toBeGreaterThanOrEqual(2);
+    expect(ifNode).toBeTruthy();
+    expect(returnNodes.length).toBeGreaterThanOrEqual(2);
+
+    const flowEdges = graph.edges.filter((edge) => edge.kind === "CALLS");
+    const hasEdge = (source: string, target: string, flowType: "true" | "false" | "next"): boolean =>
+      flowEdges.some(
+        (edge) => edge.source === source
+          && edge.target === target
+          && (edge.metadata?.flowType as string | undefined) === flowType,
+      );
+
+    const fetchCall = callNodes.find((node) => (node.metadata?.codeSnippet as string | undefined)?.includes("fetch"));
+    const consoleCall = callNodes.find((node) => (node.metadata?.codeSnippet as string | undefined)?.includes("console.error"));
+    const finallyCall = callNodes.find((node) => (node.metadata?.codeSnippet as string | undefined)?.includes("closeResource"));
+    const finalReturn = returnNodes.find((node) => node.startLine === 10) ?? returnNodes[returnNodes.length - 1];
+
+    expect(fetchCall).toBeTruthy();
+    expect(consoleCall).toBeTruthy();
+    expect(finallyCall).toBeTruthy();
+    expect(finalReturn).toBeTruthy();
+
+    expect(hasEdge(tryNode!.id, fetchCall!.id, "next")).toBe(true);
+    expect(hasEdge(tryNode!.id, catchNode!.id, "false")).toBe(true);
+    expect(hasEdge(catchNode!.id, consoleCall!.id, "next")).toBe(true);
+    expect(hasEdge(consoleCall!.id, finallyNode!.id, "next")).toBe(true);
+    expect(hasEdge(finallyNode!.id, finallyCall!.id, "next")).toBe(true);
+    expect(hasEdge(finallyCall!.id, finalReturn!.id, "next")).toBe(true);
+  });
+
+  it("classifies chained promise handlers as then/catch/finally branches", async () => {
+    const analyzer = new TsAnalyzer();
+    const graph = await analyzer.analyze("repo", "snap", "ref", [
+      {
+        path: "sample.ts",
+        content: [
+          "async function demo(p: Promise<number>) {",
+          "  await p.then((v) => v + 1);",
+          "  await p.catch((err) => {",
+          "    return 0;",
+          "  });",
+          "  await p.finally(() => {",
+          "    console.log('done');",
+          "  });",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ]);
+
+    const branchNodes = graph.nodes.filter((node) => node.kind === "Branch");
+    const byType = (type: string): Array<(typeof branchNodes)[number]> =>
+      branchNodes.filter((node) => ((node.metadata?.branchType as string | undefined) ?? "") === type);
+
+    expect(byType("then").length).toBeGreaterThanOrEqual(1);
+    expect(byType("catch").length).toBeGreaterThanOrEqual(1);
+    expect(byType("finally").length).toBeGreaterThanOrEqual(1);
+  });
 });

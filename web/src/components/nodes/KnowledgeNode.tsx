@@ -2,6 +2,7 @@ import { Handle, Position } from "@xyflow/react";
 import { memo, useMemo, useState, useCallback } from "react";
 import AskLlmButton from "./AskLlmButton";
 import CodeTooltip from "./CodeTooltip";
+import { useDebouncedValue } from "../useDebouncedValue";
 
 interface KnowledgeNodeData {
   label: string;
@@ -24,6 +25,7 @@ const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
   /******************* STORE ***********************/
   const [hovered, setHovered] = useState(false);
   const [hoveredActions, setHoveredActions] = useState(false);
+  const tooltipVisible = useDebouncedValue(hovered, 500);
 
   /******************* COMPUTED ***********************/
   const style = useMemo(
@@ -76,7 +78,7 @@ const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
       <CodeTooltip
-        visible={hovered}
+        visible={tooltipVisible}
         codeContext={data.codeContext as string | undefined}
         language={data.language}
         functionName={data.functionName}

@@ -2,6 +2,7 @@ import { Handle, Position } from "@xyflow/react";
 import { memo, useMemo, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import AskLlmButton from "./AskLlmButton";
+import { useDebouncedValue } from "../useDebouncedValue";
 
 interface GroupNodeData {
   label: string;
@@ -27,6 +28,7 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
   const [hovered, setHovered] = useState(false);
   const [hoveredActions, setHoveredActions] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const tooltipVisible = useDebouncedValue(hovered, 500);
 
   /******************* COMPUTED ***********************/
   const style = useMemo(
@@ -187,7 +189,7 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
         <div style={titleStyle}>{data.label}</div>
         {headerMeta && <div style={metaStyle}>{headerMeta}</div>}
       </div>
-      {hovered && hasFunctionDetails && typeof document !== "undefined" && createPortal(
+      {tooltipVisible && hasFunctionDetails && typeof document !== "undefined" && createPortal(
         <div style={tooltipStyle}>
           {showFunctionName && (
             <div><strong>Function:</strong> {functionNameDisplay}</div>
