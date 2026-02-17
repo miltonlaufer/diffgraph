@@ -1,8 +1,10 @@
-import { Handle, Position } from "@xyflow/react";
+import { Handle, Position, useViewport } from "@xyflow/react";
 import { memo, useMemo, useState, useCallback } from "react";
 import AskLlmButton from "./AskLlmButton";
 import { useDebouncedValue } from "../useDebouncedValue";
 import FloatingTooltip from "./FloatingTooltip";
+
+const COMPACT_HEADER_ZOOM_THRESHOLD = 0.4;
 
 interface GroupNodeData {
   label: string;
@@ -28,6 +30,7 @@ interface GroupNodeData {
 
 const GroupNode = ({ data }: { data: GroupNodeData }) => {
   /******************* STORE ***********************/
+  const { zoom } = useViewport();
   const [hovered, setHovered] = useState(false);
   const [hoveredActions, setHoveredActions] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
@@ -92,26 +95,35 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
     if (!functionNameNoBadge) return true;
     return !normalized(functionNameNoBadge).includes(normalized(paramsRaw));
   }, [functionNameNoBadge, normalized, paramsRaw]);
+  const useCompactHeader = useMemo(
+    () => zoom <= COMPACT_HEADER_ZOOM_THRESHOLD,
+    [zoom],
+  );
+  const headerTitle = useMemo(
+    () => (useCompactHeader && functionNameDisplay ? functionNameDisplay : data.label),
+    [data.label, functionNameDisplay, useCompactHeader],
+  );
   const headerStyle = useMemo(
     () => ({
       background: data.bgColor,
       color: data.textColor,
-      padding: "8px 12px 7px",
+      padding: useCompactHeader ? "9px 12px" : "8px 12px 7px",
       borderRadius: "8px 8px 0 0",
       lineHeight: 1.25,
     }),
-    [data.bgColor, data.textColor],
+    [data.bgColor, data.textColor, useCompactHeader],
   );
   const titleStyle = useMemo(
     () => ({
-      fontSize: 15,
-      fontWeight: 700,
+      fontSize: useCompactHeader ? 34 : 20,
+      fontWeight: useCompactHeader ? 800 : 700,
       letterSpacing: 0.2,
       overflow: "hidden",
       textOverflow: "ellipsis",
       whiteSpace: "nowrap" as const,
+      textAlign: "left" as const,
     }),
-    [],
+    [useCompactHeader],
   );
   const metaStyle = useMemo(
     () => ({
@@ -212,8 +224,8 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
         onMouseMove={onHeaderMove}
         onMouseLeave={onHeaderLeave}
       >
-        <div style={titleStyle}>{data.label}</div>
-        {headerMeta && <div style={metaStyle}>{headerMeta}</div>}
+        <div style={titleStyle}>{headerTitle}</div>
+        {!useCompactHeader && headerMeta && <div style={metaStyle}>{headerMeta}</div>}
       </div>
       {tooltipVisible && hasFunctionDetails && (
         <FloatingTooltip

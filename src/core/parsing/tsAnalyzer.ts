@@ -142,10 +142,42 @@ interface JsDocLike {
   getTags: () => JsDocTagLike[];
 }
 
+interface DeepFunctionNameResolution {
+  name: string;
+  wrappedBy?: string;
+  registerSymbol: boolean;
+}
+
 const normalizeInline = (value: string): string => value.replace(/\s+/g, " ").trim();
 const normalizeSignatureText = (value: string): string =>
   value.replace(/\s+/g, "");
 const hashSignatureText = (value: string): string => stableHash(normalizeSignatureText(value) || "__empty__");
+
+const resolveDeepFunctionName = (node: Node): DeepFunctionNameResolution => {
+  const parent = node.getParent();
+  if (parent && Node.isPropertyAssignment(parent)) {
+    return { name: parent.getName(), registerSymbol: true };
+  }
+  if (parent && Node.isVariableDeclaration(parent)) {
+    return { name: parent.getName(), registerSymbol: true };
+  }
+  if (Node.isMethodDeclaration(node) || Node.isGetAccessorDeclaration(node) || Node.isSetAccessorDeclaration(node)) {
+    return { name: node.getName(), registerSymbol: true };
+  }
+  if (parent && Node.isCallExpression(parent)) {
+    const wrappedBy = calleeNameFromExpression(parent) ?? parent.getExpression().getText();
+    const assignedVariable = parent.getFirstAncestorByKind(SyntaxKind.VariableDeclaration);
+    if (assignedVariable?.getName()) {
+      return { name: assignedVariable.getName(), wrappedBy, registerSymbol: true };
+    }
+    return {
+      name: `${wrappedBy || "callback"}Callback@${node.getStartLineNumber()}`,
+      wrappedBy,
+      registerSymbol: false,
+    };
+  }
+  return { name: "anonymous", registerSymbol: false };
+};
 
 const extractParams = (
   node: Node,
@@ -517,18 +549,8 @@ export class TsAnalyzer {
         return;
       }
 
-      let name = "anonymous";
-      const parent = node.getParent();
-      if (parent && Node.isPropertyAssignment(parent)) {
-        name = parent.getName();
-      } else if (parent && Node.isVariableDeclaration(parent)) {
-        name = parent.getName();
-      } else if (Node.isMethodDeclaration(node) || Node.isGetAccessorDeclaration(node) || Node.isSetAccessorDeclaration(node)) {
-        name = node.getName();
-      } else if (parent && Node.isCallExpression(parent)) {
-        const callee = parent.getExpression().getText();
-        name = callee;
-      }
+      const nameResolution = resolveDeepFunctionName(node);
+      const name = nameResolution.name;
 
       if (name === "anonymous" && (endLine - startLine) < 2) {
         return;
@@ -552,12 +574,20 @@ export class TsAnalyzer {
         startLine,
         endLine,
         signatureHash: hashSignatureText(node.getText()),
-        metadata: { params, paramsFull, returnType, documentation },
+        metadata: {
+          params,
+          paramsFull,
+          returnType,
+          documentation,
+          ...(nameResolution.wrappedBy ? { wrappedBy: nameResolution.wrappedBy } : {}),
+        },
         snapshotId,
         ref,
       };
       nodes.push(fnNode);
-      symbolByName.set(name, fnNode.id);
+      if (nameResolution.registerSymbol) {
+        symbolByName.set(name, fnNode.id);
+      }
 
       /* Find enclosing function/component node to use as parent instead of file */
       let parentNodeId = fileNode.id;

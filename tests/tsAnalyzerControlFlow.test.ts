@@ -189,6 +189,50 @@ describe("TsAnalyzer control flow", () => {
     expect(branchStarts.has(10)).toBe(true);
   });
 
+  it("names hook-wrapped callbacks by assigned variable instead of hook callee name", async () => {
+    const analyzer = new TsAnalyzer();
+    const graph = await analyzer.analyze("repo", "snap", "ref", [
+      {
+        path: "sample.tsx",
+        content: [
+          "function Panel(seed: number) {",
+          "  const build = useCallback((x: number) => x + seed, [seed]);",
+          "  const renderText = useMemo(() => build(1), [build]);",
+          "  const format = useCallback(() => renderText.toString(), [renderText]);",
+          "  return format();",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ]);
+
+    const functionLikeNodes = graph.nodes.filter((node) =>
+      node.kind === "Function" || node.kind === "Hook" || node.kind === "ReactComponent" || node.kind === "Method");
+    const functionNames = new Set(functionLikeNodes.map((node) => node.name));
+
+    expect(functionNames.has("build")).toBe(true);
+    expect(functionNames.has("renderText")).toBe(true);
+    expect(functionNames.has("format")).toBe(true);
+    expect(functionNames.has("useCallback")).toBe(false);
+    expect(functionNames.has("useMemo")).toBe(false);
+
+    const byName = new Map(functionLikeNodes.map((node) => [node.name, node]));
+    expect(byName.get("build")?.metadata?.wrappedBy).toBe("useCallback");
+    expect(byName.get("renderText")?.metadata?.wrappedBy).toBe("useMemo");
+    expect(byName.get("format")?.metadata?.wrappedBy).toBe("useCallback");
+
+    const flowEdges = graph.edges.filter((edge) => edge.kind === "CALLS");
+    const hasCall = (sourceName: string, targetName: string): boolean => {
+      const sourceId = byName.get(sourceName)?.id;
+      const targetId = byName.get(targetName)?.id;
+      if (!sourceId || !targetId) return false;
+      return flowEdges.some((edge) => edge.source === sourceId && edge.target === targetId);
+    };
+
+    expect(hasCall("Panel", "build")).toBe(true);
+    expect(hasCall("Panel", "format")).toBe(true);
+  });
+
   it("ignores whitespace-only edits in signatures and keeps multiline if snippets readable", async () => {
     const analyzer = new TsAnalyzer();
     const oldGraph = await analyzer.analyze("repo", "old", "ref", [

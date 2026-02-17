@@ -61,7 +61,9 @@ const buildViewGraph = (
     }
     const badge = kindBadge[node.kind] ?? node.kind;
     const params = (node.metadata?.params as string) ?? "";
-    const label = `[${badge}] ${node.name}${params}`;
+    const wrappedBy = (node.metadata?.wrappedBy as string | undefined) ?? "";
+    const wrapperSuffix = wrappedBy.length > 0 ? ` [${wrappedBy}]` : "";
+    const label = `[${badge}] ${node.name}${wrapperSuffix}${params}`;
 
     /* Check if this function itself has a parent function (e.g. useEffect inside Component) */
     const parentFn = parentMap.get(node.id);
