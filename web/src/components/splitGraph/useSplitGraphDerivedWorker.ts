@@ -13,27 +13,21 @@ const DERIVED_CACHE_MAX_ENTRIES = 24;
 export const useSplitGraphDerivedWorker = (
   input: SplitGraphDerivedInput,
 ): SplitGraphDerivedResult => {
-  const initialResultRef = useRef<SplitGraphDerivedResult | null>(null);
-  if (!initialResultRef.current) {
-    initialResultRef.current = computeSplitGraphDerived(input);
-  }
-  const initialSignatureRef = useRef("");
-  if (!initialSignatureRef.current) {
-    initialSignatureRef.current = buildSplitGraphDerivedInputSignature(input);
-  }
+  const [initialState] = useState(() => {
+    const initialResult = computeSplitGraphDerived(input);
+    const initialSignature = buildSplitGraphDerivedInputSignature(input);
+    const cache = createSignatureCache<SplitGraphDerivedResult>(DERIVED_CACHE_MAX_ENTRIES);
+    cache.set(initialSignature, initialResult);
+    return { initialResult, initialSignature, cache };
+  });
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
   const inFlightSignatureRef = useRef("");
   const signatureByRequestIdRef = useRef<Map<number, string>>(new Map());
-  const resultCacheRef = useRef(createSignatureCache<SplitGraphDerivedResult>(DERIVED_CACHE_MAX_ENTRIES));
-  const resultCacheSeededRef = useRef(false);
-  if (!resultCacheSeededRef.current) {
-    resultCacheRef.current.set(initialSignatureRef.current, initialResultRef.current!);
-    resultCacheSeededRef.current = true;
-  }
-  const appliedSignatureRef = useRef(initialSignatureRef.current);
+  const resultCacheRef = useRef(initialState.cache);
+  const appliedSignatureRef = useRef(initialState.initialSignature);
   const [workerFailed, setWorkerFailed] = useState(false);
-  const [derived, setDerived] = useState<SplitGraphDerivedResult>(initialResultRef.current!);
+  const [derived, setDerived] = useState<SplitGraphDerivedResult>(initialState.initialResult);
 
   useEffect(() => {
     const worker = new Worker(new URL("../../workers/splitGraphDerivedWorker.ts", import.meta.url), { type: "module" });

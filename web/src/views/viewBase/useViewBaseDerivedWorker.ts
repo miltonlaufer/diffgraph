@@ -13,27 +13,21 @@ const VIEW_BASE_DERIVED_CACHE_MAX_ENTRIES = 12;
 export const useViewBaseDerivedWorker = (
   input: ViewBaseDerivedInput,
 ): ViewBaseDerivedResult => {
-  const initialResultRef = useRef<ViewBaseDerivedResult | null>(null);
-  if (!initialResultRef.current) {
-    initialResultRef.current = computeViewBaseDerived(input);
-  }
-  const initialSignatureRef = useRef("");
-  if (!initialSignatureRef.current) {
-    initialSignatureRef.current = buildViewBaseDerivedInputSignature(input);
-  }
+  const [initialState] = useState(() => {
+    const initialResult = computeViewBaseDerived(input);
+    const initialSignature = buildViewBaseDerivedInputSignature(input);
+    const cache = createSignatureCache<ViewBaseDerivedResult>(VIEW_BASE_DERIVED_CACHE_MAX_ENTRIES);
+    cache.set(initialSignature, initialResult);
+    return { initialResult, initialSignature, cache };
+  });
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
   const inFlightSignatureRef = useRef("");
   const signatureByRequestIdRef = useRef<Map<number, string>>(new Map());
-  const resultCacheRef = useRef(createSignatureCache<ViewBaseDerivedResult>(VIEW_BASE_DERIVED_CACHE_MAX_ENTRIES));
-  const resultCacheSeededRef = useRef(false);
-  if (!resultCacheSeededRef.current) {
-    resultCacheRef.current.set(initialSignatureRef.current, initialResultRef.current!);
-    resultCacheSeededRef.current = true;
-  }
-  const appliedSignatureRef = useRef(initialSignatureRef.current);
+  const resultCacheRef = useRef(initialState.cache);
+  const appliedSignatureRef = useRef(initialState.initialSignature);
   const [workerFailed, setWorkerFailed] = useState(false);
-  const [derived, setDerived] = useState<ViewBaseDerivedResult>(initialResultRef.current!);
+  const [derived, setDerived] = useState<ViewBaseDerivedResult>(initialState.initialResult);
 
   useEffect(() => {
     const worker = new Worker(new URL("../../workers/viewBaseDerivedWorker.ts", import.meta.url), { type: "module" });

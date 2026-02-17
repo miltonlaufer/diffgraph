@@ -30,6 +30,7 @@ const PillNode = ({ data }: { data: PillNodeData }) => {
   const [hovered, setHovered] = useState(false);
   const [hoveredActions, setHoveredActions] = useState(false);
   const tooltipVisible = useDebouncedValue(hovered, 500);
+  const { askLlmNodeId, onAskLlmForNode, onAskLlmHrefForNode } = data;
 
   /******************* COMPUTED ***********************/
   const parts = useMemo(() => splitLabel(data.label), [data.label]);
@@ -56,14 +57,14 @@ const PillNode = ({ data }: { data: PillNodeData }) => {
     setHoveredActions(isHovered);
   }, []);
   const handleAskLlm = useCallback(() => {
-    if (!data.askLlmNodeId || !data.onAskLlmForNode) return false;
-    return data.onAskLlmForNode(data.askLlmNodeId);
-  }, [data.askLlmNodeId, data.onAskLlmForNode]);
+    if (!askLlmNodeId || !onAskLlmForNode) return false;
+    return onAskLlmForNode(askLlmNodeId);
+  }, [askLlmNodeId, onAskLlmForNode]);
   const askLlmHref = useMemo(
-    () => (data.askLlmNodeId && data.onAskLlmHrefForNode ? data.onAskLlmHrefForNode(data.askLlmNodeId) : ""),
-    [data.onAskLlmHrefForNode, data.askLlmNodeId],
+    () => (askLlmNodeId && onAskLlmHrefForNode ? onAskLlmHrefForNode(askLlmNodeId) : ""),
+    [askLlmNodeId, onAskLlmHrefForNode],
   );
-  const hasAskLlm = Boolean(data.askLlmNodeId && data.onAskLlmForNode);
+  const hasAskLlm = Boolean(askLlmNodeId && onAskLlmForNode);
 
   return (
     <div style={style} onMouseEnter={onEnter} onMouseLeave={onLeave}>

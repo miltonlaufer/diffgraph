@@ -30,6 +30,12 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
   const [hoveredActions, setHoveredActions] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const tooltipVisible = useDebouncedValue(hovered, 500);
+  const {
+    askLlmNodeId,
+    onAskLlmForNode,
+    onAskLlmHrefForNode,
+    onGroupHeaderHoverChange,
+  } = data;
 
   /******************* COMPUTED ***********************/
   const style = useMemo(
@@ -145,25 +151,23 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
   );
 
   /******************* FUNCTIONS ***********************/
+  const emitGroupHeaderHover = useCallback((isHovering: boolean) => {
+    if (!askLlmNodeId) return;
+    onGroupHeaderHoverChange?.(askLlmNodeId, isHovering);
+  }, [askLlmNodeId, onGroupHeaderHoverChange]);
   const onHeaderEnter = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     setHovered(true);
     setTooltipPos({ x: event.clientX, y: event.clientY });
-    if (data.askLlmNodeId) {
-      data.onGroupHeaderHoverChange?.(data.askLlmNodeId, true);
-    }
-  }, [data.askLlmNodeId, data.onGroupHeaderHoverChange]);
+    emitGroupHeaderHover(true);
+  }, [emitGroupHeaderHover]);
   const onHeaderMove = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     setTooltipPos({ x: event.clientX, y: event.clientY });
-    if (data.askLlmNodeId) {
-      data.onGroupHeaderHoverChange?.(data.askLlmNodeId, true);
-    }
-  }, [data.askLlmNodeId, data.onGroupHeaderHoverChange]);
+    emitGroupHeaderHover(true);
+  }, [emitGroupHeaderHover]);
   const onHeaderLeave = useCallback(() => {
     setHovered(false);
-    if (data.askLlmNodeId) {
-      data.onGroupHeaderHoverChange?.(data.askLlmNodeId, false);
-    }
-  }, [data.askLlmNodeId, data.onGroupHeaderHoverChange]);
+    emitGroupHeaderHover(false);
+  }, [emitGroupHeaderHover]);
   const onNodeLeave = useCallback(() => {
     setHovered(false);
     setHoveredActions(false);
@@ -172,14 +176,14 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
     setHoveredActions(isHovered);
   }, []);
   const handleAskLlm = useCallback(() => {
-    if (!data.askLlmNodeId || !data.onAskLlmForNode) return false;
-    return data.onAskLlmForNode(data.askLlmNodeId);
-  }, [data.askLlmNodeId, data.onAskLlmForNode]);
+    if (!askLlmNodeId || !onAskLlmForNode) return false;
+    return onAskLlmForNode(askLlmNodeId);
+  }, [askLlmNodeId, onAskLlmForNode]);
   const askLlmHref = useMemo(
-    () => (data.askLlmNodeId && data.onAskLlmHrefForNode ? data.onAskLlmHrefForNode(data.askLlmNodeId) : ""),
-    [data.onAskLlmHrefForNode, data.askLlmNodeId],
+    () => (askLlmNodeId && onAskLlmHrefForNode ? onAskLlmHrefForNode(askLlmNodeId) : ""),
+    [onAskLlmHrefForNode, askLlmNodeId],
   );
-  const hasAskLlm = Boolean(data.askLlmNodeId && data.onAskLlmForNode);
+  const hasAskLlm = Boolean(askLlmNodeId && onAskLlmForNode);
 
   return (
     <div style={style} onMouseLeave={onNodeLeave}>
