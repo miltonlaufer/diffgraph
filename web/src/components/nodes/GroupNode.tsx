@@ -1,8 +1,8 @@
 import { Handle, Position } from "@xyflow/react";
 import { memo, useMemo, useState, useCallback } from "react";
-import { createPortal } from "react-dom";
 import AskLlmButton from "./AskLlmButton";
 import { useDebouncedValue } from "../useDebouncedValue";
+import FloatingTooltip from "./FloatingTooltip";
 
 interface GroupNodeData {
   label: string;
@@ -134,20 +134,14 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
       borderRadius: 8,
       padding: "8px 10px",
       maxWidth: "min(560px, calc(100vw - 24px))",
-      zIndex: 1000,
       color: "#e2e8f0",
       boxShadow: "0 10px 24px rgba(2, 6, 23, 0.7)",
       fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace",
       fontSize: 11,
       lineHeight: 1.45,
       whiteSpace: "pre-wrap" as const,
-      position: "fixed" as const,
-      left: `${tooltipPos.x}px`,
-      top: `${tooltipPos.y - 12}px`,
-      transform: "translate(-50%, -100%)",
-      pointerEvents: "none" as const,
     }),
-    [tooltipPos.x, tooltipPos.y],
+    [],
   );
 
   /******************* FUNCTIONS ***********************/
@@ -205,8 +199,12 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
         <div style={titleStyle}>{data.label}</div>
         {headerMeta && <div style={metaStyle}>{headerMeta}</div>}
       </div>
-      {tooltipVisible && hasFunctionDetails && typeof document !== "undefined" && createPortal(
-        <div style={tooltipStyle}>
+      {tooltipVisible && hasFunctionDetails && (
+        <FloatingTooltip
+          visible={tooltipVisible}
+          anchor={{ type: "cursor", x: tooltipPos.x, y: tooltipPos.y }}
+          style={tooltipStyle}
+        >
           {showFunctionName && (
             <div><strong>Function:</strong> {functionNameDisplay}</div>
           )}
@@ -225,8 +223,7 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
               <div>{data.documentation}</div>
             </div>
           )}
-        </div>,
-        document.body,
+        </FloatingTooltip>
       )}
     </div>
   );

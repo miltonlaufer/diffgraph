@@ -1,7 +1,7 @@
-import { NodeToolbar, Position } from "@xyflow/react";
-import { memo } from "react";
+import { memo, useRef } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import FloatingTooltip from "./FloatingTooltip";
 
 interface CodeLine {
   num: number;
@@ -23,11 +23,11 @@ const tooltipStyle: React.CSSProperties = {
   border: "1px solid #334155",
   borderRadius: 8,
   padding: "6px 0",
-  maxWidth: 600,
+  maxWidth: "min(600px, calc(100vw - 24px))",
   maxHeight: 320,
   overflowY: "auto",
   overflowX: "hidden",
-  zIndex: 1000,
+  boxShadow: "0 10px 24px rgba(2, 6, 23, 0.7)",
 };
 
 const lineContainerStyle = (highlight: boolean): React.CSSProperties => ({
@@ -97,19 +97,21 @@ const HighlightedLine = memo(({ code, language }: { code: string; language: stri
 ));
 
 const CodeTooltip = ({ visible, codeContext, language, functionName, symbolName, filePath }: CodeTooltipProps) => {
-  if (!visible) return null;
+  const anchorRef = useRef<HTMLSpanElement | null>(null);
+
   const hasFunction = Boolean(functionName && functionName.trim().length > 0);
   const hasSymbol = Boolean(symbolName && symbolName.trim().length > 0 && symbolName !== functionName);
   const hasFile = Boolean(filePath && filePath.trim().length > 0);
   const hasMeta = hasFunction || hasSymbol || hasFile;
+  if (!visible) return null;
   if (!codeContext && !hasMeta) return null;
   const lang = language ?? "text";
 
-  if (typeof codeContext === "string") {
-    if (!codeContext && !hasMeta) return null;
-    return (
-      <NodeToolbar isVisible={visible} position={Position.Bottom} offset={8}>
-        <div style={tooltipStyle}>
+  const renderTooltipBody = () => {
+    if (typeof codeContext === "string") {
+      if (!codeContext && !hasMeta) return null;
+      return (
+        <>
           {hasMeta && (
             <div style={metaContainerStyle}>
               {hasFunction && (
@@ -131,16 +133,14 @@ const CodeTooltip = ({ visible, codeContext, language, functionName, symbolName,
           >
             {codeContext || ""}
           </SyntaxHighlighter>
-        </div>
-      </NodeToolbar>
-    );
-  }
+        </>
+      );
+    }
 
-  if ((!codeContext || codeContext.lines.length === 0) && !hasMeta) return null;
+    if ((!codeContext || codeContext.lines.length === 0) && !hasMeta) return null;
 
-  return (
-    <NodeToolbar isVisible={visible} position={Position.Bottom} offset={8}>
-      <div style={tooltipStyle}>
+    return (
+      <>
         {hasMeta && (
           <div style={metaContainerStyle}>
             {hasFunction && (
@@ -160,8 +160,24 @@ const CodeTooltip = ({ visible, codeContext, language, functionName, symbolName,
             <HighlightedLine code={line.text} language={lang} />
           </div>
         ))}
-      </div>
-    </NodeToolbar>
+      </>
+    );
+  };
+
+  const tooltipBody = renderTooltipBody();
+  if (!tooltipBody) return null;
+
+  return (
+    <>
+      <span
+        ref={anchorRef}
+        style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+        aria-hidden
+      />
+      <FloatingTooltip visible={visible} anchor={{ type: "element", ref: anchorRef }} style={tooltipStyle}>
+        {tooltipBody}
+      </FloatingTooltip>
+    </>
   );
 };
 
