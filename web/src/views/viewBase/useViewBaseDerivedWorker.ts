@@ -9,21 +9,36 @@ import { createSignatureCache } from "#/lib/cachedComputation";
 import type { ViewBaseDerivedWorkerRequest, ViewBaseDerivedWorkerResponse } from "#/workers/viewBaseDerivedTypes";
 
 const VIEW_BASE_DERIVED_CACHE_MAX_ENTRIES = 12;
+const SYNC_INITIAL_DERIVED_NODE_THRESHOLD = 600;
+const DERIVED_WORKER_WATCHDOG_MS = 3500;
+const EMPTY_GRAPH = { nodes: [], edges: [] };
+const EMPTY_DERIVED_RESULT: ViewBaseDerivedResult = {
+  displayOldGraph: EMPTY_GRAPH,
+  displayNewGraph: EMPTY_GRAPH,
+  diffStats: { added: 0, removed: 0, modified: 0 },
+  displayOldChangedCount: 0,
+  displayNewChangedCount: 0,
+};
 
 export const useViewBaseDerivedWorker = (
   input: ViewBaseDerivedInput,
 ): ViewBaseDerivedResult => {
   const [initialState] = useState(() => {
-    const initialResult = computeViewBaseDerived(input);
+    const totalNodeCount = input.oldGraph.nodes.length + input.newGraph.nodes.length;
+    const shouldComputeSyncInitially = totalNodeCount <= SYNC_INITIAL_DERIVED_NODE_THRESHOLD;
+    const initialResult = shouldComputeSyncInitially ? computeViewBaseDerived(input) : EMPTY_DERIVED_RESULT;
     const initialSignature = buildViewBaseDerivedInputSignature(input);
     const cache = createSignatureCache<ViewBaseDerivedResult>(VIEW_BASE_DERIVED_CACHE_MAX_ENTRIES);
-    cache.set(initialSignature, initialResult);
+    if (shouldComputeSyncInitially) {
+      cache.set(initialSignature, initialResult);
+    }
     return { initialResult, initialSignature, cache };
   });
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
   const inFlightSignatureRef = useRef("");
   const signatureByRequestIdRef = useRef<Map<number, string>>(new Map());
+  const watchdogTimerRef = useRef<number | null>(null);
   const resultCacheRef = useRef(initialState.cache);
   const appliedSignatureRef = useRef(initialState.initialSignature);
   const [workerFailed, setWorkerFailed] = useState(false);
@@ -37,6 +52,10 @@ export const useViewBaseDerivedWorker = (
       const data = event.data;
       const inputSignature = signatureByRequestIdRef.current.get(data.requestId) ?? "";
       signatureByRequestIdRef.current.delete(data.requestId);
+      if (data.requestId === requestIdRef.current && watchdogTimerRef.current !== null) {
+        window.clearTimeout(watchdogTimerRef.current);
+        watchdogTimerRef.current = null;
+      }
       if (inputSignature && inFlightSignatureRef.current === inputSignature) {
         inFlightSignatureRef.current = "";
       }
@@ -53,6 +72,10 @@ export const useViewBaseDerivedWorker = (
     };
 
     const handleError = (): void => {
+      if (watchdogTimerRef.current !== null) {
+        window.clearTimeout(watchdogTimerRef.current);
+        watchdogTimerRef.current = null;
+      }
       inFlightSignatureRef.current = "";
       setWorkerFailed(true);
     };
@@ -64,6 +87,10 @@ export const useViewBaseDerivedWorker = (
       worker.removeEventListener("message", handleMessage as EventListener);
       worker.removeEventListener("error", handleError as EventListener);
       worker.terminate();
+      if (watchdogTimerRef.current !== null) {
+        window.clearTimeout(watchdogTimerRef.current);
+        watchdogTimerRef.current = null;
+      }
       workerRef.current = null;
     };
   }, []);
@@ -93,11 +120,25 @@ export const useViewBaseDerivedWorker = (
     requestIdRef.current = nextRequestId;
     inFlightSignatureRef.current = inputSignature;
     signatureByRequestIdRef.current.set(nextRequestId, inputSignature);
+    if (watchdogTimerRef.current !== null) {
+      window.clearTimeout(watchdogTimerRef.current);
+      watchdogTimerRef.current = null;
+    }
     const payload: ViewBaseDerivedWorkerRequest = {
       requestId: nextRequestId,
       input,
     };
     workerRef.current.postMessage(payload);
+    watchdogTimerRef.current = window.setTimeout(() => {
+      if (nextRequestId !== requestIdRef.current) return;
+      if (inFlightSignatureRef.current !== inputSignature) return;
+      inFlightSignatureRef.current = "";
+      setWorkerFailed(true);
+      const computed = computeViewBaseDerived(input);
+      resultCacheRef.current.set(inputSignature, computed);
+      appliedSignatureRef.current = inputSignature;
+      setDerived(computed);
+    }, DERIVED_WORKER_WATCHDOG_MS);
   }, [input, workerFailed]);
 
   return derived;

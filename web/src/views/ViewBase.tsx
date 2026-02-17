@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { observer, useLocalObservable } from "mobx-react-lite";
 import { CodeDiffDrawer } from "../components/CodeDiffDrawer";
 import { FileListPanel } from "../components/FileListPanel";
@@ -46,12 +46,23 @@ interface ViewBaseProps {
   pullRequestDescriptionExcerpt?: string;
 }
 
+type GraphRenderMode = "both" | "old" | "new";
+
+const UI_LAG_SAMPLE_MS = 500;
+const UI_LAG_THRESHOLD_MS = 2000;
+const UI_GUARD_COOLDOWN_MS = 12000;
+
 export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullRequestDescriptionExcerpt }: ViewBaseProps) => {
   const store = useLocalObservable(() => new ViewBaseStore());
   const graphSectionRef = useRef<HTMLDivElement>(null);
   const codeDiffSectionRef = useRef<HTMLDivElement>(null);
   const highlightTimerRef = useRef<number | null>(null);
   const { isUiPending, commandContext } = useInteractiveUpdate(store);
+  const [performanceModalOpen, setPerformanceModalOpen] = useState(false);
+  const [performanceGuardLevel, setPerformanceGuardLevel] = useState<0 | 1 | 2>(0);
+  const [graphRenderMode, setGraphRenderMode] = useState<GraphRenderMode>("both");
+  const [lastUiLagMs, setLastUiLagMs] = useState(0);
+  const guardCooldownUntilRef = useRef(0);
 
   const derivedInput = useMemo(
     () => ({
@@ -78,6 +89,9 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     displayNewChangedCount,
   } = useViewBaseDerivedWorker(derivedInput);
 
+  const renderOldGraph = graphRenderMode !== "new";
+  const renderNewGraph = graphRenderMode !== "old";
+
   const newAlignmentOffset = useMemo(
     () => computeNewAlignmentOffset(viewType, store.oldTopAnchors, store.newTopAnchors),
     [viewType, store.oldTopAnchors, store.newTopAnchors],
@@ -94,8 +108,10 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
   );
 
   const isEmptyView = useMemo(
-    () => displayOldGraph.nodes.length === 0 && displayNewGraph.nodes.length === 0,
-    [displayOldGraph.nodes.length, displayNewGraph.nodes.length],
+    () =>
+      (!renderOldGraph || displayOldGraph.nodes.length === 0)
+      && (!renderNewGraph || displayNewGraph.nodes.length === 0),
+    [displayOldGraph.nodes.length, displayNewGraph.nodes.length, renderNewGraph, renderOldGraph],
   );
 
   const selectedFile = useMemo(
@@ -110,9 +126,12 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
   );
 
   const graphDiffTargets = useMemo(() => {
-    const merged = [...store.oldDiffTargets, ...store.newDiffTargets];
+    const merged = [
+      ...(renderOldGraph ? store.oldDiffTargets : []),
+      ...(renderNewGraph ? store.newDiffTargets : []),
+    ];
     return merged.sort((a, b) => (a.y - b.y) || (a.x - b.x));
-  }, [store.oldDiffTargets, store.newDiffTargets]);
+  }, [renderNewGraph, renderOldGraph, store.oldDiffTargets, store.newDiffTargets]);
 
   const oldFileContentMap = useMemo(
     () => buildFileContentMap(store.fileDiffs, "old"),
@@ -176,6 +195,93 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     },
     [commandContext],
   );
+
+  const handleDisableCallsForPerformance = useCallback(() => {
+    if (viewType === "logic" && store.showCalls) {
+      handleShowCallsChange(false);
+    }
+    setPerformanceModalOpen(false);
+  }, [handleShowCallsChange, store.showCalls, viewType]);
+
+  const handleRenderOldGraphToggle = useCallback((nextChecked: boolean) => {
+    setGraphRenderMode((prev) => {
+      const prevNew = prev !== "old";
+      const nextOld = nextChecked;
+      const nextNew = prevNew;
+      if (!nextOld && !nextNew) return prev;
+      if (nextOld && nextNew) return "both";
+      return nextOld ? "old" : "new";
+    });
+  }, []);
+
+  const handleRenderNewGraphToggle = useCallback((nextChecked: boolean) => {
+    setGraphRenderMode((prev) => {
+      const prevOld = prev !== "new";
+      const nextOld = prevOld;
+      const nextNew = nextChecked;
+      if (!nextOld && !nextNew) return prev;
+      if (nextOld && nextNew) return "both";
+      return nextOld ? "old" : "new";
+    });
+  }, []);
+
+  const closePerformanceModal = useCallback(() => {
+    setPerformanceModalOpen(false);
+  }, []);
+
+  useEffect(() => {
+    setPerformanceModalOpen(false);
+    setPerformanceGuardLevel(0);
+    setGraphRenderMode("both");
+    setLastUiLagMs(0);
+    guardCooldownUntilRef.current = 0;
+  }, [diffId, viewType]);
+
+  useEffect(() => {
+    setPerformanceModalOpen(false);
+  }, [store.selectedFilePath]);
+
+  useEffect(() => {
+    if (store.loading) return;
+    let lastTick = performance.now();
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        lastTick = performance.now();
+        return;
+      }
+
+      const now = performance.now();
+      const lagMs = now - lastTick - UI_LAG_SAMPLE_MS;
+      lastTick = now;
+      if (lagMs <= UI_LAG_THRESHOLD_MS) return;
+
+      setLastUiLagMs(Math.round(lagMs));
+      const nowEpoch = Date.now();
+      if (nowEpoch < guardCooldownUntilRef.current) return;
+
+      if (performanceGuardLevel === 0) {
+        setPerformanceGuardLevel(1);
+        setPerformanceModalOpen(true);
+        guardCooldownUntilRef.current = nowEpoch + UI_GUARD_COOLDOWN_MS;
+        return;
+      }
+
+      if (performanceGuardLevel === 1 && viewType === "logic" && !store.showCalls) {
+        setPerformanceGuardLevel(2);
+        setPerformanceModalOpen(true);
+        guardCooldownUntilRef.current = nowEpoch + UI_GUARD_COOLDOWN_MS;
+        return;
+      }
+
+      setPerformanceModalOpen(true);
+      guardCooldownUntilRef.current = nowEpoch + UI_GUARD_COOLDOWN_MS;
+    }, UI_LAG_SAMPLE_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [performanceGuardLevel, store.loading, store.showCalls, viewType]);
 
   const handleDiffTargetsChange = useCallback(
     (side: "old" | "new", targets: GraphDiffTarget[]) => {
@@ -494,6 +600,59 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
           </div>
         )}
 
+        {performanceModalOpen && (
+          <div className="performanceGuardBackdrop" role="presentation">
+            <section
+              className="performanceGuardModal"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Performance protection"
+            >
+              <header className="performanceGuardHeader">
+                <h3 className="performanceGuardTitle">UI performance protection</h3>
+                <button type="button" className="prDescriptionCloseBtn" onClick={closePerformanceModal}>
+                  Close
+                </button>
+              </header>
+              <div className="performanceGuardBody">
+                <p className="dimText">
+                  The graph UI showed a long stall ({lastUiLagMs}ms). We can reduce rendering load progressively.
+                </p>
+
+                {viewType === "logic" && store.showCalls && (
+                  <button type="button" className="performanceGuardPrimaryBtn" onClick={handleDisableCallsForPerformance}>
+                    Hide call edges (recommended)
+                  </button>
+                )}
+
+                {performanceGuardLevel >= 2 && (
+                  <div className="performanceGuardOptions">
+                    <div className="dimText">Advanced reduction (shown after repeated stalls):</div>
+                    <label className="showCallsLabel">
+                      <input
+                        type="checkbox"
+                        className="showCallsCheckbox"
+                        checked={renderOldGraph}
+                        onChange={(event) => handleRenderOldGraphToggle(event.target.checked)}
+                      />
+                      Render old graph
+                    </label>
+                    <label className="showCallsLabel">
+                      <input
+                        type="checkbox"
+                        className="showCallsCheckbox"
+                        checked={renderNewGraph}
+                        onChange={(event) => handleRenderNewGraphToggle(event.target.checked)}
+                      />
+                      Render new graph
+                    </label>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
+
         {viewType === "logic" && (
           <LogicToolbar
             showCalls={store.showCalls}
@@ -506,37 +665,41 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
         )}
 
         <SplitGraphRuntimeProvider value={splitGraphRuntime}>
-          <div ref={graphSectionRef} className="splitLayout">
-            <SplitGraphPanel
-              title="Old"
-              side="old"
-              graph={displayOldGraph}
-              counterpartGraph={displayNewGraph}
-              viewType={viewType}
-              showCalls={viewType === "logic" ? store.showCalls : true}
-              fileContentMap={oldFileContentMap}
-              counterpartFileContentMap={newFileContentMap}
-              alignmentAnchors={alignedTopAnchors.old}
-              pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
-              isViewportPrimary={false}
-            />
+          <div ref={graphSectionRef} className={renderOldGraph && renderNewGraph ? "splitLayout" : "splitLayout splitLayoutSingle"}>
+            {renderOldGraph && (
+              <SplitGraphPanel
+                title="Old"
+                side="old"
+                graph={displayOldGraph}
+                counterpartGraph={displayNewGraph}
+                viewType={viewType}
+                showCalls={viewType === "logic" ? store.showCalls : true}
+                fileContentMap={oldFileContentMap}
+                counterpartFileContentMap={newFileContentMap}
+                alignmentAnchors={alignedTopAnchors.old}
+                pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
+                isViewportPrimary={!renderNewGraph}
+              />
+            )}
 
-            <SplitGraphPanel
-              title="New"
-              side="new"
-              graph={displayNewGraph}
-              counterpartGraph={displayOldGraph}
-              viewType={viewType}
-              showCalls={viewType === "logic" ? store.showCalls : true}
-              diffStats={diffStats}
-              fileContentMap={newFileContentMap}
-              counterpartFileContentMap={oldFileContentMap}
-              alignmentOffset={newAlignmentOffset}
-              alignmentAnchors={alignedTopAnchors.new}
-              alignmentBreakpoints={alignmentBreakpoints}
-              pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
-              isViewportPrimary
-            />
+            {renderNewGraph && (
+              <SplitGraphPanel
+                title="New"
+                side="new"
+                graph={displayNewGraph}
+                counterpartGraph={displayOldGraph}
+                viewType={viewType}
+                showCalls={viewType === "logic" ? store.showCalls : true}
+                diffStats={diffStats}
+                fileContentMap={newFileContentMap}
+                counterpartFileContentMap={oldFileContentMap}
+                alignmentOffset={newAlignmentOffset}
+                alignmentAnchors={alignedTopAnchors.new}
+                alignmentBreakpoints={alignmentBreakpoints}
+                pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
+                isViewportPrimary
+              />
+            )}
           </div>
         </SplitGraphRuntimeProvider>
 

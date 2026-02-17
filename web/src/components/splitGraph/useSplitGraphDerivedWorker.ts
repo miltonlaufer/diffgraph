@@ -9,21 +9,33 @@ import { createSignatureCache } from "#/lib/cachedComputation";
 import type { SplitGraphDerivedWorkerRequest, SplitGraphDerivedWorkerResponse } from "#/workers/splitGraphDerivedTypes";
 
 const DERIVED_CACHE_MAX_ENTRIES = 24;
+const SYNC_INITIAL_DERIVED_NODE_THRESHOLD = 400;
+const DERIVED_WORKER_WATCHDOG_MS = 3500;
+const EMPTY_DERIVED_RESULT: SplitGraphDerivedResult = {
+  nodeMatchKeyByIdEntries: [],
+  nodeIdsByMatchKeyEntries: [],
+  hoverNeighborhoodByNodeIdEntries: [],
+  searchMatchIds: [],
+};
 
 export const useSplitGraphDerivedWorker = (
   input: SplitGraphDerivedInput,
 ): SplitGraphDerivedResult => {
   const [initialState] = useState(() => {
-    const initialResult = computeSplitGraphDerived(input);
+    const shouldComputeSyncInitially = input.graphNodes.length <= SYNC_INITIAL_DERIVED_NODE_THRESHOLD;
+    const initialResult = shouldComputeSyncInitially ? computeSplitGraphDerived(input) : EMPTY_DERIVED_RESULT;
     const initialSignature = buildSplitGraphDerivedInputSignature(input);
     const cache = createSignatureCache<SplitGraphDerivedResult>(DERIVED_CACHE_MAX_ENTRIES);
-    cache.set(initialSignature, initialResult);
+    if (shouldComputeSyncInitially) {
+      cache.set(initialSignature, initialResult);
+    }
     return { initialResult, initialSignature, cache };
   });
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
   const inFlightSignatureRef = useRef("");
   const signatureByRequestIdRef = useRef<Map<number, string>>(new Map());
+  const watchdogTimerRef = useRef<number | null>(null);
   const resultCacheRef = useRef(initialState.cache);
   const appliedSignatureRef = useRef(initialState.initialSignature);
   const [workerFailed, setWorkerFailed] = useState(false);
@@ -37,6 +49,10 @@ export const useSplitGraphDerivedWorker = (
       const data = event.data;
       const inputSignature = signatureByRequestIdRef.current.get(data.requestId) ?? "";
       signatureByRequestIdRef.current.delete(data.requestId);
+      if (data.requestId === requestIdRef.current && watchdogTimerRef.current !== null) {
+        window.clearTimeout(watchdogTimerRef.current);
+        watchdogTimerRef.current = null;
+      }
       if (inputSignature && inFlightSignatureRef.current === inputSignature) {
         inFlightSignatureRef.current = "";
       }
@@ -53,6 +69,10 @@ export const useSplitGraphDerivedWorker = (
     };
 
     const handleError = (): void => {
+      if (watchdogTimerRef.current !== null) {
+        window.clearTimeout(watchdogTimerRef.current);
+        watchdogTimerRef.current = null;
+      }
       inFlightSignatureRef.current = "";
       setWorkerFailed(true);
     };
@@ -64,6 +84,10 @@ export const useSplitGraphDerivedWorker = (
       worker.removeEventListener("message", handleMessage as EventListener);
       worker.removeEventListener("error", handleError as EventListener);
       worker.terminate();
+      if (watchdogTimerRef.current !== null) {
+        window.clearTimeout(watchdogTimerRef.current);
+        watchdogTimerRef.current = null;
+      }
       workerRef.current = null;
     };
   }, []);
@@ -93,11 +117,25 @@ export const useSplitGraphDerivedWorker = (
     requestIdRef.current = nextRequestId;
     inFlightSignatureRef.current = inputSignature;
     signatureByRequestIdRef.current.set(nextRequestId, inputSignature);
+    if (watchdogTimerRef.current !== null) {
+      window.clearTimeout(watchdogTimerRef.current);
+      watchdogTimerRef.current = null;
+    }
     const payload: SplitGraphDerivedWorkerRequest = {
       requestId: nextRequestId,
       input,
     };
     workerRef.current.postMessage(payload);
+    watchdogTimerRef.current = window.setTimeout(() => {
+      if (nextRequestId !== requestIdRef.current) return;
+      if (inFlightSignatureRef.current !== inputSignature) return;
+      inFlightSignatureRef.current = "";
+      setWorkerFailed(true);
+      const computed = computeSplitGraphDerived(input);
+      resultCacheRef.current.set(inputSignature, computed);
+      appliedSignatureRef.current = inputSignature;
+      setDerived(computed);
+    }, DERIVED_WORKER_WATCHDOG_MS);
   }, [input, workerFailed]);
 
   return derived;

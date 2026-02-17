@@ -161,6 +161,81 @@
   -webkit-user-select: text;
 }
 
+.performanceGuardBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.24);
+  z-index: 2350;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 16px;
+  pointer-events: none;
+}
+
+.performanceGuardModal {
+  width: min(640px, 100%);
+  border-radius: 12px;
+  border: 1px solid #334155;
+  background: #0b1226;
+  box-shadow: 0 18px 48px rgba(2, 6, 23, 0.65);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.performanceGuardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #1e293b;
+  background: #0f172a;
+}
+
+.performanceGuardTitle {
+  margin: 0;
+  font-size: 14px;
+  color: #e2e8f0;
+}
+
+.performanceGuardBody {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.performanceGuardActionBtn {
+  width: fit-content;
+  padding: 0 10px;
+}
+
+.performanceGuardPrimaryBtn {
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  background: #78350f;
+  color: #fef3c7;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.performanceGuardPrimaryBtn:hover {
+  background: #92400e;
+}
+
+.performanceGuardOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .markdownViewer {
   color: #dbe7ff;
   font-size: 13px;
@@ -308,6 +383,10 @@
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   min-height: 55vh;
+}
+
+.splitLayoutSingle {
+  grid-template-columns: 1fr;
 }
 
 .panel {
