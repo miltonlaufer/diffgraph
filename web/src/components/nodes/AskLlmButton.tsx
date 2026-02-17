@@ -57,7 +57,7 @@ const messageStyle: CSSProperties = {
 
 const anchorStyle: CSSProperties = {
   position: "absolute",
-  top: -12,
+  top: -48,
   left: "calc(100% + 4px)",
   zIndex: 5000,
 };
