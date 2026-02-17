@@ -6,6 +6,8 @@
   box-sizing: border-box;
   padding: 12px;
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 .appHeader {
@@ -312,6 +314,11 @@
   flex-direction: column;
   gap: 10px;
   position: relative;
+  min-height: 0;
+}
+
+.appContainer > .viewContainer {
+  flex: 1;
 }
 
 .interactionOverlay {
@@ -383,6 +390,7 @@
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   min-height: 55vh;
+  flex: 1;
 }
 
 .splitLayoutSingle {
@@ -393,6 +401,9 @@
   border: 1px solid #334155;
   border-radius: 10px;
   padding: 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .panelSearchFlash {
@@ -426,7 +437,8 @@
 
 .flowContainer {
   width: 100%;
-  height: 52vh;
+  flex: 1;
+  min-height: 52vh;
 }
 
 .layoutStatusBanner {
