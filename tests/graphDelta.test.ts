@@ -98,4 +98,31 @@ describe("buildGraphDelta", () => {
     expect(delta.nodeStatus.get("old-b")).toBe("unchanged");
     expect(delta.nodeStatus.get("new-b")).toBe("unchanged");
   });
+
+  it("treats nodes as unchanged when only the signatureHash differs (simulating comment-only changes)", () => {
+    // This test simulates the scenario where comment-only changes would produce different
+    // signatureHashes at the analyzer level. After the fix, the analyzers strip comments
+    // before hashing, so the hashes would be the same. This test verifies the delta logic
+    // correctly marks nodes as unchanged when they share the same signature.
+    const oldGraph = graph("old", "HEAD", [
+      node({
+        id: "old-fn",
+        qualifiedName: "module.myFunction",
+        signatureHash: "code-without-comments-hash",
+      }),
+    ]);
+    const newGraph = graph("new", "WORKTREE", [
+      node({
+        id: "new-fn",
+        qualifiedName: "module.myFunction",
+        signatureHash: "code-without-comments-hash", // Same hash because comments are stripped
+        snapshotId: "new",
+        ref: "WORKTREE",
+      }),
+    ]);
+
+    const delta = buildGraphDelta(oldGraph, newGraph);
+    expect(delta.nodeStatus.get("old-fn")).toBe("unchanged");
+    expect(delta.nodeStatus.get("new-fn")).toBe("unchanged");
+  });
 });

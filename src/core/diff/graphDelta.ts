@@ -106,10 +106,28 @@ export const buildGraphDelta = (oldGraph: SnapshotGraph, newGraph: SnapshotGraph
       }
     }
 
+    /* Prefer matching by position (startLine/endLine) so that when multiple nodes share
+     * the same signature (e.g. branches from two useEffects with the same name), we pair
+     * nodes at the same location instead of by iteration order (which can differ across
+     * snapshots because node ids contain snapshotId and affect sort tiebreaker). */
+    const pickMatch = (bucket: GraphNode[], oldNode: GraphNode): GraphNode | undefined => {
+      const samePosition = bucket.find(
+        (n) =>
+          (n.startLine ?? -1) === (oldNode.startLine ?? -1) &&
+          (n.endLine ?? -1) === (oldNode.endLine ?? -1),
+      );
+      if (samePosition) {
+        const idx = bucket.indexOf(samePosition);
+        bucket.splice(idx, 1);
+        return samePosition;
+      }
+      return bucket.shift();
+    };
+
     for (const oldNode of oldNodes) {
       const sig = signatureKey(oldNode);
       const bucket = newBySignature.get(sig);
-      const match = bucket?.shift();
+      const match = bucket ? pickMatch(bucket, oldNode) : undefined;
       if (!match) continue;
       matchedOld.add(oldNode.id);
       matchedNew.add(match.id);

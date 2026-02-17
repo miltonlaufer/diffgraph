@@ -48,8 +48,15 @@ interface PyResult {
   branchFlows?: PyBranchFlow[];
 }
 
+/**
+ * Strips comments from Python source code to compute a comment-insensitive signature.
+ * This ensures that changes to comments alone do not cause nodes to appear as "modified".
+ */
+const stripPythonComments = (value: string): string =>
+  value.replace(/#[^\n]*/g, ""); // Remove single-line comments
+
 const normalizeSignatureText = (value: string): string =>
-  value.replace(/\s+/g, "");
+  stripPythonComments(value).replace(/\s+/g, "");
 
 const hashSignatureText = (value: string): string => stableHash(normalizeSignatureText(value) || "__empty__");
 

@@ -27,7 +27,18 @@ export interface DiffResult {
 
 const normalizePath = (value: string): string =>
   value.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
-const hashSignatureText = (value: string): string => stableHash(value.replace(/\s+/g, "") || "__empty__");
+
+/**
+ * Strips comments from source code to compute a comment-insensitive signature.
+ * This ensures that changes to comments alone do not cause files to appear as "modified".
+ */
+const stripComments = (value: string): string =>
+  value
+    .replace(/\/\/[^\n]*/g, "") // JS/TS single-line comments
+    .replace(/\/\*[\s\S]*?\*\//g, "") // JS/TS multi-line comments
+    .replace(/#[^\n]*/g, ""); // Python single-line comments
+
+const hashSignatureText = (value: string): string => stableHash(stripComments(value).replace(/\s+/g, "") || "__empty__");
 
 const hasFileNode = (nodes: GraphNode[], filePath: string): boolean => {
   const normalizedTarget = normalizePath(filePath);

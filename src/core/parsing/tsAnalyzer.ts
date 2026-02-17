@@ -149,8 +149,18 @@ interface DeepFunctionNameResolution {
 }
 
 const normalizeInline = (value: string): string => value.replace(/\s+/g, " ").trim();
+
+/**
+ * Strips comments from source code to compute a comment-insensitive signature.
+ * This ensures that changes to comments alone do not cause nodes to appear as "modified".
+ */
+const stripComments = (value: string): string =>
+  value
+    .replace(/\/\/[^\n]*/g, "") // Remove single-line comments
+    .replace(/\/\*[\s\S]*?\*\//g, ""); // Remove multi-line comments
+
 const normalizeSignatureText = (value: string): string =>
-  value.replace(/\s+/g, "");
+  stripComments(value).replace(/\s+/g, "");
 const hashSignatureText = (value: string): string => stableHash(normalizeSignatureText(value) || "__empty__");
 
 const resolveDeepFunctionName = (node: Node): DeepFunctionNameResolution => {
