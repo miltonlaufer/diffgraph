@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
+import { createServer as createNetServer } from "node:net";
 import { promisify } from "node:util";
 import { beforeAll, describe, expect, it } from "vitest";
 import { DiffProvider } from "../src/core/git/diffProvider.js";
@@ -26,12 +27,23 @@ const gitCommit = async (cwd: string, message: string): Promise<void> => {
   );
 };
 
+const canBindLoopbackPort = async (): Promise<boolean> =>
+  new Promise((resolve) => {
+    const tester = createNetServer();
+    tester.once("error", () => resolve(false));
+    tester.listen(0, "127.0.0.1", () => {
+      tester.close(() => resolve(true));
+    });
+  });
+
 describe("diff modes integration", () => {
   let repoDir = "";
   let mainCommit = "";
   let featureCommit = "";
+  let supportsLoopbackServer = true;
 
   beforeAll(async () => {
+    supportsLoopbackServer = await canBindLoopbackPort();
     repoDir = await mkdtemp(join(tmpdir(), "diffgraph-repo-"));
     await mkdir(join(repoDir, "src"), { recursive: true });
     await git(repoDir, "init", "-b", "main");
@@ -73,6 +85,10 @@ describe("diff modes integration", () => {
   });
 
   it("serves api for file-to-file mode", async () => {
+    if (!supportsLoopbackServer) {
+      return;
+    }
+
     const oldFile = join(repoDir, "old.ts");
     const newFile = join(repoDir, "new.ts");
     await writeFile(oldFile, "export function alpha() { return 1; }\n", "utf8");
