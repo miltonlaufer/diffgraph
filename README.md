@@ -1,5 +1,7 @@
 # ~Diff~Graph (AKA "Tell me WTF the LLM did to my code")
 
+**Developed with partial support of [neural frames](https://www.neuralframes.com)**
+
 DiffGraph is a CLI + browser app that compares code changes as **interactive graphs** instead of only line-by-line diffs.
 It is optimized for **large diffs** where plain patch views become hard to reason about quickly.
 
