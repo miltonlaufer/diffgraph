@@ -23,6 +23,7 @@ import { CodeDiffDrawerStore } from "./codeDiff/store";
 import type { DiffMatrixRow } from "./codeDiff/types";
 import { useViewBaseRuntime } from "../views/viewBase/runtime";
 import { hashFinalize, hashInit, hashString, lruSet } from "#/lib/memoHash";
+import { useDebouncedValue } from "./useDebouncedValue";
 
 const DIFF_CACHE_MAX_ENTRIES = 12;
 
@@ -76,6 +77,7 @@ export const CodeDiffDrawer = observer(() => {
     lruSet(diffCacheRef.current, diffSignature, computed, DIFF_CACHE_MAX_ENTRIES);
     return computed;
   }, [diffSignature, file, hasNew, hasOld, newContent, oldContent]);
+  const debouncedTextSearch = useDebouncedValue(store.textSearch, 200);
 
   const matrixRows = useMemo<DiffMatrixRow[]>(
     () => (diff
@@ -91,14 +93,14 @@ export const CodeDiffDrawer = observer(() => {
   const hunkCount = hunkRows.length;
 
   const textSearchMatches = useMemo(() => {
-    if (!store.textSearch || store.textSearch.length < 2 || !diff) return [];
-    const query = store.textSearch.toLowerCase();
+    if (!debouncedTextSearch || debouncedTextSearch.length < 2 || !diff) return [];
+    const query = debouncedTextSearch.toLowerCase();
     const matches: number[] = [];
     matrixRows.forEach((row, i) => {
       if (row.new.text.toLowerCase().includes(query) || row.old.text.toLowerCase().includes(query)) matches.push(i);
     });
     return matches;
-  }, [store.textSearch, diff, matrixRows]);
+  }, [debouncedTextSearch, diff, matrixRows]);
 
   const goToHunk = useCallback(
     (idx: number) => {

@@ -406,6 +406,7 @@ export const SplitGraphPanel = observer(({
   const [viewportOverride, setViewportOverride] = useState<PanelViewport | null>(null);
   const layoutResult = store.layoutResult;
   const effectiveViewport = viewportOverride ?? viewport;
+  const debouncedSearchQuery = useDebouncedValue(store.searchQuery, 200);
 
   const isLogic = viewType === "logic";
   const isOld = side === "old";
@@ -949,10 +950,10 @@ export const SplitGraphPanel = observer(({
         target: edge.target,
         relation: graphEdgeById.get(edge.id)?.relation,
       })),
-      searchQuery: store.searchQuery,
+      searchQuery: debouncedSearchQuery,
       searchExclude: store.searchExclude,
     }),
-    [graph.nodes, graphEdgeById, positionedLayoutResult.edges, positionedLayoutResult.nodes, store.searchExclude, store.searchQuery],
+    [debouncedSearchQuery, graph.nodes, graphEdgeById, positionedLayoutResult.edges, positionedLayoutResult.nodes, store.searchExclude],
   );
 
   const splitGraphDerived = useSplitGraphDerivedWorker(splitGraphDerivedInput);
@@ -1157,7 +1158,7 @@ export const SplitGraphPanel = observer(({
   }, [flowElementsNodeById, splitGraphDerived.searchMatchIds]);
 
   const searchResultNodes = useMemo(() => {
-    if (!store.searchQuery || store.searchQuery.length < 2) return flowElements;
+    if (!debouncedSearchQuery || debouncedSearchQuery.length < 2) return flowElements;
     if (store.searchExclude) {
       const keepIds = new Set(searchMatches.map((n) => n.id));
       const nodes = flowElements.nodes.filter((n) => keepIds.has(n.id));
@@ -1174,7 +1175,7 @@ export const SplitGraphPanel = observer(({
       return { ...node, style: { ...(node.style ?? {}), outline: "2px solid #fbbf24", outlineOffset: "2px" } };
     });
     return { nodes, edges: flowElements.edges };
-  }, [flowElements, searchMatches, store.searchQuery, store.searchExclude, store.searchHighlightedNodeId]);
+  }, [debouncedSearchQuery, flowElements, searchMatches, store.searchExclude, store.searchHighlightedNodeId]);
 
   const graphCanvasNodes = useMemo(
     () => searchResultNodes.nodes.map((node) => ({
@@ -1564,15 +1565,15 @@ export const SplitGraphPanel = observer(({
   ]);
 
   useEffect(() => {
-    if (!store.searchQuery || store.searchQuery.length < 2 || searchMatches.length === 0) return;
-    const searchKey = `${store.searchExclude ? "exclude" : "include"}:${store.searchQuery.toLowerCase()}`;
+    if (!debouncedSearchQuery || debouncedSearchQuery.length < 2 || searchMatches.length === 0) return;
+    const searchKey = `${store.searchExclude ? "exclude" : "include"}:${debouncedSearchQuery.toLowerCase()}`;
     if (store.lastAutoFocusSearchKey === searchKey) return;
     store.setLastAutoFocusSearchKey(searchKey);
     store.setSearchIdx(0);
     const first = searchMatches[0];
     flashSearchTarget(first.id);
     onViewportChange(viewportForNode(first));
-  }, [store, searchMatches, onViewportChange, flashSearchTarget, viewportForNode]);
+  }, [debouncedSearchQuery, store, searchMatches, onViewportChange, flashSearchTarget, viewportForNode]);
 
   useEffect(() => () => {
     if (searchHighlightTimerRef.current !== null) {

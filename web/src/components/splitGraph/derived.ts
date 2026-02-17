@@ -171,12 +171,62 @@ export const computeSplitGraphDerived = ({
   const searchMatchIds: string[] = [];
   if (searchQuery && searchQuery.length >= 2) {
     const q = searchQuery.toLowerCase();
+    const matchesByNodeId = new Map<string, boolean>();
     for (const nodeId of positionedNodeIds) {
       const node = graphNodeById.get(nodeId);
       const text = `${node?.label ?? ""} ${node?.filePath ?? ""} ${node?.kind ?? ""}`.toLowerCase();
-      const matches = text.includes(q);
-      if (searchExclude ? !matches : matches) {
-        searchMatchIds.push(nodeId);
+      matchesByNodeId.set(nodeId, text.includes(q));
+    }
+
+    if (!searchExclude) {
+      for (const nodeId of positionedNodeIds) {
+        if (matchesByNodeId.get(nodeId)) {
+          searchMatchIds.push(nodeId);
+        }
+      }
+    } else {
+      const keepIds = new Set<string>();
+      for (const nodeId of positionedNodeIds) {
+        if (!matchesByNodeId.get(nodeId)) {
+          keepIds.add(nodeId);
+        }
+      }
+
+      const childrenByParent = new Map<string, string[]>();
+      for (const nodeId of positionedNodeIds) {
+        const node = graphNodeById.get(nodeId);
+        const parentId = node?.parentId;
+        if (!parentId) continue;
+        const list = childrenByParent.get(parentId) ?? [];
+        list.push(nodeId);
+        childrenByParent.set(parentId, list);
+      }
+
+      const excludedGroupQueue: string[] = [];
+      const seenExcludedIds = new Set<string>();
+      for (const nodeId of positionedNodeIds) {
+        if (!matchesByNodeId.get(nodeId)) continue;
+        const node = graphNodeById.get(nodeId);
+        if (node?.kind !== "group") continue;
+        excludedGroupQueue.push(nodeId);
+        seenExcludedIds.add(nodeId);
+      }
+
+      while (excludedGroupQueue.length > 0) {
+        const excludedGroupId = excludedGroupQueue.shift();
+        if (!excludedGroupId) continue;
+        for (const childId of childrenByParent.get(excludedGroupId) ?? []) {
+          keepIds.delete(childId);
+          if (seenExcludedIds.has(childId)) continue;
+          seenExcludedIds.add(childId);
+          excludedGroupQueue.push(childId);
+        }
+      }
+
+      for (const nodeId of positionedNodeIds) {
+        if (keepIds.has(nodeId)) {
+          searchMatchIds.push(nodeId);
+        }
       }
     }
   }
