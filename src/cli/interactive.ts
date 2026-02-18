@@ -74,6 +74,19 @@ const fetchLatestBranches = async (repoPath: string): Promise<BranchOption[]> =>
     .filter((entry) => entry.name.length > 0);
 };
 
+const countBranchDiffFiles = async (
+  repoPath: string,
+  baseBranch: string,
+  targetBranch: string,
+): Promise<number> => {
+  const raw = await textFromCommand("git", ["diff", "--name-only", "-M", `${baseBranch}...${targetBranch}`], repoPath);
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .length;
+};
+
 const fetchLatestCommits = async (repoPath: string): Promise<CommitOption[]> => {
   const raw = await textFromCommand(
     "git",
@@ -192,10 +205,20 @@ export const runInteractiveMenu = async (repoPath: string): Promise<void> => {
           console.log("Base and target branches must be different.");
           continue;
         }
+        let baseBranch = branches[baseIdx].name;
+        let targetBranch = branches[targetIdx].name;
+        const selectedDiffFileCount = await countBranchDiffFiles(repoPath, baseBranch, targetBranch);
+        if (selectedDiffFileCount === 0) {
+          const reverseDiffFileCount = await countBranchDiffFiles(repoPath, targetBranch, baseBranch);
+          if (reverseDiffFileCount > 0) {
+            [baseBranch, targetBranch] = [targetBranch, baseBranch];
+            console.log(`No results for selected order. Using ${baseBranch} -> ${targetBranch} instead.`);
+          }
+        }
         await runSelectedDiff(repoPath, {
           type: "branches",
-          baseBranch: branches[baseIdx].name,
-          targetBranch: branches[targetIdx].name,
+          baseBranch,
+          targetBranch,
         });
         return;
       }

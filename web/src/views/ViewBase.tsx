@@ -264,9 +264,27 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
   useEffect(() => {
     if (store.loading) return;
     let lastTick = performance.now();
+    let skipNextVisibleSample = false;
+
+    const resetLagBaseline = (): void => {
+      lastTick = performance.now();
+      skipNextVisibleSample = true;
+    };
+
+    const handleVisibilityChange = (): void => {
+      resetLagBaseline();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     const intervalId = window.setInterval(() => {
       if (document.visibilityState !== "visible") {
+        resetLagBaseline();
+        return;
+      }
+
+      if (skipNextVisibleSample) {
+        skipNextVisibleSample = false;
         lastTick = performance.now();
         return;
       }
@@ -300,6 +318,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
 
     return () => {
       window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [performanceGuardLevel, store.loading, store.showCalls, viewType]);
 

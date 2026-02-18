@@ -63,13 +63,14 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
       Boolean(
         (data.functionName ?? "").trim()
         || (data.filePath ?? "").trim()
+        || (data.fileName ?? "").trim()
+        || (data.className ?? "").trim()
         || (data.documentation ?? "").trim()
         || (data.functionParams ?? "").trim()
         || (data.returnType ?? "").trim(),
       ),
-    [data.documentation, data.filePath, data.functionName, data.functionParams, data.returnType],
+    [data.className, data.documentation, data.fileName, data.filePath, data.functionName, data.functionParams, data.returnType],
   );
-  const normalized = useCallback((value: string): string => value.replace(/\s+/g, " ").trim(), []);
   const functionNameRaw = useMemo(
     () => (data.functionName ?? "").trim(),
     [data.functionName],
@@ -87,14 +88,20 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
     [data.functionParams],
   );
   const showFunctionName = useMemo(
-    () => functionNameDisplay.length > 0,
-    [functionNameDisplay],
+    () => functionNameNoBadge.length > 0,
+    [functionNameNoBadge],
   );
-  const showParameters = useMemo(() => {
-    if (!paramsRaw) return false;
-    if (!functionNameNoBadge) return true;
-    return !normalized(functionNameNoBadge).includes(normalized(paramsRaw));
-  }, [functionNameNoBadge, normalized, paramsRaw]);
+  const paramsDisplay = useMemo(() => {
+    if (paramsRaw) return paramsRaw;
+    const openParen = functionNameNoBadge.indexOf("(");
+    const closeParen = functionNameNoBadge.lastIndexOf(")");
+    if (openParen < 0 || closeParen <= openParen + 1) return "";
+    return functionNameNoBadge.slice(openParen + 1, closeParen).trim();
+  }, [functionNameNoBadge, paramsRaw]);
+  const showParameters = useMemo(
+    () => paramsDisplay.length > 0,
+    [paramsDisplay],
+  );
   const useCompactHeader = useMemo(
     () => zoom <= COMPACT_HEADER_ZOOM_THRESHOLD,
     [zoom],
@@ -234,13 +241,19 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
           style={tooltipStyle}
         >
           {showFunctionName && (
-            <div><strong>Function:</strong> {functionNameDisplay}</div>
+            <div><strong>Function:</strong> {functionNameNoBadge}</div>
+          )}
+          {data.className && (
+            <div><strong>Class:</strong> {data.className}</div>
+          )}
+          {data.fileName && (
+            <div><strong>File Name:</strong> {data.fileName}</div>
           )}
           {data.filePath && (
             <div><strong>File:</strong> {data.filePath}</div>
           )}
           {showParameters && (
-            <div><strong>Parameters:</strong> {paramsRaw}</div>
+            <div><strong>Parameters:</strong> {paramsDisplay}</div>
           )}
           {data.returnType && (
             <div><strong>Returns:</strong> {data.returnType}</div>
