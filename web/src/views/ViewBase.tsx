@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { observer, useLocalObservable } from "mobx-react-lite";
+import { Group, Panel, Separator } from "react-resizable-panels";
 import { CodeDiffDrawer } from "../components/CodeDiffDrawer";
 import { FileListPanel } from "../components/FileListPanel";
 import { SplitGraphPanel, type GraphDiffTarget, type InternalNodeAnchor, type TopLevelAnchor } from "../components/SplitGraphPanel";
@@ -49,7 +50,7 @@ interface ViewBaseProps {
 type GraphRenderMode = "both" | "old" | "new";
 
 const UI_LAG_SAMPLE_MS = 500;
-const UI_LAG_THRESHOLD_MS = 2000;
+const UI_LAG_THRESHOLD_MS = 4000;
 const UI_GUARD_COOLDOWN_MS = 12000;
 
 export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullRequestDescriptionExcerpt }: ViewBaseProps) => {
@@ -684,61 +685,119 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
         )}
 
         <SplitGraphRuntimeProvider value={splitGraphRuntime}>
-          <div ref={graphSectionRef} className={renderOldGraph && renderNewGraph ? "splitLayout" : "splitLayout splitLayoutSingle"}>
-            {renderOldGraph && (
-              <SplitGraphPanel
-                title="Old"
-                side="old"
-                graph={displayOldGraph}
-                counterpartGraph={displayNewGraph}
-                viewType={viewType}
-                showCalls={viewType === "logic" ? store.showCalls : true}
-                fileContentMap={oldFileContentMap}
-                counterpartFileContentMap={newFileContentMap}
-                alignmentAnchors={alignedTopAnchors.old}
-                pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
-                isViewportPrimary={!renderNewGraph}
-              />
-            )}
-
-            {renderNewGraph && (
-              <SplitGraphPanel
-                title="New"
-                side="new"
-                graph={displayNewGraph}
-                counterpartGraph={displayOldGraph}
-                viewType={viewType}
-                showCalls={viewType === "logic" ? store.showCalls : true}
-                diffStats={diffStats}
-                fileContentMap={newFileContentMap}
-                counterpartFileContentMap={oldFileContentMap}
-                alignmentOffset={newAlignmentOffset}
-                alignmentAnchors={alignedTopAnchors.new}
-                alignmentBreakpoints={alignmentBreakpoints}
-                pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
-                isViewportPrimary
-              />
-            )}
-          </div>
+          <Group
+            id="view-resizable"
+            orientation="vertical"
+            className="viewResizableGroup"
+          >
+            <Panel id="graph" defaultSize={50} minSize={25} className="viewResizablePanel">
+              <div ref={graphSectionRef} className="viewResizablePanelInner">
+                {isEmptyView && (
+                  <p className="errorText">
+                    {store.selectedFilePath
+                      ? "No nodes found for this file. Try the Knowledge tab, or disable Changes Only."
+                      : "No nodes found for this view. Try the Knowledge tab, or disable Changes Only."}
+                  </p>
+                )}
+                {!isEmptyView && renderOldGraph && renderNewGraph && (
+                  <Group id="graph-split" orientation="horizontal" className="splitLayoutResizable">
+                    <Panel id="old" defaultSize={50} minSize={20} className="viewResizablePanel">
+                      <div className="splitLayoutPanelInner">
+                        <SplitGraphPanel
+                          title="Old"
+                          side="old"
+                          graph={displayOldGraph}
+                          counterpartGraph={displayNewGraph}
+                          viewType={viewType}
+                          showCalls={viewType === "logic" ? store.showCalls : true}
+                          fileContentMap={oldFileContentMap}
+                          counterpartFileContentMap={newFileContentMap}
+                          alignmentAnchors={alignedTopAnchors.old}
+                          pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
+                          isViewportPrimary={!renderNewGraph}
+                        />
+                      </div>
+                    </Panel>
+                    <Separator id="graph-separator" className="viewResizeSeparator viewResizeSeparatorHorizontal" />
+                    <Panel id="new" defaultSize={50} minSize={20} className="viewResizablePanel">
+                      <div className="splitLayoutPanelInner">
+                        <SplitGraphPanel
+                          title="New"
+                          side="new"
+                          graph={displayNewGraph}
+                          counterpartGraph={displayOldGraph}
+                          viewType={viewType}
+                          showCalls={viewType === "logic" ? store.showCalls : true}
+                          diffStats={diffStats}
+                          fileContentMap={newFileContentMap}
+                          counterpartFileContentMap={oldFileContentMap}
+                          alignmentOffset={newAlignmentOffset}
+                          alignmentAnchors={alignedTopAnchors.new}
+                          alignmentBreakpoints={alignmentBreakpoints}
+                          pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
+                          isViewportPrimary
+                        />
+                      </div>
+                    </Panel>
+                  </Group>
+                )}
+                {!isEmptyView && (renderOldGraph !== renderNewGraph) && (
+                  <div className={renderOldGraph && renderNewGraph ? "splitLayout" : "splitLayout splitLayoutSingle"}>
+                    {renderOldGraph && (
+                      <SplitGraphPanel
+                        title="Old"
+                        side="old"
+                        graph={displayOldGraph}
+                        counterpartGraph={displayNewGraph}
+                        viewType={viewType}
+                        showCalls={viewType === "logic" ? store.showCalls : true}
+                        fileContentMap={oldFileContentMap}
+                        counterpartFileContentMap={newFileContentMap}
+                        alignmentAnchors={alignedTopAnchors.old}
+                        pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
+                        isViewportPrimary={!renderNewGraph}
+                      />
+                    )}
+                    {renderNewGraph && (
+                      <SplitGraphPanel
+                        title="New"
+                        side="new"
+                        graph={displayNewGraph}
+                        counterpartGraph={displayOldGraph}
+                        viewType={viewType}
+                        showCalls={viewType === "logic" ? store.showCalls : true}
+                        diffStats={diffStats}
+                        fileContentMap={newFileContentMap}
+                        counterpartFileContentMap={oldFileContentMap}
+                        alignmentOffset={newAlignmentOffset}
+                        alignmentAnchors={alignedTopAnchors.new}
+                        alignmentBreakpoints={alignmentBreakpoints}
+                        pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
+                        isViewportPrimary
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            </Panel>
+            <Separator id="file-panel-separator" className="viewResizeSeparator viewResizeSeparatorVertical" />
+            <Panel id="details" defaultSize={50} minSize={20} className="viewResizablePanel">
+              <div className="viewResizablePanelInner viewResizableDetailsPanel">
+                <div className="viewResizableFilePanel">
+                  <FileListPanel />
+                  {selectedSymbols.length > 0 && (
+                    <SymbolListPanel symbols={selectedSymbols} onSymbolClick={handleSymbolClick} />
+                  )}
+                </div>
+                <div className="viewResizableCodePanel">
+                  <div ref={codeDiffSectionRef} className="viewResizableCodeDiffWrapper">
+                    <CodeDiffDrawer />
+                  </div>
+                </div>
+              </div>
+            </Panel>
+          </Group>
         </SplitGraphRuntimeProvider>
-
-        {isEmptyView && (
-          <p className="errorText">
-            {store.selectedFilePath
-              ? "No nodes found for this file. Try the Knowledge tab, or disable Changes Only."
-              : "No nodes found for this view. Try the Knowledge tab, or disable Changes Only."}
-          </p>
-        )}
-
-        <FileListPanel />
-
-        {selectedSymbols.length > 0 && (
-          <SymbolListPanel symbols={selectedSymbols} onSymbolClick={handleSymbolClick} />
-        )}
-
-        <div ref={codeDiffSectionRef}>
-          <CodeDiffDrawer />
-        </div>
       </section>
     </ViewBaseRuntimeProvider>
   );

@@ -361,7 +361,7 @@ export const CodeDiffDrawer = observer(() => {
         <button type="button" className="codeDiffFullscreenBtn" onClick={store.toggleFullscreen} title={fullscreenTitle}>
           {fullscreenIcon}
         </button>
-        <p className="dimText">Select a file to see its diff.</p>
+        <p className="dimText">Select a file or a node to see its code dff.</p>
       </section>,
     );
   }

@@ -90,6 +90,18 @@
   background: #0c4a6e;
 }
 
+.tabBar .tabBadge {
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  background: #334155;
+  color: #94a3b8;
+}
+
 .prDescriptionBtn {
   border-color: #7c3aed !important;
   background: #312e81 !important;
@@ -395,6 +407,167 @@
 
 .splitLayoutSingle {
   grid-template-columns: 1fr;
+}
+
+/* ---------- resizable panels (react-resizable-panels) ---------- */
+
+.viewResizableGroup {
+  flex: 1;
+  min-height: 0;
+  display: flex !important;
+}
+
+.viewResizablePanel {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.viewResizablePanelInner {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.viewResizablePanelInner.splitLayout,
+.viewResizablePanelInner .splitLayout {
+  flex: 1;
+  min-height: 0;
+}
+
+.splitLayoutResizable {
+  height: 100%;
+  min-height: 0;
+  display: flex !important;
+}
+
+.splitLayoutPanelInner {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.splitLayoutPanelInner .panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.viewResizableDetailsPanel {
+  gap: 10px;
+  overflow: hidden;
+}
+
+.viewResizableFilePanel {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 10px;
+  max-height: 40%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.viewResizableCodePanel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.viewResizableCodeDiffWrapper {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.viewResizableCodePanel .codeDiffPanel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.viewResizableCodePanel .codeDiffPanel .splitCodeLayout {
+  flex: 1;
+  min-height: 0;
+}
+
+.viewResizableCodePanel .codeDiffPanel .codeColumn {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.viewResizableCodePanel .codeDiffPanel .codeScrollArea {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.viewResizeSeparator {
+  background: #334155;
+  flex-shrink: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.viewResizeSeparator:hover,
+.viewResizeSeparator[data-resize-handle-active] {
+  background: #475569;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.35);
+}
+
+.viewResizeSeparatorVertical {
+  height: 8px;
+  min-height: 8px;
+  cursor: row-resize;
+  align-self: stretch;
+}
+
+.viewResizeSeparatorHorizontal {
+  width: 7px;
+  min-width: 7px;
+  cursor: col-resize;
+}
+
+.viewResizeSeparatorVertical::before,
+.viewResizeSeparatorHorizontal::before {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  opacity: 0.95;
+  text-shadow: 0 1px 0 rgba(2, 6, 23, 0.65);
+  pointer-events: none;
+}
+
+.viewResizeSeparatorVertical::before {
+  content: "=";
+}
+
+.viewResizeSeparatorHorizontal::before {
+  content: "║";
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+.viewResizeSeparator:hover::before,
+.viewResizeSeparator[data-resize-handle-active]::before {
+  color: #e2e8f0;
 }
 
 .panel {

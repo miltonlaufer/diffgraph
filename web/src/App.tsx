@@ -161,6 +161,7 @@ const App = () => {
 	          {canShowReact && (
 	            <button type="button" onClick={showReact} className={activeTab === "react" ? "active" : ""}>
 	              React
+	              <span className="tabBadge">Beta</span>
 	            </button>
 	          )}
         </div>
