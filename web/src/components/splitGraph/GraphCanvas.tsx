@@ -81,7 +81,7 @@ export const GraphCanvas = ({
       onMoveEnd={onMoveEnd}
       style={{ width: "100%", height: "100%" }}
       onlyRenderVisibleElements
-      minZoom={0.05}
+      minZoom={0.01}
       maxZoom={2}
       nodesDraggable={false}
       panOnDrag
