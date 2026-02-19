@@ -278,6 +278,93 @@ If the default port (4177) is busy, the server automatically finds the next avai
 - **Knowledge** -- structural graph of classes, functions, services, imports, etc.
 - **React** -- component render tree and hook usage (shown only when the diff contains React-relevant symbols)
 
+## New Features Since Last Full README Update
+
+Baseline used for this section: the README state before docs-only credit commit `900c399` (feature baseline commit `8f5098e`).
+
+### UI / UX
+
+| Feature | What changed | Why it matters |
+| --- | --- | --- |
+| Graph logic tree modal | Added `See graph logic tree` from node hover actions; opens a fullscreen focused subgraph modal. | Faster branch-level reasoning without losing full-graph context. |
+| Code logic tree mode | Added `See code logic tree` from node hover actions; code diff can filter to related logic ancestry lines. | Moves from graph node to minimal code window quickly. |
+| Pull request controls in header | Added `PR ↗` (open on GitHub) and `PR Description` modal (markdown rendering). | PR mode now carries review context directly in the UI. |
+| Resizable layout | Integrated resizable panels for graph/code and Old/New split panes. | Better ergonomics for large monitors and small laptops. |
+| Performance guard modal | Added runtime lag detection modal with staged mitigations (hide call edges; optionally render one side only). | Keeps app responsive on very large graphs. |
+| Node action panel improvements | Ask-LLM floating panel now includes graph/code logic-tree actions, improved tooltip anchoring, and robust copied-state messaging. | Cleaner node-level workflow, fewer missed clicks. |
+| Group node detail strips | Function parameter diffs and hook dependency diffs are shown inline in group headers with status coloring. | Makes signature-level API changes visible in graph view. |
+| Graph canvas zoom floor | Reduced minimum zoom to `0.01` in split graph panels. | Easier to zoom out for global structure scans. |
+
+### Functionality / Workflow
+
+| Feature | What changed | Why it matters |
+| --- | --- | --- |
+| PR URL handling | PR mode now resolves URL from `gh pr view` metadata, with fallback from `origin` remote parsing. | Reliable GitHub navigation from DiffGraph PR sessions. |
+| PR description propagation | Server exposes PR description + excerpt, and Ask-LLM prompt builders include the excerpt when available. | Explanations can account for stated PR intent. |
+| Interactive branch compare fallback | In interactive menu, branch order is auto-reversed if selected order has zero diff files but reverse has changes. | Prevents empty-result confusion in branch mode. |
+| Code diff navigation support | Code logic-tree requests are routed through view commands/store into diff drawer filtering and scrolling. | Smooth graph-to-code-to-graph traversal. |
+| Escape-to-dismiss support | Added keyboard close behavior for modals such as performance guard and PR description. | Faster keyboard-centric review flow. |
+
+### Analysis Engine / View Semantics
+
+| Feature | What changed | Why it matters |
+| --- | --- | --- |
+| TypeScript control-flow coverage | Added `try/catch/finally` branch node generation and flow edges; better chained promise branch typing (`then/catch/finally`). | Logic View now captures exception and async error paths more accurately. |
+| Python control-flow coverage | Enhanced Python analyzer script to preserve internal flow for `for` loops and `try` blocks (including nested behavior). | Reduces flattened/incorrect control-flow paths in Python diffs. |
+| Callback and hook metadata | Improved callback name resolution and hook dependency extraction in TS analysis. | Cleaner labels and better dependency visibility in Logic/React views. |
+| React view JSX edges | React view now infers JSX render edges from branch metadata and tag usage. | Better representation of component render relationships. |
+| Class/method hierarchy inference | Logic view builder improved class method grouping and parent-child inference. | More stable, understandable group structure in large files. |
+| Parameter/dependency diff tracking | Logic view builder computes old/new token-level diffs for function params and hook deps. | Shows what changed inside signatures, not only that something changed. |
+
+### Diff Accuracy / Performance
+
+| Feature | What changed | Why it matters |
+| --- | --- | --- |
+| Comment-insensitive signatures | Diff/analyzers normalize signatures by stripping comments before hashing. | Comment-only edits no longer look like semantic symbol changes. |
+| Graph delta matching improvements | Refined node matching for duplicates/deep callbacks (signature + position-aware pairing). | Fewer false `modified/added/removed` statuses. |
+| Whitespace-aware side-by-side diff | Code diff comparison ignores whitespace-only noise and better preserves multiline wrapped visibility. | Cleaner code review signal with less formatting noise. |
+| Neighborhood/derived caching | Added cached neighborhood strategies and memo-hash based worker inputs for derived/layout computations. | Better responsiveness on dense graphs and repeated interactions. |
+| Debounced search | Added debounced graph/code search inputs in heavy paths. | Reduces UI churn and expensive recompute bursts. |
+| Expanded tests | Added/expanded tests for graph delta, control-flow analyzers, diff utils, node identity, and view commands. | Higher confidence in behavior across large and edge-case diffs. |
+
+### Logic View Flow (Mermaid)
+
+```mermaid
+flowchart LR
+  A[CLI mode<br/>staged/refs/branches/pr/files] --> B[DiffProvider]
+  B --> C[Diff payload<br/>old/new files + hunks + PR metadata]
+  C --> D[DiffEngine]
+  D --> E[TS Analyzer]
+  D --> F[Python Analyzer]
+  E --> G[Snapshot Graphs old/new]
+  F --> G
+  G --> H[GraphDelta match and status]
+  H --> I[buildLogicView]
+  I --> J[ViewBase + SplitGraphPanel]
+  J --> K[Old/New Logic canvases]
+  K --> L[Node-edge interactions + code sync]
+```
+
+```mermaid
+flowchart TD
+  A[Hover graph node] --> B[AskLlmButton actions]
+  B --> C{Action}
+
+  C -->|See graph logic tree| D[Collect node neighborhood + ancestors]
+  D --> E[Layout focused subgraph]
+  E --> F[Open GraphLogicTreeModal fullscreen]
+  F --> G[Click modal node]
+  G --> H[Close modal + focus original graph node]
+
+  C -->|See code logic tree| I[Collect related line range in same file]
+  I --> J[commandOpenCodeLogicTree]
+  J --> K[CodeDiffDrawer filters rows]
+  K --> L[Gap markers keep skipped regions readable]
+
+  C -->|Copy prompt / Open ChatGPT| M[Build prompt with old/new snippets, related nodes, PR excerpt]
+  M --> N[Clipboard copy or capped URL]
+```
+
 ### Graph panels (Old / New)
 
 - Old graph shows only nodes that existed before; New graph shows only nodes that exist after
