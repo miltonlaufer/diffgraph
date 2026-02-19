@@ -211,6 +211,7 @@ export const createApp = (context: AppContext): express.Express => {
       newSnapshotId: result.newGraph.snapshotId,
       hasReactView,
       pullRequestNumber: result.pullRequest?.number,
+      pullRequestUrl: result.pullRequest?.url,
       pullRequestDescription: hasPrDescription ? prDescription : undefined,
       pullRequestDescriptionExcerpt: prDescriptionExcerpt,
       pullRequestDescriptionTruncated: hasPrDescription && prDescription.length > PR_DESCRIPTION_EXCERPT_LIMIT,

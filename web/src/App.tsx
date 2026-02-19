@@ -63,6 +63,11 @@ const App = () => {
   const openPrDescription = useCallback(() => {
     setPrDescriptionOpen(true);
   }, []);
+  const openPrInGitHub = useCallback(() => {
+    const url = meta?.pullRequestUrl;
+    if (!url) return;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, [meta?.pullRequestUrl]);
   const closePrDescription = useCallback(() => {
     setPrDescriptionOpen(false);
   }, []);
@@ -142,6 +147,17 @@ const App = () => {
           </label>
         </div>
         <div className="tabBar">
+            {isPullRequestMode && (
+              <button
+                type="button"
+                onClick={openPrInGitHub}
+                className="prLinkBtn"
+                title={meta?.pullRequestUrl ? `Open PR #${meta?.pullRequestNumber ?? ""} on GitHub` : "PR link unavailable"}
+                disabled={!meta?.pullRequestUrl}
+              >
+                PR {"\u2197"}
+              </button>
+            )}
             {isPullRequestMode && (
               <button
                 type="button"

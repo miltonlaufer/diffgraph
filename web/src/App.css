@@ -111,6 +111,15 @@
   background: #3730a3 !important;
 }
 
+.prLinkBtn {
+  border-color: #16a34a !important;
+  background: #14532d !important;
+}
+
+.prLinkBtn:hover:not(:disabled) {
+  background: #166534 !important;
+}
+
 .prDescriptionModalBackdrop {
   position: fixed;
   inset: 0;

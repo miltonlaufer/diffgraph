@@ -32,6 +32,7 @@ export interface DiffPayload {
   hunksByPath: Map<string, string[]>;
   pullRequest?: {
     number: string;
+    url?: string;
     description?: string;
   };
 }
@@ -39,6 +40,7 @@ export interface DiffPayload {
 interface PullRequestMetadata {
   description?: string;
   baseRefName?: string;
+  url?: string;
 }
 
 const textFromGit = async (args: string[], cwd: string): Promise<string> => {
@@ -186,10 +188,12 @@ export class DiffProvider {
     }
 
     const payload = await this.fromRefs(mergeBase, prRef, repoPath);
+    const pullRequestUrl = await this.resolvePullRequestUrl(repoPath, normalizedPr, prMetadata.url);
     return {
       ...payload,
       pullRequest: {
         number: normalizedPr,
+        url: pullRequestUrl,
         description: prMetadata.description,
       },
     };
@@ -197,17 +201,59 @@ export class DiffProvider {
 
   private async readPullRequestMetadata(repoPath: string, prNumber: string): Promise<PullRequestMetadata> {
     try {
-      const raw = await textFromGh(["pr", "view", prNumber, "--json", "body,baseRefName"], repoPath);
-      const parsed = JSON.parse(raw) as { body?: unknown; baseRefName?: unknown };
+      const raw = await textFromGh(["pr", "view", prNumber, "--json", "body,baseRefName,url"], repoPath);
+      const parsed = JSON.parse(raw) as { body?: unknown; baseRefName?: unknown; url?: unknown };
       const body = typeof parsed.body === "string" ? parsed.body.trim() : "";
       const baseRefName = typeof parsed.baseRefName === "string" ? parsed.baseRefName.trim() : "";
+      const url = typeof parsed.url === "string" ? parsed.url.trim() : "";
       return {
         description: body.length > 0 ? body : undefined,
         baseRefName: baseRefName.length > 0 ? baseRefName : undefined,
+        url: url.length > 0 ? url : undefined,
       };
     } catch {
       return {};
     }
+  }
+
+  private async resolvePullRequestUrl(repoPath: string, prNumber: string, prUrl?: string): Promise<string | undefined> {
+    if (prUrl && prUrl.length > 0) {
+      return prUrl;
+    }
+    try {
+      const originUrl = (await textFromGit(["remote", "get-url", "origin"], repoPath)).trim();
+      const githubRepoUrl = this.toGithubRepoUrl(originUrl);
+      if (!githubRepoUrl) {
+        return undefined;
+      }
+      return `${githubRepoUrl}/pull/${prNumber}`;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private toGithubRepoUrl(remoteUrl: string): string | undefined {
+    const normalized = remoteUrl.trim();
+    if (normalized.length === 0) {
+      return undefined;
+    }
+
+    const httpsMatch = normalized.match(/^https?:\/\/github\.com\/([^/]+\/[^/]+?)(?:\.git)?\/?$/i);
+    if (httpsMatch) {
+      return `https://github.com/${httpsMatch[1]}`;
+    }
+
+    const scpMatch = normalized.match(/^git@github\.com:([^/]+\/[^/]+?)(?:\.git)?$/i);
+    if (scpMatch) {
+      return `https://github.com/${scpMatch[1]}`;
+    }
+
+    const sshMatch = normalized.match(/^ssh:\/\/git@github\.com\/([^/]+\/[^/]+?)(?:\.git)?\/?$/i);
+    if (sshMatch) {
+      return `https://github.com/${sshMatch[1]}`;
+    }
+
+    return undefined;
   }
 
   private async resolvePreferredBaseRef(repoPath: string, prBaseRefName?: string): Promise<string> {
