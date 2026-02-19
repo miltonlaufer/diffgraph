@@ -14,7 +14,7 @@ const logicEdgeKinds = new Set(["CALLS", "DECLARES"]);
 const kindBadge: Record<string, string> = {
   ReactComponent: "Component",
   Hook: "Hook",
-  Function: "Function",
+  Function: "Fn",
   Method: "Method",
 };
 
@@ -470,19 +470,93 @@ const buildViewGraph = (
   hookDependencyDiffByNodeId: Map<string, FunctionParameterDiffEntry[]>,
 ): ViewGraph => {
   const allLogicNodes = graph.nodes.filter((n) => logicKinds.has(n.kind));
+  const classNodes = graph.nodes.filter((n) => n.kind === "Class");
   const logicNodeIds = new Set(allLogicNodes.map((n) => n.id));
   const functionNodeIds = new Set(allLogicNodes.filter((n) => functionKinds.has(n.kind)).map((n) => n.id));
   const viewNodes: ViewGraphNode[] = [];
   const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+  const classNodeByFileAndName = new Map(classNodes.map((n) => [`${n.filePath}:${n.name}`, n]));
 
-  const findOwningClassName = (nodeId: string): string | undefined => {
-    let current = parentMap.get(nodeId);
+  const findOwningClassNode = (node: GraphNode): GraphNode | undefined => {
+    let current = parentMap.get(node.id);
     while (current) {
-      if (current.kind === "Class") return current.name;
+      if (current.kind === "Class") return current;
       current = parentMap.get(current.id);
     }
+
+    if (node.language !== "py") return undefined;
+
+    const colonIndex = node.qualifiedName.indexOf(":");
+    const symbolPath = colonIndex >= 0 ? node.qualifiedName.slice(colonIndex + 1) : node.qualifiedName;
+    const lastDot = symbolPath.lastIndexOf(".");
+    if (lastDot <= 0) return undefined;
+    const candidateClassName = symbolPath.slice(0, lastDot);
+    const classNode = classNodeByFileAndName.get(`${node.filePath}:${candidateClassName}`);
+    if (!classNode) return undefined;
+
+    const startLine = node.startLine ?? Number.MAX_SAFE_INTEGER;
+    const classStart = classNode.startLine ?? 0;
+    const classEnd = classNode.endLine ?? Number.MAX_SAFE_INTEGER;
+    if (startLine < classStart || startLine > classEnd) return undefined;
+    return classNode;
+  };
+
+  const findOwningClassName = (node: GraphNode): string | undefined => {
+    const owningClass = findOwningClassNode(node);
+    if (owningClass) return owningClass.name;
     return undefined;
   };
+
+  const classIdsWithChildren = new Set<string>();
+  const functionParentById = new Map<string, string | undefined>();
+  for (const node of allLogicNodes) {
+    if (!functionKinds.has(node.kind)) continue;
+    const parentFn = parentMap.get(node.id);
+    if (parentFn && functionKinds.has(parentFn.kind) && logicNodeIds.has(parentFn.id)) {
+      functionParentById.set(node.id, parentFn.id);
+      continue;
+    }
+    const owningClass = findOwningClassNode(node);
+    if (owningClass) {
+      functionParentById.set(node.id, owningClass.id);
+      classIdsWithChildren.add(owningClass.id);
+      continue;
+    }
+    functionParentById.set(node.id, undefined);
+  }
+
+  const classParentById = new Map<string, string | undefined>();
+  const resolveClassParentId = (classNode: GraphNode): string | undefined => {
+    if (classParentById.has(classNode.id)) {
+      return classParentById.get(classNode.id);
+    }
+    let current = parentMap.get(classNode.id);
+    while (current) {
+      if (current.kind === "Class" && classIdsWithChildren.has(current.id)) {
+        classParentById.set(classNode.id, current.id);
+        return current.id;
+      }
+      current = parentMap.get(current.id);
+    }
+    classParentById.set(classNode.id, undefined);
+    return undefined;
+  };
+
+  for (const classNode of classNodes) {
+    if (!classIdsWithChildren.has(classNode.id)) continue;
+    viewNodes.push({
+      id: classNode.id,
+      label: `[Class] ${classNode.name}`,
+      kind: "group",
+      diffStatus: (nodeStatus.get(classNode.id) ?? "unchanged") as ViewGraphNode["diffStatus"],
+      filePath: classNode.filePath,
+      fileName: fileNameFromPath(classNode.filePath),
+      className: classNode.name,
+      startLine: classNode.startLine,
+      endLine: classNode.endLine,
+      parentId: resolveClassParentId(classNode),
+    });
+  }
 
   /* Emit function/method/hook/component nodes as group containers */
   for (const node of allLogicNodes) {
@@ -490,17 +564,12 @@ const buildViewGraph = (
       continue;
     }
     const badge = kindBadge[node.kind] ?? node.kind;
-    const params = (node.metadata?.params as string) ?? "";
     const wrappedBy = (node.metadata?.wrappedBy as string | undefined) ?? "";
     const hookDependencies = (node.metadata?.hookDependencies as string | undefined) ?? "";
     const wrapperSuffix = wrappedBy.length > 0
       ? ` [${wrappedBy}${hookDependencies.length > 0 ? ` deps: ${hookDependencies}` : ""}]`
       : "";
-    const label = `[${badge}] ${node.name}${wrapperSuffix}${params}`;
-
-    /* Check if this function itself has a parent function (e.g. useEffect inside Component) */
-    const parentFn = parentMap.get(node.id);
-    const hasParentGroup = parentFn && functionKinds.has(parentFn.kind) && logicNodeIds.has(parentFn.id);
+    const label = `[${badge}] ${node.name}${wrapperSuffix}`;
 
     viewNodes.push({
       id: node.id,
@@ -509,10 +578,10 @@ const buildViewGraph = (
       diffStatus: (nodeStatus.get(node.id) ?? "unchanged") as ViewGraphNode["diffStatus"],
       filePath: node.filePath,
       fileName: fileNameFromPath(node.filePath),
-      className: node.kind === "Method" ? findOwningClassName(node.id) : undefined,
+      className: findOwningClassName(node),
       startLine: node.startLine,
       endLine: node.endLine,
-      parentId: hasParentGroup ? parentFn.id : undefined,
+      parentId: functionParentById.get(node.id),
       functionParams: (node.metadata?.paramsFull as string | undefined) ?? (node.metadata?.params as string | undefined),
       functionParamDiff: functionParamDiffByNodeId.get(node.id),
       hookDependencies,
