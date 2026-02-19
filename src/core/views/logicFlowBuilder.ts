@@ -62,7 +62,10 @@ const buildViewGraph = (
     const badge = kindBadge[node.kind] ?? node.kind;
     const params = (node.metadata?.params as string) ?? "";
     const wrappedBy = (node.metadata?.wrappedBy as string | undefined) ?? "";
-    const wrapperSuffix = wrappedBy.length > 0 ? ` [${wrappedBy}]` : "";
+    const hookDependencies = (node.metadata?.hookDependencies as string | undefined) ?? "";
+    const wrapperSuffix = wrappedBy.length > 0
+      ? ` [${wrappedBy}${hookDependencies.length > 0 ? ` deps: ${hookDependencies}` : ""}]`
+      : "";
     const label = `[${badge}] ${node.name}${wrapperSuffix}${params}`;
 
     /* Check if this function itself has a parent function (e.g. useEffect inside Component) */

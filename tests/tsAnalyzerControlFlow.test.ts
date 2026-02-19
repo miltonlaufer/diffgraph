@@ -220,6 +220,9 @@ describe("TsAnalyzer control flow", () => {
     expect(byName.get("build")?.metadata?.wrappedBy).toBe("useCallback");
     expect(byName.get("renderText")?.metadata?.wrappedBy).toBe("useMemo");
     expect(byName.get("format")?.metadata?.wrappedBy).toBe("useCallback");
+    expect(byName.get("build")?.metadata?.hookDependencies).toBe("[seed]");
+    expect(byName.get("renderText")?.metadata?.hookDependencies).toBe("[build]");
+    expect(byName.get("format")?.metadata?.hookDependencies).toBe("[renderText]");
 
     const flowEdges = graph.edges.filter((edge) => edge.kind === "CALLS");
     const hasCall = (sourceName: string, targetName: string): boolean => {
@@ -231,6 +234,73 @@ describe("TsAnalyzer control flow", () => {
 
     expect(hasCall("Panel", "build")).toBe(true);
     expect(hasCall("Panel", "format")).toBe(true);
+  });
+
+  it("keeps JSX tags visible in return-branch snippets and metadata", async () => {
+    const analyzer = new TsAnalyzer();
+    const graph = await analyzer.analyze("repo", "snap", "ref", [
+      {
+        path: "sample.tsx",
+        content: [
+          "function Panel() {",
+          "  return (",
+          "    <section>",
+          "      <Header />",
+          "      <Card><Body /></Card>",
+          "    </section>",
+          "  );",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ]);
+
+    const returnBranch = graph.nodes.find(
+      (node) => node.kind === "Branch"
+        && (node.metadata?.branchType as string | undefined) === "return",
+    );
+
+    expect(returnBranch).toBeTruthy();
+    expect((returnBranch?.metadata?.codeSnippet as string | undefined) ?? "").toContain("return JSX");
+    expect(returnBranch?.metadata?.containsJsx).toBe(true);
+    expect((returnBranch?.metadata?.jsxTagNames as string | undefined) ?? "").toContain("Header");
+    expect((returnBranch?.metadata?.jsxTagNames as string | undefined) ?? "").toContain("Card");
+    expect((returnBranch?.metadata?.jsxTagNames as string | undefined) ?? "").toContain("Body");
+  });
+
+  it("captures RENDERS edges for self-closing JSX tags", async () => {
+    const analyzer = new TsAnalyzer();
+    const graph = await analyzer.analyze("repo", "snap", "ref", [
+      {
+        path: "sample.tsx",
+        content: [
+          "function Child() {",
+          "  return <span />;",
+          "}",
+          "",
+          "function Panel() {",
+          "  return <Child />;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ]);
+
+    const byName = new Map(
+      graph.nodes
+        .filter((node) => node.kind === "ReactComponent" || node.kind === "Hook" || node.kind === "Function")
+        .map((node) => [node.name, node.id]),
+    );
+
+    const panelId = byName.get("Panel");
+    const childId = byName.get("Child");
+    expect(panelId).toBeTruthy();
+    expect(childId).toBeTruthy();
+    expect(
+      graph.edges.some(
+        (edge) => edge.kind === "RENDERS" && edge.source === panelId && edge.target === childId,
+      ),
+    ).toBe(true);
   });
 
   it("ignores whitespace-only edits in signatures and keeps multiline if snippets readable", async () => {

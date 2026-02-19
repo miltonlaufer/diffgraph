@@ -58,6 +58,82 @@ const calleeNameFromExpression = (expr: Node): string | null => {
   return null;
 };
 
+const callExpressionFromCallLike = (expr: Node): Node | null => {
+  if (Node.isCallExpression(expr)) return expr;
+  if (Node.isAwaitExpression(expr) && Node.isCallExpression(expr.getExpression())) {
+    return expr.getExpression();
+  }
+  return null;
+};
+
+const callLikeExpressionFromStatement = (node: Node): Node | null => {
+  if (Node.isExpressionStatement(node)) {
+    const expr = node.getExpression();
+    return isCallLikeExpression(expr) ? expr : null;
+  }
+  if (Node.isVariableStatement(node)) {
+    for (const decl of node.getDeclarations()) {
+      const init = decl.getInitializer();
+      if (!init || !isCallLikeExpression(init)) continue;
+      return init;
+    }
+  }
+  return null;
+};
+
+const isHookName = (value: string): boolean => /^use[A-Z0-9_]/.test(value);
+
+interface HookCallMetadata {
+  hookName: string;
+  hookDependencies?: string;
+}
+
+const hookCallMetadataFromExpression = (expr: Node): HookCallMetadata | null => {
+  const callExpr = callExpressionFromCallLike(expr);
+  if (!callExpr || !Node.isCallExpression(callExpr)) return null;
+  const hookName = calleeNameFromExpression(callExpr);
+  if (!hookName || !isHookName(hookName)) return null;
+  const dependencyArg = callExpr.getArguments()[1];
+  if (!dependencyArg) {
+    return { hookName };
+  }
+  const hookDependencies = normalizeInline(dependencyArg.getText());
+  return hookDependencies.length > 0
+    ? { hookName, hookDependencies }
+    : { hookName };
+};
+
+const hookCallMetadataFromStatement = (node: Node): HookCallMetadata | null => {
+  const callLike = callLikeExpressionFromStatement(node);
+  if (!callLike) return null;
+  return hookCallMetadataFromExpression(callLike);
+};
+
+const collectJsxTagNames = (node: Node): string[] => {
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  const pushTag = (tag: string): void => {
+    const cleaned = normalizeInline(tag);
+    if (cleaned.length === 0 || seen.has(cleaned)) return;
+    seen.add(cleaned);
+    tags.push(cleaned);
+  };
+
+  const collectFromNode = (candidate: Node): void => {
+    if (Node.isJsxOpeningElement(candidate) || Node.isJsxSelfClosingElement(candidate)) {
+      pushTag(candidate.getTagNameNode().getText());
+    } else if (Node.isJsxFragment(candidate)) {
+      pushTag("Fragment");
+    }
+  };
+
+  collectFromNode(node);
+  node.forEachDescendant((desc) => {
+    collectFromNode(desc);
+  });
+  return tags;
+};
+
 const callBranchTypeFromExpression = (expr: Node): "then" | "catch" | "finally" | "call" | null => {
   const callee = calleeNameFromExpression(expr);
   if (!callee) return null;
@@ -95,20 +171,9 @@ const buildBranchName = (node: Node): string | null => {
   if (Node.isThrowStatement(node)) {
     return "throw";
   }
-  if (Node.isExpressionStatement(node) && isCallLikeExpression(node.getExpression())) {
-    return callBranchTypeFromExpression(node.getExpression()) ?? "call";
-  }
-  if (Node.isVariableStatement(node)) {
-    const firstCallInitializer = node.getDeclarations().find((decl) => {
-      const init = decl.getInitializer();
-      return init ? isCallLikeExpression(init) : false;
-    });
-    if (firstCallInitializer) {
-      const init = firstCallInitializer.getInitializer();
-      if (init) {
-        return callBranchTypeFromExpression(init) ?? "call";
-      }
-    }
+  const callLike = callLikeExpressionFromStatement(node);
+  if (callLike) {
+    return callBranchTypeFromExpression(callLike) ?? "call";
   }
   return null;
 };
@@ -145,6 +210,7 @@ interface JsDocLike {
 interface DeepFunctionNameResolution {
   name: string;
   wrappedBy?: string;
+  hookDependencies?: string;
   registerSymbol: boolean;
 }
 
@@ -176,13 +242,20 @@ const resolveDeepFunctionName = (node: Node): DeepFunctionNameResolution => {
   }
   if (parent && Node.isCallExpression(parent)) {
     const wrappedBy = calleeNameFromExpression(parent) ?? parent.getExpression().getText();
+    const hookMetadata = hookCallMetadataFromExpression(parent);
     const assignedVariable = parent.getFirstAncestorByKind(SyntaxKind.VariableDeclaration);
     if (assignedVariable?.getName()) {
-      return { name: assignedVariable.getName(), wrappedBy, registerSymbol: true };
+      return {
+        name: assignedVariable.getName(),
+        wrappedBy,
+        hookDependencies: hookMetadata?.hookDependencies,
+        registerSymbol: true,
+      };
     }
     return {
       name: `${wrappedBy || "callback"}Callback@${node.getStartLineNumber()}`,
       wrappedBy,
+      hookDependencies: hookMetadata?.hookDependencies,
       registerSymbol: false,
     };
   }
@@ -590,6 +663,7 @@ export class TsAnalyzer {
           returnType,
           documentation,
           ...(nameResolution.wrappedBy ? { wrappedBy: nameResolution.wrappedBy } : {}),
+          ...(nameResolution.hookDependencies ? { hookDependencies: nameResolution.hookDependencies } : {}),
         },
         snapshotId,
         ref,
@@ -651,10 +725,32 @@ export class TsAnalyzer {
       if (branchKind === "return" && Node.isReturnStatement(node)) {
         const expr = node.getExpression();
         if (!expr) return "return (void)";
+        const jsxTags = collectJsxTagNames(expr);
+        if (jsxTags.length > 0) {
+          const preview = jsxTags
+            .slice(0, 3)
+            .map((tag) => `<${tag}>`)
+            .join(", ");
+          const suffix = jsxTags.length > 3 ? ", ..." : "";
+          return normalizeSnippet(`return JSX ${preview}${suffix}`, 90);
+        }
         const exprText = expr.getText();
-        if (exprText.startsWith("(")) return trim(`return JSX`, 60);
         if (exprText.includes("=>")) return normalizeSnippet(`return ${exprText}`, 60);
         return normalizeSnippet(`return ${exprText}`, 60);
+      }
+
+      if (branchKind === "call") {
+        const hookMetadata = hookCallMetadataFromStatement(node);
+        if (hookMetadata) {
+          const depsSuffix = hookMetadata.hookDependencies ? `, ${hookMetadata.hookDependencies}` : "";
+          if (Node.isVariableStatement(node)) {
+            const firstDeclName = node.getDeclarations()[0]?.getName();
+            if (firstDeclName) {
+              return normalizeSnippet(`${firstDeclName} = ${hookMetadata.hookName}(...${depsSuffix})`, 90);
+            }
+          }
+          return normalizeSnippet(`${hookMetadata.hookName}(...${depsSuffix})`, 90);
+        }
       }
 
       if (branchKind === "if" && Node.isIfStatement(node)) {
@@ -739,22 +835,17 @@ export class TsAnalyzer {
       const line = node.getStartLineNumber();
       const snippet = buildSnippet(node, branchKind);
       const stableQualifiedName = `${ownerNode.qualifiedName}::${branchKind}#${idx}`;
-      const callCallee = branchKind === "call"
-        ? (() => {
-            if (Node.isExpressionStatement(node)) {
-              return calleeNameFromExpression(node.getExpression());
-            }
-            if (Node.isVariableStatement(node)) {
-              for (const decl of node.getDeclarations()) {
-                const init = decl.getInitializer();
-                if (!init) continue;
-                const callee = calleeNameFromExpression(init);
-                if (callee) return callee;
-              }
-            }
-            return null;
-          })()
+      const callLike = branchKind === "call" ? callLikeExpressionFromStatement(node) : null;
+      const callCallee = callLike
+        ? calleeNameFromExpression(callLike)
         : null;
+      const hookMetadata = branchKind === "call"
+        ? hookCallMetadataFromStatement(node)
+        : null;
+      const returnExpr = branchKind === "return" && Node.isReturnStatement(node)
+        ? node.getExpression()
+        : undefined;
+      const jsxTagNames = returnExpr ? collectJsxTagNames(returnExpr) : [];
       return {
         id: stableHash(
           `${snapshotId}:branch:${stableQualifiedName}:${ownerNode.startLine ?? 0}:${ownerNode.endLine ?? 0}`,
@@ -771,6 +862,9 @@ export class TsAnalyzer {
           branchType: branchKind,
           codeSnippet: snippet,
           ...(callCallee ? { callee: callCallee } : {}),
+          ...(hookMetadata?.hookName ? { hookName: hookMetadata.hookName } : {}),
+          ...(hookMetadata?.hookDependencies ? { hookDependencies: hookMetadata.hookDependencies } : {}),
+          ...(jsxTagNames.length > 0 ? { containsJsx: true, jsxTagNames: jsxTagNames.join(",") } : {}),
         },
         snapshotId,
         ref,
@@ -1035,7 +1129,7 @@ export class TsAnalyzer {
   ): void {
     sourceFile.forEachDescendant((node) => {
       if (Node.isCallExpression(node)) {
-        const callee = node.getExpression().getText();
+        const callee = calleeNameFromExpression(node) ?? node.getExpression().getText();
         const callerName = enclosingSymbolName(node);
         if (!callerName) {
           return;
@@ -1045,18 +1139,19 @@ export class TsAnalyzer {
         if (!source || !target) {
           return;
         }
+        const edgeKind: GraphEdge["kind"] = isHookName(callee) ? "USES_HOOK" : "CALLS";
         edges.push({
           id: stableHash(`${snapshotId}:call:${source}:${target}:${node.getStartLineNumber()}`),
           source,
           target,
-          kind: "CALLS",
+          kind: edgeKind,
           filePath: sourceFile.getFilePath(),
           snapshotId,
           ref,
         });
       }
 
-      if (Node.isJsxOpeningElement(node)) {
+      if (Node.isJsxOpeningElement(node) || Node.isJsxSelfClosingElement(node)) {
         const sourceName = enclosingSymbolName(node);
         const targetName = node.getTagNameNode().getText();
         if (!sourceName) {
