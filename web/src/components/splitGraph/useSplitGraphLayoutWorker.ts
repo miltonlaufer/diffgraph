@@ -35,6 +35,19 @@ const hashGraphForLayoutSignature = (hash: number, graph: ViewGraph): number => 
     next = hashString(next, node.fileName ?? "");
     next = hashString(next, node.className ?? "");
     next = hashString(next, node.functionParams ?? "");
+    const paramDiff = node.functionParamDiff ?? [];
+    next = hashNumber(next, paramDiff.length);
+    for (const entry of paramDiff) {
+      next = hashString(next, entry.text);
+      next = hashString(next, entry.status);
+    }
+    next = hashString(next, node.hookDependencies ?? "");
+    const hookDependencyDiff = node.hookDependencyDiff ?? [];
+    next = hashNumber(next, hookDependencyDiff.length);
+    for (const entry of hookDependencyDiff) {
+      next = hashString(next, entry.text);
+      next = hashString(next, entry.status);
+    }
     next = hashString(next, node.returnType ?? "");
     next = hashNumber(next, node.startLine ?? -1);
     next = hashNumber(next, node.endLine ?? -1);

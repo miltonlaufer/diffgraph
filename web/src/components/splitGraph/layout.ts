@@ -36,10 +36,35 @@ export const LEAF_H = 64;
 const DIAMOND_W = 220;
 const DIAMOND_H = 220;
 const PAD_X = 45;
-const PAD_TOP = 72;
-const PAD_BOTTOM = 45;
+const BASE_GROUP_PAD_TOP = 72;
+const PARAM_ROW_PAD_TOP = 34;
+const BASE_GROUP_PAD_BOTTOM = 45;
+const DEPS_ROW_PAD_BOTTOM = 34;
 const NODE_W = 220;
 const NODE_H = 56;
+
+const hasParameterRow = (node: Pick<ViewGraphNode, "functionParams" | "functionParamDiff">): boolean => {
+  if ((node.functionParamDiff ?? []).some((entry) => (entry.text ?? "").trim().length > 0)) return true;
+  const params = (node.functionParams ?? "").trim();
+  return params.length > 0 && params !== "()";
+};
+
+const groupTopPad = (node: Pick<ViewGraphNode, "functionParams" | "functionParamDiff">): number =>
+  BASE_GROUP_PAD_TOP + (hasParameterRow(node) ? PARAM_ROW_PAD_TOP : 0);
+
+const hasDependencyRow = (node: Pick<ViewGraphNode, "hookDependencies" | "hookDependencyDiff">): boolean => {
+  if ((node.hookDependencyDiff ?? []).some((entry) => (entry.text ?? "").trim().length > 0)) return true;
+  const dependencies = (node.hookDependencies ?? "").trim();
+  if (dependencies.length === 0) return false;
+  if (dependencies === "[]") return true;
+  const body = dependencies.startsWith("[") && dependencies.endsWith("]")
+    ? dependencies.slice(1, -1).trim()
+    : dependencies;
+  return body.length > 0;
+};
+
+const groupBottomPad = (node: Pick<ViewGraphNode, "hookDependencies" | "hookDependencyDiff">): number =>
+  BASE_GROUP_PAD_BOTTOM + (hasDependencyRow(node) ? DEPS_ROW_PAD_BOTTOM : 0);
 
 const leafNodeShape = (branchType: string): string => {
   if (decisionKinds.has(branchType)) return "diamond";
@@ -216,13 +241,15 @@ const computeLogicLayout = (
 
   for (const group of sortedGroups) {
     const kids = (childrenOf.get(group.id) ?? []).filter((c) => !emptyIds.has(c.id));
+    const topPad = groupTopPad(group);
+    const bottomPad = groupBottomPad(group);
     if (kids.length === 0) {
       if (group.diffStatus === "unchanged") {
         emptyIds.add(group.id);
       } else {
         groupSize.set(group.id, {
           w: LEAF_W + PAD_X * 2,
-          h: LEAF_H + PAD_TOP + PAD_BOTTOM,
+          h: LEAF_H + topPad + bottomPad,
         });
       }
       continue;
@@ -268,9 +295,9 @@ const computeLogicLayout = (
     }
     for (const kid of kids) {
       const p = childPos.get(kid.id);
-      if (p) childPos.set(kid.id, { x: p.x - minX + PAD_X, y: p.y - minY + PAD_TOP });
+      if (p) childPos.set(kid.id, { x: p.x - minX + PAD_X, y: p.y - minY + topPad });
     }
-    groupSize.set(group.id, { w: (maxX - minX) + PAD_X * 2, h: (maxY - minY) + PAD_TOP + PAD_BOTTOM });
+    groupSize.set(group.id, { w: (maxX - minX) + PAD_X * 2, h: (maxY - minY) + topPad + bottomPad });
   }
 
   const topNodes = graph.nodes.filter((n) => {
@@ -285,8 +312,9 @@ const computeLogicLayout = (
   g2.setGraph({ rankdir: "LR", nodesep: 60, ranksep: 100, marginx: 40, marginy: 40 });
   for (const n of topNodes) {
     const sz = groupSize.get(n.id);
+    const fallbackHeight = n.kind === "group" ? LEAF_H + groupTopPad(n) + groupBottomPad(n) : LEAF_H;
     const w = sz?.w ?? LEAF_W;
-    const h = sz?.h ?? LEAF_H;
+    const h = sz?.h ?? fallbackHeight;
     g2.setNode(n.id, { width: w, height: h });
   }
   const topIdSet = new Set(topNodes.map((n) => n.id));
@@ -300,8 +328,9 @@ const computeLogicLayout = (
   for (const n of topNodes) {
     const p = g2.node(n.id);
     const sz = groupSize.get(n.id);
+    const fallbackHeight = n.kind === "group" ? LEAF_H + groupTopPad(n) + groupBottomPad(n) : LEAF_H;
     const w = sz?.w ?? LEAF_W;
-    const h = sz?.h ?? LEAF_H;
+    const h = sz?.h ?? fallbackHeight;
     topPos.set(n.id, { x: (p?.x ?? 0) - w / 2, y: (p?.y ?? 0) - h / 2 });
   }
 
@@ -314,7 +343,8 @@ const computeLogicLayout = (
     const sel = node.id === selectedNodeId;
 
     if (node.kind === "group") {
-      const sz = groupSize.get(node.id) ?? { w: LEAF_W, h: LEAF_H };
+      const fallbackHeight = LEAF_H + groupTopPad(node) + groupBottomPad(node);
+      const sz = groupSize.get(node.id) ?? { w: LEAF_W, h: fallbackHeight };
       const pos = parentOk ? (childPos.get(node.id) ?? { x: 0, y: 0 }) : (topPos.get(node.id) ?? { x: 0, y: 0 });
       flowNodes.push({
         id: node.id,
@@ -331,6 +361,9 @@ const computeLogicLayout = (
           fileName: node.fileName,
           className: node.className,
           functionParams: node.functionParams,
+          functionParamDiff: node.functionParamDiff,
+          hookDependencies: node.hookDependencies,
+          hookDependencyDiff: node.hookDependencyDiff,
           returnType: node.returnType,
           documentation: node.documentation,
         },

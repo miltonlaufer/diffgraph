@@ -13,8 +13,16 @@ export interface ViewGraphNode {
   parentId?: string;
   branchType?: string;
   functionParams?: string;
+  functionParamDiff?: FunctionParameterDiffEntry[];
+  hookDependencies?: string;
+  hookDependencyDiff?: FunctionParameterDiffEntry[];
   returnType?: string;
   documentation?: string;
+}
+
+export interface FunctionParameterDiffEntry {
+  text: string;
+  status: DiffStatus;
 }
 
 export interface ViewGraphEdge {

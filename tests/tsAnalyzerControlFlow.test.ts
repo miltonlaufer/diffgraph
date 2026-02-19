@@ -268,6 +268,59 @@ describe("TsAnalyzer control flow", () => {
     expect((returnBranch?.metadata?.jsxTagNames as string | undefined) ?? "").toContain("Body");
   });
 
+  it("attaches JSX-contained callbacks to the enclosing return branch", async () => {
+    const analyzer = new TsAnalyzer();
+    const graph = await analyzer.analyze("repo", "snap", "ref", [
+      {
+        path: "sample.tsx",
+        content: [
+          "function Panel({ items }: { items: Array<{ id: string; label: string }> }) {",
+          "  return (",
+          "    <section>",
+          "      <button",
+          "        onClick={(e) => {",
+          "          e.preventDefault();",
+          "        }}",
+          "      >",
+          "        Save",
+          "      </button>",
+          "      {items.map((item) => {",
+          "        return <div key={item.id}>{item.label}</div>;",
+          "      })}",
+          "    </section>",
+          "  );",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ]);
+
+    const returnBranch = graph.nodes.find(
+      (node) => node.kind === "Branch"
+        && (node.metadata?.branchType as string | undefined) === "return"
+        && node.startLine === 2,
+    );
+    expect(returnBranch).toBeTruthy();
+
+    const callbackFunctions = graph.nodes.filter((node) =>
+      node.kind === "Function"
+      && node.qualifiedName.includes(".deep.")
+      && ((node.metadata?.wrappedBy as string | undefined) === "map" || node.name === "anonymous"));
+    expect(callbackFunctions.length).toBeGreaterThanOrEqual(2);
+
+    for (const callbackFn of callbackFunctions) {
+      expect(
+        graph.edges.some(
+          (edge) =>
+            edge.kind === "CALLS"
+            && edge.source === returnBranch!.id
+            && edge.target === callbackFn.id
+            && edge.metadata?.jsxReturnAttachment === true,
+        ),
+      ).toBe(true);
+    }
+  });
+
   it("captures RENDERS edges for self-closing JSX tags", async () => {
     const analyzer = new TsAnalyzer();
     const graph = await analyzer.analyze("repo", "snap", "ref", [

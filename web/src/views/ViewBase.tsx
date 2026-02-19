@@ -657,6 +657,9 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
                 <p className="dimText">
                   The graph UI showed a long stall ({lastUiLagMs}ms). We can reduce rendering load progressively.
                 </p>
+                <p className="performanceGuardEscHint">
+                  <strong>ESC to dismiss this modal</strong>
+                </p>
 
                 {viewType === "logic" && store.showCalls && (
                   <button type="button" className="performanceGuardPrimaryBtn" onClick={handleDisableCallsForPerformance}>

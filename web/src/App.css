@@ -222,6 +222,12 @@
   gap: 10px;
 }
 
+.performanceGuardEscHint {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
 .performanceGuardActionBtn {
   width: fit-content;
   padding: 0 10px;

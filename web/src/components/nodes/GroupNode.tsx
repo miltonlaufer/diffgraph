@@ -1,10 +1,84 @@
 import { Handle, Position, useViewport } from "@xyflow/react";
 import { memo, useMemo, useState, useCallback } from "react";
+import type { FunctionParameterDiffEntry } from "../../types/graph";
 import AskLlmButton from "./AskLlmButton";
 import { useDebouncedValue } from "../useDebouncedValue";
 import FloatingTooltip from "./FloatingTooltip";
 
 const COMPACT_HEADER_ZOOM_THRESHOLD = 0.4;
+
+const parameterTextColors: Record<FunctionParameterDiffEntry["status"], string> = {
+  removed: "#dc2626",
+  modified: "#ca8a04",
+  added: "#15803d",
+  unchanged: "#111111",
+};
+
+const splitTopLevelParameters = (value: string): string[] => {
+  const parts: string[] = [];
+  let current = "";
+  let inQuote: "'" | "\"" | "`" | null = null;
+  let parenDepth = 0;
+  let braceDepth = 0;
+  let bracketDepth = 0;
+  let angleDepth = 0;
+
+  for (let idx = 0; idx < value.length; idx += 1) {
+    const ch = value[idx];
+    const prev = idx > 0 ? value[idx - 1] : "";
+    if (inQuote) {
+      current += ch;
+      if (ch === inQuote && prev !== "\\") {
+        inQuote = null;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === "\"" || ch === "`") {
+      inQuote = ch as "'" | "\"" | "`";
+      current += ch;
+      continue;
+    }
+    if (ch === "(") parenDepth += 1;
+    if (ch === ")" && parenDepth > 0) parenDepth -= 1;
+    if (ch === "{") braceDepth += 1;
+    if (ch === "}" && braceDepth > 0) braceDepth -= 1;
+    if (ch === "[") bracketDepth += 1;
+    if (ch === "]" && bracketDepth > 0) bracketDepth -= 1;
+    if (ch === "<") angleDepth += 1;
+    if (ch === ">" && angleDepth > 0) angleDepth -= 1;
+    if (ch === "," && parenDepth === 0 && braceDepth === 0 && bracketDepth === 0 && angleDepth === 0) {
+      const token = current.trim();
+      if (token.length > 0) parts.push(token);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+
+  const tail = current.trim();
+  if (tail.length > 0) parts.push(tail);
+  return parts;
+};
+
+const fallbackParameterTokens = (paramsText: string): FunctionParameterDiffEntry[] => {
+  const trimmed = paramsText.trim();
+  if (trimmed.length === 0) return [];
+  const body = trimmed.startsWith("(") && trimmed.endsWith(")")
+    ? trimmed.slice(1, -1).trim()
+    : trimmed;
+  if (body.length === 0) return [];
+  return splitTopLevelParameters(body).map((text) => ({ text, status: "unchanged" }));
+};
+
+const fallbackDependencyTokens = (dependenciesText: string): FunctionParameterDiffEntry[] => {
+  const trimmed = dependenciesText.trim();
+  if (trimmed.length === 0 || trimmed === "[]") return [];
+  const body = trimmed.startsWith("[") && trimmed.endsWith("]")
+    ? trimmed.slice(1, -1).trim()
+    : trimmed;
+  if (body.length === 0) return [];
+  return splitTopLevelParameters(body).map((text) => ({ text, status: "unchanged" }));
+};
 
 interface GroupNodeData {
   label: string;
@@ -18,6 +92,9 @@ interface GroupNodeData {
   fileName?: string;
   className?: string;
   functionParams?: string;
+  functionParamDiff?: FunctionParameterDiffEntry[];
+  hookDependencies?: string;
+  hookDependencyDiff?: FunctionParameterDiffEntry[];
   returnType?: string;
   documentation?: string;
   askLlmNodeId?: string;
@@ -34,6 +111,8 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
   const [hovered, setHovered] = useState(false);
   const [hoveredActions, setHoveredActions] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [stripTooltipPos, setStripTooltipPos] = useState({ x: 0, y: 0 });
+  const [stripTooltipText, setStripTooltipText] = useState("");
   const tooltipVisible = useDebouncedValue(hovered, 500);
   const {
     askLlmNodeId,
@@ -67,9 +146,10 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
         || (data.className ?? "").trim()
         || (data.documentation ?? "").trim()
         || (data.functionParams ?? "").trim()
+        || (data.hookDependencies ?? "").trim()
         || (data.returnType ?? "").trim(),
       ),
-    [data.className, data.documentation, data.fileName, data.filePath, data.functionName, data.functionParams, data.returnType],
+    [data.className, data.documentation, data.fileName, data.filePath, data.functionName, data.functionParams, data.hookDependencies, data.returnType],
   );
   const functionNameRaw = useMemo(
     () => (data.functionName ?? "").trim(),
@@ -102,9 +182,51 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
     () => paramsDisplay.length > 0,
     [paramsDisplay],
   );
+  const parameterTokens = useMemo(() => {
+    const rawDiff = data.functionParamDiff ?? [];
+    const cleanedDiff = rawDiff
+      .map((entry) => ({
+        text: (entry.text ?? "").trim(),
+        status: entry.status,
+      }))
+      .filter((entry) => entry.text.length > 0);
+    if (cleanedDiff.length > 0) return cleanedDiff;
+    return fallbackParameterTokens(paramsDisplay);
+  }, [data.functionParamDiff, paramsDisplay]);
+  const dependenciesRaw = useMemo(
+    () => (data.hookDependencies ?? "").trim(),
+    [data.hookDependencies],
+  );
+  const dependencyTokens = useMemo(() => {
+    const rawDiff = data.hookDependencyDiff ?? [];
+    const cleanedDiff = rawDiff
+      .map((entry) => ({
+        text: (entry.text ?? "").trim(),
+        status: entry.status,
+      }))
+      .filter((entry) => entry.text.length > 0);
+    if (cleanedDiff.length > 0) return cleanedDiff;
+    return fallbackDependencyTokens(dependenciesRaw);
+  }, [data.hookDependencyDiff, dependenciesRaw]);
   const useCompactHeader = useMemo(
     () => zoom <= COMPACT_HEADER_ZOOM_THRESHOLD,
     [zoom],
+  );
+  const showParameterStrip = useMemo(
+    () => parameterTokens.length > 0,
+    [parameterTokens.length],
+  );
+  const showDependencyStrip = useMemo(
+    () => dependencyTokens.length > 0 || dependenciesRaw === "[]",
+    [dependenciesRaw, dependencyTokens.length],
+  );
+  const parameterStripText = useMemo(
+    () => parameterTokens.map((token) => token.text).join(", "),
+    [parameterTokens],
+  );
+  const dependencyStripText = useMemo(
+    () => `Deps: ${dependencyTokens.length === 0 ? "none" : dependencyTokens.map((token) => token.text).join(", ")}`,
+    [dependencyTokens],
   );
   const headerTitle = useMemo(
     () => (useCompactHeader && functionNameDisplay ? functionNameDisplay : data.label),
@@ -188,6 +310,17 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
   const onNodeLeave = useCallback(() => {
     setHovered(false);
     setHoveredActions(false);
+    setStripTooltipText("");
+  }, []);
+  const onStripEnter = useCallback((event: React.MouseEvent<HTMLDivElement>, text: string) => {
+    setStripTooltipPos({ x: event.clientX, y: event.clientY });
+    setStripTooltipText(text);
+  }, []);
+  const onStripMove = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    setStripTooltipPos({ x: event.clientX, y: event.clientY });
+  }, []);
+  const onStripLeave = useCallback(() => {
+    setStripTooltipText("");
   }, []);
   const handleActionsHoverChange = useCallback((isHovered: boolean) => {
     setHoveredActions(isHovered);
@@ -211,6 +344,63 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
   const hasAskLlm = Boolean(askLlmNodeId && onAskLlmForNode);
   const hasGraphLogicTree = Boolean(askLlmNodeId && onShowGraphLogicTreeForNode);
   const hasCodeLogicTree = Boolean(askLlmNodeId && onShowCodeLogicTreeForNode);
+  const parameterStripStyle = useMemo(
+    () => ({
+      background: "#bbbbbb",
+      color: "#111111",
+      padding: useCompactHeader ? "0 8px" : "0 10px",
+      borderTop: "1px solid rgba(15, 23, 42, 0.25)",
+      display: "flex",
+      alignItems: "center",
+      minHeight: useCompactHeader ? 26 : 30,
+      overflow: "hidden",
+    }),
+    [useCompactHeader],
+  );
+  const parameterTextRowStyle = useMemo(
+    () => ({
+      width: "100%",
+      fontSize: 12,
+      lineHeight: 1.1,
+      fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace",
+      whiteSpace: "nowrap" as const,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+    }),
+    [],
+  );
+  const parameterTokenStyle = useMemo(
+    () => ({
+      fontWeight: 600,
+    }),
+    [],
+  );
+  const dependencyLabelStyle = useMemo(
+    () => ({
+      fontWeight: 700,
+    }),
+    [],
+  );
+  const dependencyStripStyle = useMemo(
+    () => ({
+      position: "absolute" as const,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: "#bbbbbb",
+      color: "#111111",
+      padding: useCompactHeader ? "0 8px" : "0 10px",
+      borderTop: "1px solid rgba(15, 23, 42, 0.25)",
+      borderRadius: "0 0 8px 8px",
+      display: "flex",
+      alignItems: "center",
+      minHeight: useCompactHeader ? 26 : 30,
+      overflow: "hidden",
+      zIndex: 2,
+      pointerEvents: "auto" as const,
+    }),
+    [useCompactHeader],
+  );
 
   return (
     <div style={style} onMouseLeave={onNodeLeave}>
@@ -234,7 +424,67 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
         <div style={titleStyle}>{headerTitle}</div>
         {!useCompactHeader && headerMeta && <div style={metaStyle}>{headerMeta}</div>}
       </div>
-      {tooltipVisible && hasFunctionDetails && (
+      {showParameterStrip && (
+        <div
+          style={parameterStripStyle}
+          onMouseEnter={(event) => onStripEnter(event, parameterStripText)}
+          onMouseMove={onStripMove}
+          onMouseLeave={onStripLeave}
+        >
+          <div style={parameterTextRowStyle}>
+            {parameterTokens.map((token, index) => (
+              <span key={`${token.status}:${token.text}:${index}`}>
+                <span
+                  style={{
+                    ...parameterTokenStyle,
+                    color: parameterTextColors[token.status],
+                  }}
+                >
+                  {token.text}
+                </span>
+                {index < parameterTokens.length - 1 && <span>, </span>}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {showDependencyStrip && (
+        <div
+          style={dependencyStripStyle}
+          onMouseEnter={(event) => onStripEnter(event, dependencyStripText)}
+          onMouseMove={onStripMove}
+          onMouseLeave={onStripLeave}
+        >
+          <div style={parameterTextRowStyle}>
+            <span style={dependencyLabelStyle}>Deps: </span>
+            {dependencyTokens.length === 0
+              ? (
+                <span
+                  style={{
+                    ...parameterTokenStyle,
+                    color: parameterTextColors.unchanged,
+                  }}
+                >
+                  none
+                </span>
+              )
+              : dependencyTokens.map((token, index) => (
+                <span key={`${token.status}:${token.text}:${index}`}>
+                  <span
+                    style={{
+                      ...parameterTokenStyle,
+                      color: parameterTextColors[token.status],
+                    }}
+                  >
+                    {token.text}
+                  </span>
+                  {index < dependencyTokens.length - 1 && <span>, </span>}
+                </span>
+              ))}
+          </div>
+        </div>
+      )}
+      {tooltipVisible && hasFunctionDetails && stripTooltipText.length === 0 && (
         <FloatingTooltip
           visible={tooltipVisible}
           anchor={{ type: "cursor", x: tooltipPos.x, y: tooltipPos.y }}
@@ -264,6 +514,15 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
               <div>{data.documentation}</div>
             </div>
           )}
+        </FloatingTooltip>
+      )}
+      {stripTooltipText.length > 0 && (
+        <FloatingTooltip
+          visible={stripTooltipText.length > 0}
+          anchor={{ type: "cursor", x: stripTooltipPos.x, y: stripTooltipPos.y }}
+          style={tooltipStyle}
+        >
+          <div>{stripTooltipText}</div>
         </FloatingTooltip>
       )}
     </div>

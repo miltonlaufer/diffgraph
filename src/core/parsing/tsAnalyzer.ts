@@ -134,6 +134,23 @@ const collectJsxTagNames = (node: Node): string[] => {
   return tags;
 };
 
+const findEnclosingJsxReturnStatement = (node: Node): Node | null => {
+  let current: Node | undefined = node;
+  while (current) {
+    const parent = current.getParent();
+    if (!parent) return null;
+    if (Node.isReturnStatement(parent)) {
+      const expr = parent.getExpression();
+      if (expr && collectJsxTagNames(expr).length > 0) {
+        return parent;
+      }
+      return null;
+    }
+    current = parent;
+  }
+  return null;
+};
+
 const callBranchTypeFromExpression = (expr: Node): "then" | "catch" | "finally" | "call" | null => {
   const callee = calleeNameFromExpression(expr);
   if (!callee) return null;
@@ -697,6 +714,34 @@ export class TsAnalyzer {
         snapshotId,
         ref,
       });
+
+      const enclosingJsxReturn = findEnclosingJsxReturnStatement(node);
+      if (enclosingJsxReturn) {
+        const jsxReturnLine = enclosingJsxReturn.getStartLineNumber();
+        const parentReturnBranch = nodes.find((existing) =>
+          existing.kind === "Branch"
+          && existing.filePath === fnNode.filePath
+          && existing.startLine === jsxReturnLine
+          && (existing.metadata?.branchType as string | undefined) === "return"
+          && edges.some((edge) =>
+            edge.kind === "DECLARES"
+            && edge.source === parentNodeId
+            && edge.target === existing.id)
+        );
+
+        if (parentReturnBranch) {
+          edges.push({
+            id: stableHash(`${snapshotId}:jsx-return:${parentReturnBranch.id}:${fnNode.id}`),
+            source: parentReturnBranch.id,
+            target: fnNode.id,
+            kind: "CALLS",
+            filePath: sourceFile.getFilePath(),
+            metadata: { jsxReturnAttachment: true },
+            snapshotId,
+            ref,
+          });
+        }
+      }
       this.collectControlFlow(node, fnNode, snapshotId, ref, nodes, edges);
     });
   }
