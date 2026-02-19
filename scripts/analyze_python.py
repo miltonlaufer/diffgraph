@@ -388,6 +388,15 @@ class Collector(ast.NodeVisitor):
             branch_id = self._add_branch(
                 owner=owner, kind="for", node=stmt, snippet=snippet
             )
+            body_entry, _, _ = self._collect_block(owner, stmt.body)
+            if body_entry is not None:
+                self._add_flow(branch_id, body_entry, "true")
+
+            if stmt.orelse:
+                else_entry, _, _ = self._collect_block(owner, stmt.orelse)
+                if else_entry is not None:
+                    self._add_flow(branch_id, else_entry, "next")
+
             return branch_id, [(branch_id, "next")], True
 
         if isinstance(stmt, ast.While):
@@ -395,6 +404,15 @@ class Collector(ast.NodeVisitor):
             branch_id = self._add_branch(
                 owner=owner, kind="while", node=stmt, snippet=snippet
             )
+            body_entry, _, _ = self._collect_block(owner, stmt.body)
+            if body_entry is not None:
+                self._add_flow(branch_id, body_entry, "true")
+
+            if stmt.orelse:
+                else_entry, _, _ = self._collect_block(owner, stmt.orelse)
+                if else_entry is not None:
+                    self._add_flow(branch_id, else_entry, "next")
+
             return branch_id, [(branch_id, "next")], True
 
         if isinstance(stmt, ast.Try):

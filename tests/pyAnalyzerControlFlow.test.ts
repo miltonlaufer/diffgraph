@@ -142,6 +142,57 @@ describe("PyAnalyzer control flow", () => {
     expect(hasEdge(try2!, ret7!, "next")).toBe(true);
   });
 
+  it("keeps for-loop internal try/if flow instead of collapsing the loop body", async () => {
+    const analyzer = new PyAnalyzer();
+    const graph = await analyzer.analyze("repo", "snap", "ref", [
+      {
+        path: "sample.py",
+        content: [
+          "def detect_with_beat_this(attempts):",
+          "    for device in attempts:",
+          "        try:",
+          "            if device:",
+          "                return 1",
+          "        except Exception:",
+          "            continue",
+          "    return 0",
+          "",
+        ].join("\n"),
+      },
+    ]);
+
+    const branchNodes = graph.nodes.filter((node) => node.kind === "Branch");
+    const byStart = new Map<number, string>();
+    for (const node of branchNodes) {
+      if (node.startLine) byStart.set(node.startLine, node.id);
+    }
+
+    const for2 = byStart.get(2);
+    const try3 = byStart.get(3);
+    const if4 = byStart.get(4);
+    const ret5 = byStart.get(5);
+    const ret8 = byStart.get(8);
+
+    expect(for2).toBeTruthy();
+    expect(try3).toBeTruthy();
+    expect(if4).toBeTruthy();
+    expect(ret5).toBeTruthy();
+    expect(ret8).toBeTruthy();
+
+    const flowEdges = graph.edges.filter((edge) => edge.kind === "CALLS");
+    const hasEdge = (source: string, target: string, flowType: "true" | "false" | "next"): boolean =>
+      flowEdges.some(
+        (edge) => edge.source === source
+          && edge.target === target
+          && (edge.metadata?.flowType as string | undefined) === flowType,
+      );
+
+    expect(hasEdge(for2!, try3!, "true")).toBe(true);
+    expect(hasEdge(try3!, if4!, "next")).toBe(true);
+    expect(hasEdge(if4!, ret5!, "true")).toBe(true);
+    expect(hasEdge(for2!, ret8!, "next")).toBe(true);
+  });
+
   it("keeps with-branch signature stable across formatting-only edits inside its body", async () => {
     const analyzer = new PyAnalyzer();
     const oldGraph = await analyzer.analyze("repo", "old", "ref", [
