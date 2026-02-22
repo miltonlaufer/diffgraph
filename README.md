@@ -1,5 +1,8 @@
 # ~Diff~Graph (AKA "Tell me WTF the LLM did to my code")
 
+[![npm version](https://img.shields.io/npm/v/diffgraph.svg)](https://www.npmjs.com/package/diffgraph)
+[![license](https://img.shields.io/npm/l/diffgraph.svg)](https://github.com/miltonlaufer/diffgraph/blob/main/LICENSE)
+
 **Developed with partial support of [neural frames](https://www.neuralframes.com)**
 
 DiffGraph is a CLI + browser app that compares code changes as **interactive graphs** instead of only line-by-line diffs.
@@ -13,15 +16,30 @@ It supports:
 
 ## 60-Second Quick Start
 
-Install once in this project:
+### Install from npm (recommended)
 
 ```bash
+npm install -g diffgraph
+```
+
+Then go to the repo you want to inspect and run:
+
+```bash
+cd /path/to/your-repo
+diffgraph
+```
+
+### Install from source
+
+```bash
+git clone https://github.com/miltonlaufer/diffgraph.git
+cd diffgraph
 npm install
 npm run build
 npm link
 ```
 
-Then go to the repo you want to inspect and run this:
+Then go to the repo you want to inspect and run:
 
 ```bash
 cd /path/to/your-repo
@@ -89,8 +107,16 @@ What happens:
 
 ## Installation
 
+### From npm
+
 ```bash
-git clone <your-repo-url>
+npm install -g diffgraph
+```
+
+### From source
+
+```bash
+git clone https://github.com/miltonlaufer/diffgraph.git
 cd diffgraph
 npm install
 ```

@@ -13,20 +13,42 @@
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit --project tsconfig.json && npm --prefix web run type-check",
     "test": "vitest run && npm --prefix web run test",
-    "lint-staged": "eslint src --ext .ts && npm --prefix web run lint"
+    "lint-staged": "eslint src --ext .ts && npm --prefix web run lint",
+    "prepublishOnly": "npm run build"
   },
   "workspaces": [
     "web"
+  ],
+  "files": [
+    "dist/src/",
+    "web/dist/",
+    "scripts/",
+    "LICENSE",
+    "README.md"
   ],
   "keywords": [
     "diff",
     "graph",
     "neo4j",
-    "code-analysis"
+    "code-analysis",
+    "code-review",
+    "ast",
+    "visualization",
+    "git"
   ],
-  "author": "",
+  "author": "Milton Läufer",
   "license": "MIT",
-  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/miltonlaufer/diffgraph.git"
+  },
+  "homepage": "https://github.com/miltonlaufer/diffgraph",
+  "bugs": {
+    "url": "https://github.com/miltonlaufer/diffgraph/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "commander": "^14.0.3",
     "express": "^5.1.0",
