@@ -488,3 +488,7 @@ npm --prefix web run dev
 - No browser opening: run without `--no-open`, or copy the printed URL manually.
 - Port busy: the server tries up to 20 consecutive ports starting from 4177 (or `--port N`).
 - Slow UI on large repos: keep Changes Only enabled (default). The CLI warns when the graph exceeds 2000 nodes.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
