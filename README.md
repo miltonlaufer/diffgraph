@@ -3,7 +3,9 @@
 [![npm version](https://img.shields.io/npm/v/diffgraph.svg)](https://www.npmjs.com/package/diffgraph)
 [![license](https://img.shields.io/npm/l/diffgraph.svg)](https://github.com/miltonlaufer/diffgraph/blob/main/LICENSE)
 
-**Package:** [diffgraph on npm](https://www.npmjs.com/package/diffgraph). Also published to GitHub Packages (appears in the repo sidebar after you [create a release](https://github.com/miltonlaufer/diffgraph/releases)). **Developed with partial support of [neural frames](https://www.neuralframes.com)**
+**Package:** [diffgraph on npm](https://www.npmjs.com/package/diffgraph). 
+
+**Developed with partial support of [neural frames](https://www.neuralframes.com)**
 
 DiffGraph is a CLI + browser app that compares code changes as **interactive graphs** instead of only line-by-line diffs.
 It is optimized for **large diffs** where plain patch views become hard to reason about quickly.
