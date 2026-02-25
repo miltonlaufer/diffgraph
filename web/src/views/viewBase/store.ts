@@ -54,6 +54,14 @@ export class ViewBaseStore {
   error = "";
   interactionBusy = false;
 
+  get hasSelectedNode(): boolean {
+    return this.selectedNodeId.length > 0;
+  }
+
+  get hasSearchActive(): boolean {
+    return this.codeSearchActive || this.oldGraphSearchActive || this.newGraphSearchActive;
+  }
+
   constructor() {
     makeAutoObservable(this, {
       oldGraph: observable.ref,
