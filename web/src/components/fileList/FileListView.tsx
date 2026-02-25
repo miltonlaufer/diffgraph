@@ -1,4 +1,5 @@
 import type { FileDiffEntry } from "../../types/graph";
+import { FileListGrid } from "./FileListGrid";
 
 interface FileListViewProps {
   files: FileDiffEntry[];
@@ -31,43 +32,12 @@ export const FileListView = ({
       )}
     </button>
     {!collapsed && (
-      <div className="fileListGrid">
-        {files.map((entry) => (
-          <button
-            key={entry.path}
-            type="button"
-            onClick={() => onSelectFile(entry.path)}
-            className={entry.path === selectedFilePath ? "filePill filePillActive" : "filePill"}
-          >
-            <span className="filePillPath">
-              {entry.changeType === "renamed" && entry.oldPath && entry.newPath
-                ? `${entry.oldPath} -> ${entry.newPath}`
-                : entry.path}
-            </span>
-            <span
-              className="riskBadge"
-              title={`Risk score R${entry.riskScore ?? 0}: higher means this file is more likely to be impactful or risky.`}
-              aria-label={`Risk score ${entry.riskScore ?? 0}`}
-              style={{
-                borderColor:
-                  (entry.riskLevel === "high" || (entry.riskScore ?? 0) >= topRisk * 0.75)
-                    ? "#fca5a5"
-                    : entry.riskLevel === "medium"
-                      ? "#facc15"
-                      : "#86efac",
-                color:
-                  entry.riskLevel === "high"
-                    ? "#fecaca"
-                    : entry.riskLevel === "medium"
-                      ? "#fde68a"
-                      : "#bbf7d0",
-              }}
-            >
-              R{entry.riskScore ?? 0}
-            </span>
-          </button>
-        ))}
-      </div>
+      <FileListGrid
+        files={files}
+        selectedFilePath={selectedFilePath}
+        topRisk={topRisk}
+        onSelectFile={onSelectFile}
+      />
     )}
   </section>
 );

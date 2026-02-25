@@ -131,15 +131,15 @@ export const CodeDiffSingleFileView = ({
             ) : (
               <table className="diffTable">
                 <tbody>
-                  {visibleRows.map((row, i) => (
+                  {visibleRows.map((row) => (
                     row.kind === "gap" ? (
-                      <tr key={`old-gap-${row.key}-${i}`}>
+                      <tr key={`old-gap-${row.key}`}>
                         <td className="lineNum" style={gapRowCellStyle}>{GAP_MARKER_TEXT}</td>
                         <td className="lineCode" style={gapRowCellStyle}>{GAP_MARKER_TEXT}</td>
                       </tr>
                     ) : (
                       <SimpleRow
-                        key={`old-${i}`}
+                        key={`old-${row.lineNum}`}
                         side="old"
                         text={row.text}
                         lineNum={row.lineNum}
@@ -166,15 +166,15 @@ export const CodeDiffSingleFileView = ({
             ) : (
               <table className="diffTable">
                 <tbody>
-                  {visibleRows.map((row, i) => (
+                  {visibleRows.map((row) => (
                     row.kind === "gap" ? (
-                      <tr key={`new-gap-${row.key}-${i}`}>
+                      <tr key={`new-gap-${row.key}`}>
                         <td className="lineNum" style={gapRowCellStyle}>{GAP_MARKER_TEXT}</td>
                         <td className="lineCode" style={gapRowCellStyle}>{GAP_MARKER_TEXT}</td>
                       </tr>
                     ) : (
                       <SimpleRow
-                        key={`new-${i}`}
+                        key={`new-${row.lineNum}`}
                         side="new"
                         text={row.text}
                         lineNum={row.lineNum}

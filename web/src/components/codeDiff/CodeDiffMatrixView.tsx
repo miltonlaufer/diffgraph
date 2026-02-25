@@ -19,6 +19,11 @@ const isGapRow = (row: DiffMatrixRow): boolean =>
   && row.old.text === GAP_MARKER_TEXT
   && row.new.text === GAP_MARKER_TEXT;
 
+const rowKey = (row: DiffMatrixRow, i: number): string =>
+  isGapRow(row)
+    ? `gap-${i}`
+    : `row-${row.old.lineNumber ?? "x"}-${row.new.lineNumber ?? "x"}`;
+
 interface CodeDiffMatrixViewProps {
   matrixRows: DiffMatrixRow[];
   language: string;
@@ -56,7 +61,7 @@ export const CodeDiffMatrixView = ({
               const gapRow = isGapRow(row);
               return (
                 <tr
-                  key={`old-row-${i}`}
+                  key={rowKey(row, i)}
                   data-old-line={row.old.lineNumber ?? undefined}
                   data-new-line={row.new.lineNumber ?? undefined}
                   style={{ cursor: row.old.lineNumber && !gapRow ? "pointer" : "default" }}
@@ -100,7 +105,7 @@ export const CodeDiffMatrixView = ({
               const gapRow = isGapRow(row);
               return (
                 <tr
-                  key={`new-row-${i}`}
+                  key={rowKey(row, i)}
                   data-old-line={row.old.lineNumber ?? undefined}
                   data-new-line={row.new.lineNumber ?? undefined}
                   style={{ cursor: row.new.lineNumber && !gapRow ? "pointer" : "default" }}

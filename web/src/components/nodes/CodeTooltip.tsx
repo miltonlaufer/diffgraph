@@ -96,6 +96,24 @@ const HighlightedLine = memo(({ code, language }: { code: string; language: stri
   </SyntaxHighlighter>
 ));
 
+interface CodeTooltipLinesProps {
+  lines: CodeLine[];
+  language: string;
+}
+
+const CodeTooltipLines = memo(({ lines, language }: CodeTooltipLinesProps) => (
+  <>
+    {lines.map((line) => (
+      <div key={line.num} style={lineContainerStyle(line.highlight)}>
+        <span style={numStyle}>{line.num}</span>
+        <HighlightedLine code={line.text} language={language} />
+      </div>
+    ))}
+  </>
+));
+
+CodeTooltipLines.displayName = "CodeTooltipLines";
+
 const CodeTooltip = ({ visible, codeContext, language, functionName, symbolName, filePath }: CodeTooltipProps) => {
   const anchorRef = useRef<HTMLSpanElement | null>(null);
 
@@ -154,12 +172,7 @@ const CodeTooltip = ({ visible, codeContext, language, functionName, symbolName,
             )}
           </div>
         )}
-        {codeContext && codeContext.lines.map((line) => (
-          <div key={line.num} style={lineContainerStyle(line.highlight)}>
-            <span style={numStyle}>{line.num}</span>
-            <HighlightedLine code={line.text} language={lang} />
-          </div>
-        ))}
+        {codeContext && <CodeTooltipLines lines={codeContext.lines} language={lang} />}
       </>
     );
   };
