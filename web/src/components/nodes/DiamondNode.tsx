@@ -15,6 +15,7 @@ interface DiamondNodeData {
   bgColor: string;
   textColor: string;
   selected: boolean;
+  hideCodeTooltip?: boolean;
   codeContext?: unknown;
   language?: string;
   functionName?: string;
@@ -156,7 +157,7 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
         style={{ top: -46, left: "calc(100% - 10px)", transform: "rotate(-45deg)" }}
       />
       <CodeTooltip
-        visible={tooltipVisible}
+        visible={tooltipVisible && !data.hideCodeTooltip}
         codeContext={data.codeContext as string | undefined}
         language={data.language}
         functionName={data.functionName}

@@ -203,6 +203,64 @@ export const computeDiffStats = (
 export const computeChangedNodeCount = (graph: ViewGraph): number =>
   graph.nodes.filter((node) => node.diffStatus !== "unchanged").length;
 
+const flowTypePriority = (flowType: "true" | "false" | "next" | undefined): number => {
+  if (flowType === "next") return 0;
+  if (flowType === "true") return 1;
+  if (flowType === "false") return 2;
+  return 3;
+};
+
+export const resolveAdjacentLogicTreeNodeId = (
+  graph: ViewGraph,
+  selectedNodeId: string,
+  direction: "next" | "prev",
+): string | null => {
+  if (!selectedNodeId) return null;
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  if (!nodeById.has(selectedNodeId)) return null;
+
+  const candidateByNodeId = new Map<string, ViewGraph["edges"][number]>();
+  for (const edge of graph.edges) {
+    if (edge.relation !== "flow") continue;
+    const candidateNodeId = direction === "next"
+      ? (edge.source === selectedNodeId ? edge.target : "")
+      : (edge.target === selectedNodeId ? edge.source : "");
+    if (!candidateNodeId || candidateNodeId === selectedNodeId) continue;
+    const candidateNode = nodeById.get(candidateNodeId);
+    if (!candidateNode) continue;
+    const existing = candidateByNodeId.get(candidateNodeId);
+    if (!existing) {
+      candidateByNodeId.set(candidateNodeId, edge);
+      continue;
+    }
+    const existingPriority = flowTypePriority(existing.flowType);
+    const nextPriority = flowTypePriority(edge.flowType);
+    if (nextPriority < existingPriority) {
+      candidateByNodeId.set(candidateNodeId, edge);
+    }
+  }
+
+  if (candidateByNodeId.size === 0) return null;
+
+  const candidates = [...candidateByNodeId.entries()]
+    .map(([nodeId, edge]) => ({ nodeId, edge, node: nodeById.get(nodeId) }))
+    .filter((entry): entry is { nodeId: string; edge: ViewGraph["edges"][number]; node: ViewGraph["nodes"][number] } => entry.node !== undefined);
+
+  if (candidates.length === 0) return null;
+
+  const leafCandidates = candidates.filter((entry) => entry.node.kind !== "group");
+  const sortTarget = leafCandidates.length > 0 ? leafCandidates : candidates;
+  sortTarget.sort((a, b) => {
+    const flowPriorityDelta = flowTypePriority(a.edge.flowType) - flowTypePriority(b.edge.flowType);
+    if (flowPriorityDelta !== 0) return flowPriorityDelta;
+    const lineDelta = (a.node.startLine ?? Number.MAX_SAFE_INTEGER) - (b.node.startLine ?? Number.MAX_SAFE_INTEGER);
+    if (lineDelta !== 0) return lineDelta;
+    return a.nodeId.localeCompare(b.nodeId);
+  });
+
+  return sortTarget[0]?.nodeId ?? null;
+};
+
 export const computeNewAlignmentOffset = (
   viewType: ViewType,
   oldTopAnchors: Record<string, TopLevelAnchor>,

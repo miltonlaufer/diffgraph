@@ -14,6 +14,7 @@ interface KnowledgeNodeData {
   bgColor: string;
   textColor: string;
   selected: boolean;
+  hideCodeTooltip?: boolean;
   codeContext?: unknown;
   language?: string;
   askLlmNodeId?: string;
@@ -99,7 +100,7 @@ const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
       <CodeTooltip
-        visible={tooltipVisible}
+        visible={tooltipVisible && !data.hideCodeTooltip}
         codeContext={data.codeContext as string | undefined}
         language={data.language}
         functionName={data.functionName}

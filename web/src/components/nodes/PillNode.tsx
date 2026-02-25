@@ -15,6 +15,7 @@ interface PillNodeData {
   bgColor: string;
   textColor: string;
   selected: boolean;
+  hideCodeTooltip?: boolean;
   codeContext?: unknown;
   language?: string;
   functionName?: string;
@@ -103,7 +104,7 @@ const PillNode = ({ data }: { data: PillNodeData }) => {
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
       <CodeTooltip
-        visible={tooltipVisible}
+        visible={tooltipVisible && !data.hideCodeTooltip}
         codeContext={data.codeContext as string | undefined}
         language={data.language}
         functionName={data.functionName}

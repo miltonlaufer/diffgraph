@@ -38,6 +38,7 @@ import {
   computeAlignedTopAnchors,
   computeNewAlignmentOffset,
   normalizePath,
+  resolveAdjacentLogicTreeNodeId,
 } from "./viewBase/selectors";
 
 interface ViewBaseProps {
@@ -555,10 +556,53 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     goToGraphDiff(store.graphDiffIdx + 1);
   }, [goToGraphDiff, store.graphDiffIdx]);
 
+  const selectAdjacentLogicNode = useCallback((direction: "next" | "prev"): boolean => {
+    if (viewType !== "logic") return false;
+    const selectedNodeId = store.selectedNodeId;
+    if (!selectedNodeId) return false;
+
+    const resolveTarget = (side: "old" | "new"): { nodeId: string; side: "old" | "new" } | null => {
+      const graph = side === "old" ? displayOldGraph : displayNewGraph;
+      const adjacentNodeId = resolveAdjacentLogicTreeNodeId(graph, selectedNodeId, direction);
+      if (!adjacentNodeId) return null;
+      return { nodeId: adjacentNodeId, side };
+    };
+
+    const preferredSide = store.focusSourceSide;
+    const fallbackSide: "old" | "new" = preferredSide === "old" ? "new" : "old";
+    const target = resolveTarget(preferredSide) ?? resolveTarget(fallbackSide);
+    if (!target) return false;
+
+    commandSelectNode(commandContext, target.nodeId, target.side);
+    return true;
+  }, [
+    commandContext,
+    displayNewGraph,
+    displayOldGraph,
+    store.focusSourceSide,
+    store.selectedNodeId,
+    viewType,
+  ]);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.altKey || event.ctrlKey || event.metaKey) return;
-      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      const isVerticalArrow = event.key === "ArrowDown" || event.key === "ArrowUp";
+      const isHorizontalArrow = event.key === "ArrowLeft" || event.key === "ArrowRight";
+      if (!isVerticalArrow && !isHorizontalArrow) return;
+
+      if (isHorizontalArrow) {
+        const target = event.target;
+        const isEditableTarget = target instanceof HTMLInputElement
+          || target instanceof HTMLTextAreaElement
+          || target instanceof HTMLSelectElement
+          || (target instanceof HTMLElement && target.isContentEditable);
+        if (isEditableTarget) return;
+        const direction: "next" | "prev" = event.key === "ArrowRight" ? "next" : "prev";
+        if (!selectAdjacentLogicNode(direction)) return;
+        event.preventDefault();
+        return;
+      }
 
       const direction: "next" | "prev" = event.key === "ArrowDown" ? "next" : "prev";
       if (store.codeSearchActive) {
@@ -591,6 +635,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     goToNextGraphDiff,
     goToPrevGraphDiff,
     graphDiffTargets.length,
+    selectAdjacentLogicNode,
     store,
     store.codeSearchActive,
     store.newGraphSearchActive,

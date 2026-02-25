@@ -1106,9 +1106,16 @@ export const SplitGraphPanel = observer(({
     };
     if (treeGraph.nodes.length === 0) return;
     const treeLayout = computeLayoutByView(viewType, treeGraph, nodeId, fileContentMap, showCalls);
+    const modalNodes = treeLayout.nodes.map((node) => ({
+      ...node,
+      data: {
+        ...(node.data as Record<string, unknown>),
+        hideCodeTooltip: false,
+      },
+    }));
     setGraphLogicTreeModal({
       openerNodeId: nodeId,
-      nodes: treeLayout.nodes,
+      nodes: modalNodes,
       edges: treeLayout.edges,
     });
   }, [fileContentMap, graph.edges, graph.nodes, logicTreeNodeIdsForNode, showCalls, viewType]);
@@ -1327,6 +1334,7 @@ export const SplitGraphPanel = observer(({
       ...node,
       data: {
         ...(node.data as Record<string, unknown>),
+        hideCodeTooltip: Boolean(focusFilePath),
         askLlmNodeId: node.id,
         onAskLlmForNode: handleAskLlmForNode,
         onAskLlmHrefForNode: handleAskLlmHrefForNode,
@@ -1341,6 +1349,7 @@ export const SplitGraphPanel = observer(({
       handleShowGraphLogicTreeForNode,
       handleShowCodeLogicTreeForNode,
       handleGroupHeaderHoverChange,
+      focusFilePath,
       searchResultNodes.nodes,
     ],
   );

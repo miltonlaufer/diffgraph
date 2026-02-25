@@ -381,6 +381,48 @@
   padding-right: 0;
 }
 
+.logicArrowHints {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.9));
+  font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.logicArrowHintItem {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.logicArrowKey {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #e2e8f0;
+  line-height: 1;
+}
+
+.logicArrowHintLabel {
+  letter-spacing: 0.02em;
+}
+
+.logicArrowHintDivider {
+  width: 1px;
+  height: 18px;
+  background: #1e293b;
+}
+
 .graphDiffNav {
   display: flex;
   align-items: center;
@@ -393,6 +435,11 @@
     padding-right: 0;
     justify-content: flex-start;
     margin-bottom: 8px;
+  }
+
+  .logicArrowHints {
+    width: 100%;
+    justify-content: center;
   }
 }
 
