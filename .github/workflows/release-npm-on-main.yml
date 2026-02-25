@@ -41,14 +41,40 @@ jobs:
           git fetch --tags --force
 
           current_version="$(node -p "require('./package.json').version")"
+          package_name="$(node -p "require('./package.json').name")"
           latest_tag="$(git tag --list 'v*' --sort=-v:refname | head -n 1 || true)"
 
-          if [[ -z "${latest_tag}" ]]; then
-            next_version="${current_version}"
-          else
+          semver_bump_patch() {
+            node -e "const raw = process.argv[1]; const v = raw.split('-')[0]; const [maj, min, patch] = v.split('.').map(Number); if ([maj, min, patch].some(Number.isNaN)) throw new Error('Invalid semver: ' + raw); console.log([maj, min, patch + 1].join('.'));" "$1"
+          }
+
+          semver_gt() {
+            node -e "const parse = (raw) => { const [maj, min, patch] = raw.split('-')[0].split('.').map(Number); if ([maj, min, patch].some(Number.isNaN)) throw new Error('Invalid semver: ' + raw); return [maj, min, patch]; }; const [a1, b1, c1] = parse(process.argv[1]); const [a2, b2, c2] = parse(process.argv[2]); const gt = a1 > a2 || (a1 === a2 && (b1 > b2 || (b1 === b2 && c1 > c2))); process.exit(gt ? 0 : 1);" "$1" "$2"
+          }
+
+          next_version="${current_version}"
+
+          if [[ -n "${latest_tag}" ]]; then
             latest_version="${latest_tag#v}"
-            next_version="$(node -e "const raw = process.argv[1]; const v = raw.split('-')[0]; const [maj, min, patch] = v.split('.').map(Number); if ([maj, min, patch].some(Number.isNaN)) throw new Error('Invalid semver: ' + raw); console.log([maj, min, patch + 1].join('.'));" "${latest_version}")"
+            tag_candidate="$(semver_bump_patch "${latest_version}")"
+            if semver_gt "${tag_candidate}" "${next_version}"; then
+              next_version="${tag_candidate}"
+            fi
           fi
+
+          npm_latest="$(npm view "${package_name}" version 2>/dev/null || true)"
+          if [[ -n "${npm_latest}" ]]; then
+            npm_candidate="$(semver_bump_patch "${npm_latest}")"
+            if semver_gt "${npm_candidate}" "${next_version}"; then
+              next_version="${npm_candidate}"
+            fi
+          fi
+
+          while git rev-parse -q --verify "refs/tags/v${next_version}" >/dev/null 2>&1 || npm view "${package_name}@${next_version}" version >/dev/null 2>&1; do
+            next_version="$(semver_bump_patch "${next_version}")"
+          done
+
+          echo "Resolved ${package_name} release version: ${next_version}"
 
           echo "next=${next_version}" >> "${GITHUB_OUTPUT}"
 
