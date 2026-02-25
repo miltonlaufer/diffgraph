@@ -673,7 +673,7 @@
 .flowContainer {
   width: 100%;
   flex: 1;
-  min-height: 52vh;
+  min-height: 0;
 }
 
 .layoutStatusBanner {
