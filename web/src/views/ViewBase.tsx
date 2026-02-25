@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { observer } from "mobx-react-lite";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { CodeDiffDrawer } from "../components/CodeDiffDrawer";
@@ -53,12 +53,14 @@ interface ViewBaseProps {
 
 export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullRequestDescriptionExcerpt }: ViewBaseProps) => {
   const store = useMemo(() => ViewBaseStore.create({}), []);
-  store.setViewConfig({
-    diffId,
-    viewType,
-    showChangesOnly,
-    pullRequestDescriptionExcerpt: pullRequestDescriptionExcerpt ?? "",
-  });
+  useEffect(() => {
+    store.setViewConfig({
+      diffId,
+      viewType,
+      showChangesOnly,
+      pullRequestDescriptionExcerpt: pullRequestDescriptionExcerpt ?? "",
+    });
+  }, [store, diffId, viewType, showChangesOnly, pullRequestDescriptionExcerpt]);
   const graphSectionRef = useRef<HTMLDivElement>(null);
   const codeDiffSectionRef = useRef<HTMLDivElement>(null);
   const highlightTimerRef = useRef<number | null>(null);

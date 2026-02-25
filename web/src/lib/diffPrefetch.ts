@@ -70,6 +70,7 @@ export const prefetchDiff = (
     })
     .catch(() => {
       prefetchPromises.delete(key);
+      cache.delete(diffId);
     });
 
   prefetchPromises.set(key, promise);
