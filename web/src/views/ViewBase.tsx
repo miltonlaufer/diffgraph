@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { observer, useLocalObservable } from "mobx-react-lite";
+import { observer } from "mobx-react-lite";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { CodeDiffDrawer } from "../components/CodeDiffDrawer";
 import { FileListPanel } from "../components/FileListPanel";
@@ -55,7 +55,13 @@ const UI_LAG_THRESHOLD_MS = 4000;
 const UI_GUARD_COOLDOWN_MS = 12000;
 
 export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullRequestDescriptionExcerpt }: ViewBaseProps) => {
-  const store = useLocalObservable(() => new ViewBaseStore());
+  const store = useMemo(() => ViewBaseStore.create({}), []);
+  store.setViewConfig({
+    diffId,
+    viewType,
+    showChangesOnly,
+    pullRequestDescriptionExcerpt: pullRequestDescriptionExcerpt ?? "",
+  });
   const graphSectionRef = useRef<HTMLDivElement>(null);
   const codeDiffSectionRef = useRef<HTMLDivElement>(null);
   const highlightTimerRef = useRef<number | null>(null);
@@ -71,15 +77,15 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
       oldGraph: store.oldGraph,
       newGraph: store.newGraph,
       selectedFilePath: store.selectedFilePath,
-      showChangesOnly,
-      viewType,
+      showChangesOnly: store.showChangesOnly,
+      viewType: store.viewType as "logic" | "knowledge" | "react",
     }),
     [
-      showChangesOnly,
+      store.showChangesOnly,
       store.newGraph,
       store.oldGraph,
       store.selectedFilePath,
-      viewType,
+      store.viewType,
     ],
   );
 
@@ -95,18 +101,18 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
   const renderNewGraph = graphRenderMode !== "old";
 
   const newAlignmentOffset = useMemo(
-    () => computeNewAlignmentOffset(viewType, store.oldTopAnchors, store.newTopAnchors),
-    [viewType, store.oldTopAnchors, store.newTopAnchors],
+    () => computeNewAlignmentOffset(store.viewType as "logic" | "knowledge" | "react", store.oldTopAnchors, store.newTopAnchors),
+    [store.viewType, store.oldTopAnchors, store.newTopAnchors],
   );
 
   const alignedTopAnchors = useMemo(
-    () => computeAlignedTopAnchors(viewType, store.oldTopAnchors, store.newTopAnchors),
-    [viewType, store.oldTopAnchors, store.newTopAnchors],
+    () => computeAlignedTopAnchors(store.viewType as "logic" | "knowledge" | "react", store.oldTopAnchors, store.newTopAnchors),
+    [store.viewType, store.oldTopAnchors, store.newTopAnchors],
   );
 
   const alignmentBreakpoints = useMemo(
-    () => computeAlignmentBreakpoints(viewType, store.oldNodeAnchors, store.newNodeAnchors),
-    [viewType, store.oldNodeAnchors, store.newNodeAnchors],
+    () => computeAlignmentBreakpoints(store.viewType as "logic" | "knowledge" | "react", store.oldNodeAnchors, store.newNodeAnchors),
+    [store.viewType, store.oldNodeAnchors, store.newNodeAnchors],
   );
 
   const isEmptyView = useMemo(
@@ -199,11 +205,11 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
   );
 
   const handleDisableCallsForPerformance = useCallback(() => {
-    if (viewType === "logic" && store.showCalls) {
+    if (store.viewType === "logic" && store.showCalls) {
       handleShowCallsChange(false);
     }
     setPerformanceModalOpen(false);
-  }, [handleShowCallsChange, store.showCalls, viewType]);
+  }, [handleShowCallsChange, store.showCalls, store.viewType]);
 
   const handleRenderOldGraphToggle = useCallback((nextChecked: boolean) => {
     setGraphRenderMode((prev) => {
@@ -256,7 +262,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     setGraphRenderMode("both");
     setLastUiLagMs(0);
     guardCooldownUntilRef.current = 0;
-  }, [diffId, viewType]);
+  }, [store.diffId, store.viewType]);
 
   useEffect(() => {
     setPerformanceModalOpen(false);
@@ -306,7 +312,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
         return;
       }
 
-      if (performanceGuardLevel === 1 && viewType === "logic" && !store.showCalls) {
+      if (performanceGuardLevel === 1 && store.viewType === "logic" && !store.showCalls) {
         setPerformanceGuardLevel(2);
         setPerformanceModalOpen(true);
         guardCooldownUntilRef.current = nowEpoch + UI_GUARD_COOLDOWN_MS;
@@ -321,7 +327,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
       window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [performanceGuardLevel, store.loading, store.showCalls, viewType]);
+  }, [performanceGuardLevel, store.loading, store.showCalls, store.viewType]);
 
   const handleDiffTargetsChange = useCallback(
     (side: "old" | "new", targets: GraphDiffTarget[]) => {
@@ -372,22 +378,25 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
   const splitGraphRuntime = useMemo<SplitGraphRuntimeContextValue>(() => ({
     state: {
       viewport: store.sharedViewport,
+      viewType: store.viewType as "logic" | "knowledge" | "react",
+      pullRequestDescriptionExcerpt: store.pullRequestDescriptionExcerpt,
+      diffStats,
       selectedNodeId: store.selectedNodeId,
       highlightedNodeId: store.highlightedNodeId,
       focusNodeId: store.focusNodeId,
       focusNodeTick: store.focusNodeTick,
-      focusSourceSide: store.focusSourceSide,
-      graphSearchSide: store.graphSearchSide,
+      focusSourceSide: store.focusSourceSide as "old" | "new",
+      graphSearchSide: store.graphSearchSide as "old" | "new",
       graphSearchQuery: store.graphSearchQuery,
       graphSearchTick: store.graphSearchTick,
-      graphSearchNavSide: store.graphSearchNavSide,
-      graphSearchNavDirection: store.graphSearchNavDirection,
+      graphSearchNavSide: store.graphSearchNavSide as "old" | "new",
+      graphSearchNavDirection: store.graphSearchNavDirection as "next" | "prev",
       graphSearchNavTick: store.graphSearchNavTick,
       focusFilePath: store.selectedFilePath,
       focusFileTick: store.focusFileTick,
       hoveredNodeId: store.hoveredNodeId,
       hoveredNodeMatchKey: store.hoveredNodeMatchKey,
-      hoveredNodeSide: store.hoveredNodeSide,
+      hoveredNodeSide: store.hoveredNodeSide as "old" | "new" | "",
     },
     actions: {
       onInteractionClick: handleInteractionClick,
@@ -414,6 +423,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     handleNodeAnchorsChange,
     handleTopLevelAnchorsChange,
     handleViewportChange,
+    diffStats,
     store.focusFileTick,
     store.focusNodeId,
     store.focusSourceSide,
@@ -428,9 +438,11 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     store.hoveredNodeMatchKey,
     store.hoveredNodeSide,
     store.highlightedNodeId,
+    store.pullRequestDescriptionExcerpt,
     store.selectedFilePath,
     store.selectedNodeId,
     store.sharedViewport,
+    store.viewType,
   ]);
 
   const handleCodeLineClick = useCallback(
@@ -490,15 +502,15 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
       selectedFilePath: store.selectedFilePath,
       fileListCollapsed: store.fileListCollapsed,
       hoveredCodeLine: store.hoveredCodeLine,
-      hoveredCodeSide: store.hoveredCodeSide,
+      hoveredCodeSide: store.hoveredCodeSide as "old" | "new",
       selectedFile,
       targetLine: store.targetLine,
-      targetSide: store.targetSide,
+      targetSide: store.targetSide as "old" | "new",
       scrollTick: store.scrollTick,
-      codeSearchNavDirection: store.codeSearchNavDirection,
+      codeSearchNavDirection: store.codeSearchNavDirection as "next" | "prev",
       codeSearchNavTick: store.codeSearchNavTick,
       codeLogicTreeRequestTick: store.codeLogicTreeRequestTick,
-      codeLogicTreeRequestSide: store.codeLogicTreeRequestSide,
+      codeLogicTreeRequestSide: store.codeLogicTreeRequestSide as "old" | "new",
       codeLogicTreeRequestLines: store.codeLogicTreeRequestLines,
     },
     actions: {
@@ -557,7 +569,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
   }, [goToGraphDiff, store.graphDiffIdx]);
 
   const selectAdjacentLogicNode = useCallback((direction: "next" | "prev"): boolean => {
-    if (viewType !== "logic") return false;
+    if (store.viewType !== "logic") return false;
     const selectedNodeId = store.selectedNodeId;
     if (!selectedNodeId) return false;
 
@@ -568,7 +580,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
       return { nodeId: adjacentNodeId, side };
     };
 
-    const preferredSide = store.focusSourceSide;
+    const preferredSide = store.focusSourceSide as "old" | "new";
     const fallbackSide: "old" | "new" = preferredSide === "old" ? "new" : "old";
     const target = resolveTarget(preferredSide) ?? resolveTarget(fallbackSide);
     if (!target) return false;
@@ -581,7 +593,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     displayOldGraph,
     store.focusSourceSide,
     store.selectedNodeId,
-    viewType,
+    store.viewType as "logic" | "knowledge" | "react",
   ]);
 
   useEffect(() => {
@@ -618,7 +630,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
         return;
       }
 
-      if (viewType !== "logic" || graphDiffTargets.length === 0) return;
+      if (store.viewType !== "logic" || graphDiffTargets.length === 0) return;
       if (direction === "next") {
         goToNextGraphDiff();
       } else {
@@ -640,13 +652,11 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     store.codeSearchActive,
     store.newGraphSearchActive,
     store.oldGraphSearchActive,
-    viewType,
+    store.viewType as "logic" | "knowledge" | "react",
   ]);
 
   useViewBaseEffects({
     store,
-    diffId,
-    viewType,
     hasSelectedFile: selectedFile !== null,
     graphSectionRef,
     codeDiffSectionRef,
@@ -706,7 +716,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
                   <strong>ESC to dismiss this modal</strong>
                 </p>
 
-                {viewType === "logic" && store.showCalls && (
+                {store.viewType === "logic" && store.showCalls && (
                   <button type="button" className="performanceGuardPrimaryBtn" onClick={handleDisableCallsForPerformance}>
                     Hide call edges (recommended)
                   </button>
@@ -740,7 +750,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
           </div>
         )}
 
-        {viewType === "logic" && (
+        {store.viewType === "logic" && (
           <LogicToolbar
             showCalls={store.showCalls}
             diffCountLabel={graphDiffTargets.length > 0 ? `${store.graphDiffIdx + 1}/${graphDiffTargets.length}` : "0/0"}
@@ -777,12 +787,10 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
                           side="old"
                           graph={displayOldGraph}
                           counterpartGraph={displayNewGraph}
-                          viewType={viewType}
-                          showCalls={viewType === "logic" ? store.showCalls : true}
+                          showCalls={store.viewType === "logic" ? store.showCalls : true}
                           fileContentMap={oldFileContentMap}
                           counterpartFileContentMap={newFileContentMap}
                           alignmentAnchors={alignedTopAnchors.old}
-                          pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
                           isViewportPrimary={!renderNewGraph}
                         />
                       </div>
@@ -795,15 +803,12 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
                           side="new"
                           graph={displayNewGraph}
                           counterpartGraph={displayOldGraph}
-                          viewType={viewType}
-                          showCalls={viewType === "logic" ? store.showCalls : true}
-                          diffStats={diffStats}
+                          showCalls={store.viewType === "logic" ? store.showCalls : true}
                           fileContentMap={newFileContentMap}
                           counterpartFileContentMap={oldFileContentMap}
                           alignmentOffset={newAlignmentOffset}
                           alignmentAnchors={alignedTopAnchors.new}
                           alignmentBreakpoints={alignmentBreakpoints}
-                          pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
                           isViewportPrimary
                         />
                       </div>
@@ -818,12 +823,10 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
                         side="old"
                         graph={displayOldGraph}
                         counterpartGraph={displayNewGraph}
-                        viewType={viewType}
-                        showCalls={viewType === "logic" ? store.showCalls : true}
+                        showCalls={store.viewType === "logic" ? store.showCalls : true}
                         fileContentMap={oldFileContentMap}
                         counterpartFileContentMap={newFileContentMap}
                         alignmentAnchors={alignedTopAnchors.old}
-                        pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
                         isViewportPrimary={!renderNewGraph}
                       />
                     )}
@@ -833,15 +836,12 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
                         side="new"
                         graph={displayNewGraph}
                         counterpartGraph={displayOldGraph}
-                        viewType={viewType}
-                        showCalls={viewType === "logic" ? store.showCalls : true}
-                        diffStats={diffStats}
+                        showCalls={store.viewType === "logic" ? store.showCalls : true}
                         fileContentMap={newFileContentMap}
                         counterpartFileContentMap={oldFileContentMap}
                         alignmentOffset={newAlignmentOffset}
                         alignmentAnchors={alignedTopAnchors.new}
                         alignmentBreakpoints={alignmentBreakpoints}
-                        pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
                         isViewportPrimary
                       />
                     )}
@@ -867,6 +867,26 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
             </Panel>
           </Group>
         </SplitGraphRuntimeProvider>
+
+        {__INTERNAL_DEBUG__ && (
+          <div
+            className="internalDebugZoom"
+            style={{
+              position: "fixed",
+              bottom: 8,
+              left: 8,
+              padding: "4px 8px",
+              fontSize: 12,
+              backgroundColor: "rgba(0,0,0,0.7)",
+              color: "#ccc",
+              fontFamily: "monospace",
+              borderRadius: 4,
+              zIndex: 9999,
+            }}
+          >
+            zoom: {store.sharedViewport.zoom.toFixed(2)}
+          </div>
+        )}
       </section>
     </ViewBaseRuntimeProvider>
   );

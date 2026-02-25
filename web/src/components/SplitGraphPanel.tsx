@@ -7,7 +7,7 @@ import {
   type NodeMouseHandler,
   type Viewport,
 } from "@xyflow/react";
-import { observer, useLocalObservable } from "mobx-react-lite";
+import { observer } from "mobx-react-lite";
 import { GraphCanvas } from "./splitGraph/GraphCanvas";
 import GraphLogicTreeModal from "./GraphLogicTreeModal";
 import { useSplitGraphRuntime } from "./splitGraph/context";
@@ -348,20 +348,20 @@ export const SplitGraphPanel = observer(({
   side,
   graph,
   counterpartGraph,
-  viewType,
   showCalls = true,
-  diffStats,
   fileContentMap,
   counterpartFileContentMap,
   alignmentOffset,
   alignmentAnchors,
   alignmentBreakpoints,
-  pullRequestDescriptionExcerpt,
   isViewportPrimary = true,
 }: SplitGraphPanelProps) => {
   const { state: runtimeState, actions: runtimeActions } = useSplitGraphRuntime();
   const {
     viewport,
+    viewType,
+    pullRequestDescriptionExcerpt,
+    diffStats,
     selectedNodeId,
     highlightedNodeId,
     focusNodeId,
@@ -392,7 +392,7 @@ export const SplitGraphPanel = observer(({
     onLayoutPendingChange,
     onSearchStateChange,
   } = runtimeActions;
-  const store = useLocalObservable(() => new SplitGraphPanelStore());
+  const store = useMemo(() => SplitGraphPanelStore.create({}), []);
   const searchHighlightTimerRef = useRef<number | null>(null);
   const edgeClickHighlightTimerRef = useRef<number | null>(null);
   const flowContainerRef = useRef<HTMLDivElement>(null);

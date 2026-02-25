@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { type DiffMeta, fetchDiffMeta, getDiffId } from "./api";
 import { MarkdownViewer } from "./components/MarkdownViewer";
-import LogicDiffView from "./views/LogicDiffView";
-import KnowledgeDiffView from "./views/KnowledgeDiffView";
-import ReactDiffView from "./views/ReactDiffView";
+import DiffView from "./views/DiffView";
 import "./App.css";
 
 type Tab = "logic" | "knowledge" | "react";
@@ -183,23 +181,10 @@ const App = () => {
         </div>
       </header>
 
-	      {activeTab === "logic" && (
-          <LogicDiffView
+	      {(activeTab === "logic" || activeTab === "knowledge" || (activeTab === "react" && canShowReact)) && (
+          <DiffView
             diffId={diffId}
-            showChangesOnly={changesOnly}
-            pullRequestDescriptionExcerpt={meta?.pullRequestDescriptionExcerpt}
-          />
-        )}
-	      {activeTab === "knowledge" && (
-          <KnowledgeDiffView
-            diffId={diffId}
-            showChangesOnly={changesOnly}
-            pullRequestDescriptionExcerpt={meta?.pullRequestDescriptionExcerpt}
-          />
-        )}
-	      {activeTab === "react" && canShowReact && (
-          <ReactDiffView
-            diffId={diffId}
+            viewType={activeTab}
             showChangesOnly={changesOnly}
             pullRequestDescriptionExcerpt={meta?.pullRequestDescriptionExcerpt}
           />

@@ -8,6 +8,7 @@ export default defineConfig(({ mode }) => {
   const srcRoot = fileURLToPath(new URL("./src", import.meta.url))
   const env = loadEnv(mode, projectRoot, "")
   const enableReactScane = env.ENABLE_REACT_SCANE === "true"
+  const internalDebug = env.INTERNAL_DEBUG === "true"
 
   return {
     plugins: [react()],
@@ -18,6 +19,7 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       __ENABLE_REACT_SCANE__: JSON.stringify(enableReactScane),
+      __INTERNAL_DEBUG__: JSON.stringify(internalDebug),
     },
   }
 })

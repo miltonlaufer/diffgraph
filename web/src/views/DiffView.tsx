@@ -1,18 +1,25 @@
 import { ViewBase } from "./ViewBase";
+import type { ViewType } from "./viewBase/types";
 
-interface KnowledgeDiffViewProps {
+interface DiffViewProps {
   diffId: string;
+  viewType: ViewType;
   showChangesOnly: boolean;
   pullRequestDescriptionExcerpt?: string;
 }
 
-const KnowledgeDiffView = ({ diffId, showChangesOnly, pullRequestDescriptionExcerpt }: KnowledgeDiffViewProps) => (
+const DiffView = ({
+  diffId,
+  viewType,
+  showChangesOnly,
+  pullRequestDescriptionExcerpt,
+}: DiffViewProps) => (
   <ViewBase
     diffId={diffId}
-    viewType="knowledge"
+    viewType={viewType}
     showChangesOnly={showChangesOnly}
     pullRequestDescriptionExcerpt={pullRequestDescriptionExcerpt}
   />
 );
 
-export default KnowledgeDiffView;
+export default DiffView;

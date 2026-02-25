@@ -40,14 +40,11 @@ export interface SplitGraphPanelProps {
   side: "old" | "new";
   graph: ViewGraph;
   counterpartGraph?: ViewGraph;
-  viewType: "logic" | "knowledge" | "react";
   showCalls?: boolean;
-  diffStats?: DiffStats;
   fileContentMap: Map<string, string>;
   counterpartFileContentMap?: Map<string, string>;
   alignmentOffset?: { x: number; y: number };
   alignmentAnchors?: Record<string, TopLevelAnchor>;
   alignmentBreakpoints?: Record<string, AlignmentBreakpoint[]>;
-  pullRequestDescriptionExcerpt?: string;
   isViewportPrimary?: boolean;
 }

@@ -1,13 +1,11 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { fetchDiffFiles, fetchView } from "#/api";
 import type { GraphDiffTarget } from "#/components/splitGraph/types";
-import { ViewBaseStore } from "./store";
+import type { ViewBaseStoreInstance } from "./store";
 import type { ViewType } from "./types";
 
 interface UseViewBaseEffectsArgs {
-  store: ViewBaseStore;
-  diffId: string;
-  viewType: ViewType;
+  store: ViewBaseStoreInstance;
   hasSelectedFile: boolean;
   graphSectionRef: MutableRefObject<HTMLDivElement | null>;
   codeDiffSectionRef: MutableRefObject<HTMLDivElement | null>;
@@ -19,8 +17,6 @@ interface UseViewBaseEffectsArgs {
 
 export const useViewBaseEffects = ({
   store,
-  diffId,
-  viewType,
   hasSelectedFile,
   graphSectionRef,
   codeDiffSectionRef,
@@ -50,7 +46,7 @@ export const useViewBaseEffects = ({
     store.beginLoading();
     didAutoViewportRef.current = false;
 
-    Promise.all([fetchView(diffId, viewType), fetchDiffFiles(diffId)])
+    Promise.all([fetchView(store.diffId, store.viewType as ViewType), fetchDiffFiles(store.diffId)])
       .then(([payload, files]) => {
         if (!mounted) return;
         store.applyFetchedData(payload.oldGraph, payload.newGraph, files);
@@ -63,7 +59,7 @@ export const useViewBaseEffects = ({
     return () => {
       mounted = false;
     };
-  }, [diffId, store, viewType]);
+  }, [store, store.diffId, store.viewType]);
 
   useEffect(() => {
     if (store.scrollTick <= 0 || !hasSelectedFile) return;

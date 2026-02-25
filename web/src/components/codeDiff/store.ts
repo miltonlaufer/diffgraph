@@ -1,55 +1,62 @@
-import { makeAutoObservable } from "mobx";
+import { types } from "mobx-state-tree";
 
-export class CodeDiffDrawerStore {
-  isFullscreen = false;
-  currentHunkIdx = 0;
-  textSearch = "";
-  textSearchIdx = 0;
-  codeLogicTreeMode = false;
-  codeLogicTreeSide: "old" | "new" = "new";
-  codeLogicTreeLines: number[] = [];
+export const CodeDiffDrawerStore = types
+  .model("CodeDiffDrawerStore", {
+    isFullscreen: types.optional(types.boolean, false),
+    currentHunkIdx: types.optional(types.number, 0),
+    textSearch: types.optional(types.string, ""),
+    textSearchIdx: types.optional(types.number, 0),
+    codeLogicTreeMode: types.optional(types.boolean, false),
+    codeLogicTreeSide: types.optional(types.enumeration(["old", "new"]), "new"),
+    codeLogicTreeLines: types.optional(types.array(types.number), []),
+  })
+  .actions((self) => ({
+    setFullscreen(next: boolean) {
+      self.isFullscreen = next;
+      if (!next) {
+        self.codeLogicTreeMode = false;
+        self.codeLogicTreeLines.clear();
+        self.codeLogicTreeSide = "new";
+      }
+    },
 
-  constructor() {
-    makeAutoObservable(this, {}, { autoBind: true });
-  }
+    toggleFullscreen() {
+      self.isFullscreen = !self.isFullscreen;
+      if (!self.isFullscreen) {
+        self.codeLogicTreeMode = false;
+        self.codeLogicTreeLines.clear();
+        self.codeLogicTreeSide = "new";
+      }
+    },
 
-  setFullscreen(next: boolean): void {
-    this.isFullscreen = next;
-    if (!next) {
-      this.clearCodeLogicTreeMode();
-    }
-  }
+    setCurrentHunkIdx(idx: number) {
+      self.currentHunkIdx = idx;
+    },
 
-  toggleFullscreen(): void {
-    this.setFullscreen(!this.isFullscreen);
-  }
+    resetHunkIdx() {
+      self.currentHunkIdx = 0;
+    },
 
-  setCurrentHunkIdx(idx: number): void {
-    this.currentHunkIdx = idx;
-  }
+    setTextSearch(query: string) {
+      self.textSearch = query;
+      self.textSearchIdx = 0;
+    },
 
-  resetHunkIdx(): void {
-    this.currentHunkIdx = 0;
-  }
+    setTextSearchIdx(idx: number) {
+      self.textSearchIdx = idx;
+    },
 
-  setTextSearch(query: string): void {
-    this.textSearch = query;
-    this.textSearchIdx = 0;
-  }
+    setCodeLogicTreeMode(side: "old" | "new", lines: number[]) {
+      self.codeLogicTreeMode = true;
+      self.codeLogicTreeSide = side;
+      self.codeLogicTreeLines.replace(lines);
+    },
 
-  setTextSearchIdx(idx: number): void {
-    this.textSearchIdx = idx;
-  }
+    clearCodeLogicTreeMode() {
+      self.codeLogicTreeMode = false;
+      self.codeLogicTreeLines.clear();
+      self.codeLogicTreeSide = "new";
+    },
+  }));
 
-  setCodeLogicTreeMode(side: "old" | "new", lines: number[]): void {
-    this.codeLogicTreeMode = true;
-    this.codeLogicTreeSide = side;
-    this.codeLogicTreeLines = lines;
-  }
-
-  clearCodeLogicTreeMode(): void {
-    this.codeLogicTreeMode = false;
-    this.codeLogicTreeLines = [];
-    this.codeLogicTreeSide = "new";
-  }
-}
+export type CodeDiffDrawerStoreInstance = typeof CodeDiffDrawerStore.Type;

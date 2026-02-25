@@ -7,7 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
-import { observer, useLocalObservable } from "mobx-react-lite";
+import { observer } from "mobx-react-lite";
 import { CodeDiffMatrixView } from "./codeDiff/CodeDiffMatrixView";
 import { CodeDiffSingleFileView } from "./codeDiff/CodeDiffSingleFileView";
 import { CodeDiffToolbar } from "./codeDiff/CodeDiffToolbar";
@@ -94,7 +94,7 @@ export const CodeDiffDrawer = observer(() => {
     codeLogicTreeRequestLines,
   } = state;
   const { onCodeLineClick, onCodeSearchStateChange } = actions;
-  const store = useLocalObservable(() => new CodeDiffDrawerStore());
+  const store = useMemo(() => CodeDiffDrawerStore.create({}), []);
   const oldCodeScrollRef = useRef<HTMLDivElement>(null);
   const newCodeScrollRef = useRef<HTMLDivElement>(null);
   const syncingScrollRef = useRef(false);
@@ -139,7 +139,7 @@ export const CodeDiffDrawer = observer(() => {
       const lineNumber = filterSide === "old" ? row.old.lineNumber : row.new.lineNumber;
       return lineNumber !== null && codeLogicTreeLineSet.has(lineNumber);
     });
-    return insertGapRows(filteredRows, filterSide);
+    return insertGapRows(filteredRows, filterSide as "old" | "new");
   }, [codeLogicTreeLineSet, matrixRows, store.codeLogicTreeMode, store.codeLogicTreeSide]);
 
   const hunkRows = useMemo(() => findDiffHunkStarts(visibleMatrixRows), [visibleMatrixRows]);

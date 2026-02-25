@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { applySnapshot, getSnapshot } from "mobx-state-tree";
 import { buildCrossGraphNodeMatchKey } from "#/lib/nodeIdentity";
 import type { ViewGraphNode } from "#/types/graph";
 import {
@@ -7,7 +8,7 @@ import {
 } from "./commands";
 import { ViewBaseStore } from "./store";
 
-const createContext = (store: ViewBaseStore) => ({
+const createContext = (store: ReturnType<typeof ViewBaseStore.create>) => ({
   store,
   runInteractiveUpdate: (update: () => void) => update(),
 });
@@ -31,9 +32,12 @@ const createNode = (node: Partial<ViewGraphNode>): ViewGraphNode => ({
 
 describe("viewBase commands", () => {
   it("sanitizes and sorts logic-tree line requests", () => {
-    const store = new ViewBaseStore();
-    store.oldGraph = { nodes: [createNode({ id: "node-1", startLine: 10 })], edges: [] };
-    store.newGraph = { nodes: [], edges: [] };
+    const store = ViewBaseStore.create({});
+    applySnapshot(store, {
+      ...getSnapshot(store),
+      oldGraph: { nodes: [createNode({ id: "node-1", startLine: 10 })], edges: [] },
+      newGraph: { nodes: [], edges: [] },
+    });
 
     commandOpenCodeLogicTree(
       createContext(store),
@@ -51,9 +55,12 @@ describe("viewBase commands", () => {
   });
 
   it("falls back to node start line when no valid request lines are provided", () => {
-    const store = new ViewBaseStore();
-    store.oldGraph = { nodes: [createNode({ id: "node-2", startLine: 27 })], edges: [] };
-    store.newGraph = { nodes: [], edges: [] };
+    const store = ViewBaseStore.create({});
+    applySnapshot(store, {
+      ...getSnapshot(store),
+      oldGraph: { nodes: [createNode({ id: "node-2", startLine: 27 })], edges: [] },
+      newGraph: { nodes: [], edges: [] },
+    });
 
     commandOpenCodeLogicTree(createContext(store), "node-2", "old", [-2, 0, Number.NaN]);
 
@@ -62,7 +69,7 @@ describe("viewBase commands", () => {
   });
 
   it("derives hover match key from source node when none is supplied", () => {
-    const store = new ViewBaseStore();
+    const store = ViewBaseStore.create({});
     const node = createNode({
       id: "node-3",
       kind: "Branch",
@@ -71,8 +78,11 @@ describe("viewBase commands", () => {
       startLine: 11,
       filePath: "src/flow.ts",
     });
-    store.oldGraph = { nodes: [node], edges: [] };
-    store.newGraph = { nodes: [], edges: [] };
+    applySnapshot(store, {
+      ...getSnapshot(store),
+      oldGraph: { nodes: [node], edges: [] },
+      newGraph: { nodes: [], edges: [] },
+    });
 
     commandSetHoveredNode(createContext(store), "old", "node-3", "");
 
