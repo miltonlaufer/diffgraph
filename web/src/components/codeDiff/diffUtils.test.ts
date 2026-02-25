@@ -23,6 +23,26 @@ describe("computeSideBySide", () => {
     expect(diff.newLines.some((line) => line.type === "added")).toBe(false);
   });
 
+  it("treats identical useCallback blocks at different line numbers as unchanged", () => {
+    const block = [
+      "const handler = useCallback(",
+      "  () => { doSomething(); },",
+      "  [dep]",
+      ");",
+    ].join("\n");
+    const oldContent = ["const a = 1;", block, "const b = 2;"].join("\n");
+    const newContent = ["const a = 1;", "// inserted", "const x = 0;", block, "const b = 2;"].join("\n");
+
+    const diff = computeSideBySide(oldContent, newContent);
+    const blockLines = ["const handler = useCallback(", "  () => { doSomething(); },", "  [dep]", ");"];
+    for (const line of blockLines) {
+      const oldSame = diff.oldLines.filter((l) => l.text === line && l.type === "same");
+      const newSame = diff.newLines.filter((l) => l.text === line && l.type === "same");
+      expect(oldSame.length).toBeGreaterThanOrEqual(1);
+      expect(newSame.length).toBeGreaterThanOrEqual(1);
+    }
+  });
+
   it("treats wrapped function-call formatting as unchanged and keeps wrapped lines visible", () => {
     const oldContent = [
       "use_dynamic_clip_timing = getattr(storyboard_props, \"use_dynamic_clip_timing\", True)",

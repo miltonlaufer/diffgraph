@@ -65,7 +65,7 @@ export const computeSideBySide = (
       if (depth <= 0) {
         normalized[i] = normalizeWrappedPythonHeader(`${keyword}(${pieces.join("")}`);
         for (let k = i + 1; k <= j; k += 1) {
-          normalized[k] = `__dg_wrap_cont__${k}`;
+          normalized[k] = `__dg_wrap_cont__${compacted[k] ?? ""}`;
           isNeutralizedLine[k] = true;
         }
         i = j;
@@ -96,7 +96,7 @@ export const computeSideBySide = (
 
       normalized[i] = normalizeWrappedPythonHeader(pieces.join(""));
       for (let k = i + 1; k <= j; k += 1) {
-        normalized[k] = `__dg_wrap_cont__${k}`;
+        normalized[k] = `__dg_wrap_cont__${compacted[k] ?? ""}`;
         isNeutralizedLine[k] = true;
       }
       i = j;
