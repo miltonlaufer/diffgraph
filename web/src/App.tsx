@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { type DiffMeta, fetchDiffMeta, getDiffId } from "./api";
+import { prefetchDiff, setCachedMeta } from "./lib/diffPrefetch";
 import { MarkdownViewer } from "./components/MarkdownViewer";
 import DiffView from "./views/DiffView";
 import "./App.css";
@@ -80,7 +81,13 @@ const App = () => {
   /******************* USEEFFECTS ***********************/
   useEffect(() => {
     if (!diffId) return;
-    fetchDiffMeta(diffId).then(setMeta).catch(() => {});
+    fetchDiffMeta(diffId)
+      .then((meta) => {
+        setMeta(meta);
+        setCachedMeta(diffId, meta);
+        prefetchDiff(diffId, meta);
+      })
+      .catch(() => {});
   }, [diffId]);
 
   useEffect(() => () => {

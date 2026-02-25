@@ -670,19 +670,9 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     return <p className="errorText">{store.error}</p>;
   }
 
-  if (store.loading) {
-    return (
-      <section className="viewContainer">
-        <div className="loadingContainer">
-          <div className="spinner" />
-          <p className="dimText">Analyzing code and building graphs...</p>
-        </div>
-      </section>
-    );
-  }
-
   const isGraphLayoutPending = store.oldLayoutPending || store.newLayoutPending;
-  const isInteractionPending = store.interactionBusy || isUiPending || isGraphLayoutPending;
+  const isInteractionPending =
+    !store.loading && (store.interactionBusy || isUiPending || isGraphLayoutPending);
 
   return (
     <ViewBaseRuntimeProvider value={viewBaseRuntime}>
@@ -771,14 +761,20 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
           >
             <Panel id="graph" defaultSize={50} minSize={25} className="viewResizablePanel">
               <div ref={graphSectionRef} className="viewResizablePanelInner">
-                {isEmptyView && (
+                {store.loading && (
+                  <div className="loadingContainer">
+                    <div className="spinner" />
+                    <p className="dimText">Analyzing code and building graphs...</p>
+                  </div>
+                )}
+                {!store.loading && isEmptyView && (
                   <p className="errorText">
                     {store.selectedFilePath
                       ? "No nodes found for this file. Try the Knowledge tab, or disable Changes Only."
                       : "No nodes found for this view. Try the Knowledge tab, or disable Changes Only."}
                   </p>
                 )}
-                {!isEmptyView && renderOldGraph && renderNewGraph && (
+                {!store.loading && !isEmptyView && renderOldGraph && renderNewGraph && (
                   <Group id="graph-split" orientation="horizontal" className="splitLayoutResizable">
                     <Panel id="old" defaultSize={50} minSize={20} className="viewResizablePanel">
                       <div className="splitLayoutPanelInner">
@@ -815,7 +811,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
                     </Panel>
                   </Group>
                 )}
-                {!isEmptyView && (renderOldGraph !== renderNewGraph) && (
+                {!store.loading && !isEmptyView && (renderOldGraph !== renderNewGraph) && (
                   <div className={renderOldGraph && renderNewGraph ? "splitLayout" : "splitLayout splitLayoutSingle"}>
                     {renderOldGraph && (
                       <SplitGraphPanel

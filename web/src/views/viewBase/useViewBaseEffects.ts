@@ -1,6 +1,7 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { fetchDiffFiles, fetchView } from "#/api";
 import type { GraphDiffTarget } from "#/components/splitGraph/types";
+import { getCachedFiles, getCachedView, setCachedFiles, setCachedView } from "#/lib/diffPrefetch";
 import type { ViewBaseStoreInstance } from "./store";
 import type { ViewType } from "./types";
 
@@ -46,9 +47,20 @@ export const useViewBaseEffects = ({
     store.beginLoading();
     didAutoViewportRef.current = false;
 
-    Promise.all([fetchView(store.diffId, store.viewType as ViewType), fetchDiffFiles(store.diffId)])
+    const viewType = store.viewType as ViewType;
+    const cachedView = getCachedView(store.diffId, viewType);
+    const cachedFiles = getCachedFiles(store.diffId);
+
+    if (cachedView && cachedFiles) {
+      store.applyFetchedData(cachedView.oldGraph, cachedView.newGraph, cachedFiles);
+      return;
+    }
+
+    Promise.all([fetchView(store.diffId, viewType), fetchDiffFiles(store.diffId)])
       .then(([payload, files]) => {
         if (!mounted) return;
+        setCachedView(store.diffId, viewType, { oldGraph: payload.oldGraph, newGraph: payload.newGraph });
+        setCachedFiles(store.diffId, files);
         store.applyFetchedData(payload.oldGraph, payload.newGraph, files);
       })
       .catch((reason: unknown) => {
