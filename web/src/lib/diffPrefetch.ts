@@ -57,20 +57,24 @@ export const prefetchDiff = (
   const viewTypes: ViewType[] = ["logic", "knowledge"];
   if (meta.hasReactView) viewTypes.push("react");
 
-  const promise = Promise.all([
-    fetchDiffFiles(diffId),
-    ...viewTypes.map((vt) =>
-      fetchView(diffId, vt).then((payload) => {
-        c.views.set(vt, { oldGraph: payload.oldGraph, newGraph: payload.newGraph });
-      }),
-    ),
-  ])
-    .then(([files]) => {
-      c.files = files as FileDiffEntry[];
+  const filesPromise = fetchDiffFiles(diffId);
+  const viewPromises = viewTypes.map((vt) =>
+    fetchView(diffId, vt).then((payload) => ({ oldGraph: payload.oldGraph, newGraph: payload.newGraph })),
+  );
+
+  const promise = Promise.allSettled([filesPromise, ...viewPromises])
+    .then(([filesResult, ...viewResults]) => {
+      if (filesResult.status === "fulfilled") {
+        c.files = filesResult.value as FileDiffEntry[];
+      }
+      viewResults.forEach((result, i) => {
+        if (result.status === "fulfilled") {
+          c.views.set(viewTypes[i], result.value);
+        }
+      });
     })
-    .catch(() => {
+    .finally(() => {
       prefetchPromises.delete(key);
-      cache.delete(diffId);
     });
 
   prefetchPromises.set(key, promise);
