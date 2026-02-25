@@ -9,7 +9,7 @@ import { createSignatureCache } from "#/lib/cachedComputation";
 import type { SplitGraphDerivedWorkerRequest, SplitGraphDerivedWorkerResponse } from "#/workers/splitGraphDerivedTypes";
 
 const DERIVED_CACHE_MAX_ENTRIES = 24;
-const SYNC_INITIAL_DERIVED_NODE_THRESHOLD = 200;
+const SYNC_INITIAL_DERIVED_NODE_THRESHOLD = 100;
 const DERIVED_WORKER_WATCHDOG_MS = 3500;
 const EMPTY_DERIVED_RESULT: SplitGraphDerivedResult = {
   nodeMatchKeyByIdEntries: [],
