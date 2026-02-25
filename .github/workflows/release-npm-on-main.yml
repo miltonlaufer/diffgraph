@@ -1,0 +1,67 @@
+name: Release and Publish to npm
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Determine release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --force
+
+          current_version="$(node -p "require('./package.json').version")"
+          latest_tag="$(git tag --list 'v*' --sort=-v:refname | head -n 1 || true)"
+
+          if [[ -z "${latest_tag}" ]]; then
+            next_version="${current_version}"
+          else
+            latest_version="${latest_tag#v}"
+            next_version="$(node -e "const raw = process.argv[1]; const v = raw.split('-')[0]; const [maj, min, patch] = v.split('.').map(Number); if ([maj, min, patch].some(Number.isNaN)) throw new Error('Invalid semver: ' + raw); console.log([maj, min, patch + 1].join('.'));" "${latest_version}")"
+          fi
+
+          echo "next=${next_version}" >> "${GITHUB_OUTPUT}"
+          npm version "${next_version}" --no-git-tag-version
+
+      - name: Publish to npm
+        run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.next }}
+          name: v${{ steps.version.outputs.next }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
