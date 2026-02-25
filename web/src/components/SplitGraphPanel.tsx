@@ -899,14 +899,18 @@ export const SplitGraphPanel = observer(({
     onViewportChange(viewportForNode(first));
   }, [debouncedSearchQuery, store, searchMatches, onViewportChange, flashSearchTarget, viewportForNode]);
 
-  useEffect(() => () => {
-    if (searchHighlightTimerRef.current !== null) {
-      window.clearTimeout(searchHighlightTimerRef.current);
-    }
-    if (edgeClickHighlightTimerRef.current !== null) {
-      window.clearTimeout(edgeClickHighlightTimerRef.current);
-    }
-  }, [searchHighlightTimerRef]);
+  useEffect(
+    () => () => {
+      if (searchHighlightTimerRef.current !== null) {
+        window.clearTimeout(searchHighlightTimerRef.current);
+      }
+      if (edgeClickHighlightTimerRef.current !== null) {
+        window.clearTimeout(edgeClickHighlightTimerRef.current);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refs are stable; cleanup runs only on unmount
+    [],
+  );
 
   useEffect(() => {
     if (!focusFilePath || !focusedViewport || focusFileTick <= 0) return;
