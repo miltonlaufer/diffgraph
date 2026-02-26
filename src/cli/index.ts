@@ -1,8 +1,19 @@
 #!/usr/bin/env node
+import { existsSync, readFileSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 import { Command } from "commander";
+import updateNotifier from "update-notifier";
 import { runDiff } from "./commands/diff.js";
 import { runAnalyze } from "./commands/analyze.js";
 import { runInteractiveMenu } from "./interactive.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkgPath = [join(__dirname, "../../../package.json"), join(__dirname, "../../package.json")].find(
+  (p) => existsSync(p),
+);
+const pkg = JSON.parse(readFileSync(pkgPath!, "utf-8")) as { name: string; version: string };
+updateNotifier({ pkg }).notify();
 
 const normalizedArgv = process.argv.map((arg) => {
   if (arg === "-ff") return "--file-file";
@@ -11,7 +22,7 @@ const normalizedArgv = process.argv.map((arg) => {
 });
 
 const program = new Command();
-program.name("diffgraph").description("Graph-aware diff explorer").version("0.1.0");
+program.name("diffgraph").description("Graph-aware diff explorer").version(pkg.version);
 
 program
   .command("staged")
