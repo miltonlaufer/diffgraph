@@ -179,6 +179,28 @@ export const computeDisplayGraph = (
   return filterEdgeByNodeIds(visibleGraph, nodeIds);
 };
 
+const pathSetFromList = (paths: string[]): Set<string> =>
+  new Set(paths.map((p) => normalizePath(p)));
+
+export const computeDisplayGraphByFilePaths = (
+  visibleGraph: ViewGraph,
+  selectedFilePathsForGraph: string[],
+  viewType: ViewType,
+): ViewGraph => {
+  if (selectedFilePathsForGraph.length === 0) return visibleGraph;
+
+  const targetPaths = pathSetFromList(selectedFilePathsForGraph);
+  let nodeIds = new Set(
+    visibleGraph.nodes
+      .filter((n) => targetPaths.has(normalizePath(n.filePath)))
+      .map((n) => n.id),
+  );
+
+  nodeIds = fileSelectionExpansionStrategies[viewType](visibleGraph, nodeIds);
+
+  return filterEdgeByNodeIds(visibleGraph, nodeIds);
+};
+
 export const computeDiffStats = (
   oldGraph: ViewGraph,
   newGraph: ViewGraph,

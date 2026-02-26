@@ -4,6 +4,8 @@ import type { FileDiffEntry } from "#/types/graph";
 interface ViewBaseRuntimeState {
   files: FileDiffEntry[];
   selectedFilePath: string;
+  selectedFilePathsForGraph: string[];
+  areNodesSelected: boolean;
   fileListCollapsed: boolean;
   hoveredCodeLine: number;
   hoveredCodeSide: "old" | "new";
@@ -20,6 +22,7 @@ interface ViewBaseRuntimeState {
 
 interface ViewBaseRuntimeActions {
   onFileSelect: (filePath: string) => void;
+  onToggleFileForGraph: (filePath: string) => void;
   onToggleFileListCollapsed: () => void;
   onCodeLineClick: (line: number, side: "old" | "new") => void;
   onCodeLineHover: (line: number, side: "old" | "new") => void;

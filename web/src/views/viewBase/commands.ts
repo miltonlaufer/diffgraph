@@ -33,6 +33,7 @@ export const commandSelectNode = (
     const fallback = sourceSide === "old" ? matchedNew : matchedOld;
     const filePath = primary?.filePath ?? fallback?.filePath ?? "";
     if (filePath.length > 0) {
+      store.selectFilesFromNode(normalizePath(filePath));
       store.setSelectedFilePath(normalizePath(filePath));
     }
     const line = primary?.startLine ?? fallback?.startLine ?? 0;
@@ -67,7 +68,15 @@ export const commandSelectFile = (
       return;
     }
     store.setSelectedFilePath(filePath);
+    store.selectFilesFromNode(next);
     store.bumpFocusFileTick();
+  });
+};
+
+export const commandResetToInitialState = (context: CommandContext): void => {
+  const { store, runInteractiveUpdate } = context;
+  runInteractiveUpdate(() => {
+    store.resetToInitialState();
   });
 };
 
@@ -296,6 +305,7 @@ export const commandOpenCodeLogicTree = (
     const fallback = sourceSide === "old" ? matchedNew : matchedOld;
     const filePath = primary?.filePath ?? fallback?.filePath ?? "";
     if (filePath.length > 0) {
+      store.selectFilesFromNode(normalizePath(filePath));
       store.setSelectedFilePath(normalizePath(filePath));
     }
 

@@ -86,6 +86,7 @@ export const SplitGraphPanel = observer(({
     graphSearchNavTick,
     focusFilePath,
     focusFileTick,
+    areNodesSelected,
     hoveredNodeId,
     hoveredNodeMatchKey,
     hoveredNodeSide,
@@ -564,7 +565,7 @@ export const SplitGraphPanel = observer(({
       ...node,
       data: {
         ...(node.data as Record<string, unknown>),
-        hideCodeTooltip: Boolean(focusFilePath),
+        hideCodeTooltip: areNodesSelected,
         askLlmNodeId: node.id,
         onAskLlmForNode: handleAskLlmForNode,
         onAskLlmHrefForNode: handleAskLlmHrefForNode,
@@ -579,7 +580,7 @@ export const SplitGraphPanel = observer(({
       handleShowGraphLogicTreeForNode,
       handleShowCodeLogicTreeForNode,
       handleGroupHeaderHoverChange,
-      focusFilePath,
+      areNodesSelected,
       searchResultNodes.nodes,
     ],
   );

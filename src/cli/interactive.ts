@@ -53,7 +53,9 @@ const ensureGitRepository = async (repoPath: string): Promise<void> => {
   } catch {
     // handled below
   }
-  throw new Error("No git repository found in current directory. Run this command inside a git repo.");
+  const help =
+    "Hint: cd into your project directory, or use `diffgraph --help` for commands like file-to-file (-ff) that may not require a repo.";
+  throw new Error(`No git repository found in current directory. Run this command inside a git repo.\n${help}`);
 };
 
 const fetchLatestBranches = async (repoPath: string): Promise<BranchOption[]> => {

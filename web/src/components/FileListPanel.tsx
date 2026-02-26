@@ -5,7 +5,7 @@ import { useViewBaseRuntime } from "../views/viewBase/runtime";
 
 export const FileListPanel = observer(() => {
   const { state, actions } = useViewBaseRuntime();
-  const { files, selectedFilePath, fileListCollapsed } = state;
+  const { files, selectedFilePath, selectedFilePathsForGraph, fileListCollapsed } = state;
 
   const topRisk = useMemo(
     () => files.reduce((max, file) => Math.max(max, file.riskScore ?? 0), 0),
@@ -23,11 +23,13 @@ export const FileListPanel = observer(() => {
     <FileListView
       files={files}
       selectedFilePath={selectedFilePath}
+      selectedFilePathsForGraph={selectedFilePathsForGraph}
       selectedFileName={selectedFileName}
       collapsed={fileListCollapsed}
       topRisk={topRisk}
       onToggleCollapsed={actions.onToggleFileListCollapsed}
       onSelectFile={actions.onFileSelect}
+      onToggleFileForGraph={actions.onToggleFileForGraph}
     />
   );
 });

@@ -48,8 +48,8 @@ cd /path/to/your-repo
 diffgraph
 ```
 
-This is now the fastest path and the recommended one:
-- If the folder is not a Git repo, DiffGraph exits with a clear error.
+Behavior:
+- If the folder is not a Git repo, DiffGraph exits with a clear error and a help hint (suggesting to `cd` into a repo or run `diffgraph --help` for commands like file-to-file that may not require a repo).
 - Inside a Git repo, it opens an interactive menu (`numbers` + `Enter`, `q` or `esc` to exit):
   - `1) Staged changes`
   - `2) Only staged changes`
@@ -58,7 +58,7 @@ This is now the fastest path and the recommended one:
   - `5) Pull requests` (latest 10 **open** PRs)
   - `6) File to file` (prints the exact `-ff` command)
 
-You can still run direct commands:
+Direct commands:
 
 ```bash
 diffgraph staged
@@ -77,7 +77,7 @@ diffgraph -b main feature/your-feature-branch --repo /path/to/your-repo
 
 What happens:
 1. `npm link` installs a global `diffgraph` command from this project.
-2. You can run `diffgraph` inside the target repo directly, or from any folder with `--repo`.
+2. Run `diffgraph` inside the target repo or from another folder with `--repo`.
 3. DiffGraph analyzes uncommitted changes, starts a local server on `http://localhost:4177` (or next free port), and opens the browser.
 
 ## Visual Preview
@@ -183,7 +183,7 @@ npm run build
 npm link
 ```
 
-Then run from anywhere:
+Run from anywhere:
 
 ```bash
 diffgraph staged --repo /path/to/other-repo
@@ -306,54 +306,52 @@ If the default port (4177) is busy, the server automatically finds the next avai
 - **Knowledge** -- structural graph of classes, functions, services, imports, etc.
 - **React** -- component render tree and hook usage (shown only when the diff contains React-relevant symbols)
 
-## New Features Since Last Full README Update
-
-Baseline used for this section: the README state before docs-only credit commit `900c399` (feature baseline commit `8f5098e`).
+## Features
 
 ### UI / UX
 
-| Feature | What changed | Why it matters |
-| --- | --- | --- |
-| Graph logic tree modal | Added `See graph logic tree` from node hover actions; opens a fullscreen focused subgraph modal. | Faster branch-level reasoning without losing full-graph context. |
-| Code logic tree mode | Added `See code logic tree` from node hover actions; code diff can filter to related logic ancestry lines. | Moves from graph node to minimal code window quickly. |
-| Pull request controls in header | Added `PR ↗` (open on GitHub) and `PR Description` modal (markdown rendering). | PR mode now carries review context directly in the UI. |
-| Resizable layout | Integrated resizable panels for graph/code and Old/New split panes. | Better ergonomics for large monitors and small laptops. |
-| Performance guard modal | Added runtime lag detection modal with staged mitigations (hide call edges; optionally render one side only). | Keeps app responsive on very large graphs. |
-| Node action panel improvements | Ask-LLM floating panel now includes graph/code logic-tree actions, improved tooltip anchoring, and robust copied-state messaging. | Cleaner node-level workflow, fewer missed clicks. |
-| Group node detail strips | Function parameter diffs and hook dependency diffs are shown inline in group headers with status coloring. | Makes signature-level API changes visible in graph view. |
-| Graph canvas zoom floor | Reduced minimum zoom to `0.01` in split graph panels. | Easier to zoom out for global structure scans. |
+| Feature | Description |
+| --- | --- |
+| Graph logic tree modal | `See graph logic tree` in node hover actions opens a fullscreen focused subgraph modal. Faster branch-level reasoning without losing full-graph context. |
+| Code logic tree mode | `See code logic tree` in node hover actions; code diff can filter to related logic ancestry lines. Moves from graph node to minimal code window quickly. |
+| Pull request controls in header | `PR ↗` (open on GitHub) and `PR Description` modal (markdown rendering). PR mode carries review context directly in the UI. |
+| Resizable layout | Resizable panels for graph/code and Old/New split panes. Better ergonomics for large monitors and small laptops. |
+| Performance guard modal | Runtime lag detection modal with mitigations (hide call edges; optionally render one side only). Keeps app responsive on very large graphs. |
+| Node action panel | Ask-LLM floating panel includes graph/code logic-tree actions, tooltip anchoring, and copied-state messaging. |
+| Group node detail strips | Function parameter diffs and hook dependency diffs shown inline in group headers with status coloring. Signature-level API changes visible in graph view. |
+| Graph canvas zoom | Minimum zoom is `0.01` in split graph panels. Easier to zoom out for global structure scans. |
 
 ### Functionality / Workflow
 
-| Feature | What changed | Why it matters |
-| --- | --- | --- |
-| PR URL handling | PR mode now resolves URL from `gh pr view` metadata, with fallback from `origin` remote parsing. | Reliable GitHub navigation from DiffGraph PR sessions. |
-| PR description propagation | Server exposes PR description + excerpt, and Ask-LLM prompt builders include the excerpt when available. | Explanations can account for stated PR intent. |
-| Interactive branch compare fallback | In interactive menu, branch order is auto-reversed if selected order has zero diff files but reverse has changes. | Prevents empty-result confusion in branch mode. |
-| Code diff navigation support | Code logic-tree requests are routed through view commands/store into diff drawer filtering and scrolling. | Smooth graph-to-code-to-graph traversal. |
-| Escape-to-dismiss support | Added keyboard close behavior for modals such as performance guard and PR description. | Faster keyboard-centric review flow. |
+| Feature | Description |
+| --- | --- |
+| PR URL handling | PR mode resolves URL from `gh pr view` metadata, with fallback from `origin` remote parsing. |
+| PR description propagation | Server exposes PR description + excerpt; Ask-LLM prompt builders include the excerpt when available. |
+| Interactive branch compare fallback | In interactive menu, branch order is auto-reversed if selected order has zero diff files but reverse has changes. |
+| Code diff navigation | Code logic-tree requests route through view commands/store into diff drawer filtering and scrolling. |
+| Escape-to-dismiss | Keyboard close for modals (performance guard, PR description). |
 
 ### Analysis Engine / View Semantics
 
-| Feature | What changed | Why it matters |
-| --- | --- | --- |
-| TypeScript control-flow coverage | Added `try/catch/finally` branch node generation and flow edges; better chained promise branch typing (`then/catch/finally`). | Logic View now captures exception and async error paths more accurately. |
-| Python control-flow coverage | Enhanced Python analyzer script to preserve internal flow for `for` loops and `try` blocks (including nested behavior). | Reduces flattened/incorrect control-flow paths in Python diffs. |
-| Callback and hook metadata | Improved callback name resolution and hook dependency extraction in TS analysis. | Cleaner labels and better dependency visibility in Logic/React views. |
-| React view JSX edges | React view now infers JSX render edges from branch metadata and tag usage. | Better representation of component render relationships. |
-| Class/method hierarchy inference | Logic view builder improved class method grouping and parent-child inference. | More stable, understandable group structure in large files. |
-| Parameter/dependency diff tracking | Logic view builder computes old/new token-level diffs for function params and hook deps. | Shows what changed inside signatures, not only that something changed. |
+| Feature | Description |
+| --- | --- |
+| TypeScript control-flow coverage | `try/catch/finally` branch nodes and flow edges; chained promise typing (`then/catch/finally`). Logic View captures exception and async error paths. |
+| Python control-flow coverage | Python analyzer preserves internal flow for `for` loops and `try` blocks (including nested). |
+| Callback and hook metadata | Callback name resolution and hook dependency extraction in TS analysis. |
+| React view JSX edges | React view infers JSX render edges from branch metadata and tag usage. |
+| Class/method hierarchy inference | Logic view builder infers class method grouping and parent-child structure. |
+| Parameter/dependency diff tracking | Token-level diffs for function params and hook deps. Shows what changed inside signatures. |
 
 ### Diff Accuracy / Performance
 
-| Feature | What changed | Why it matters |
-| --- | --- | --- |
-| Comment-insensitive signatures | Diff/analyzers normalize signatures by stripping comments before hashing. | Comment-only edits no longer look like semantic symbol changes. |
-| Graph delta matching improvements | Refined node matching for duplicates/deep callbacks (signature + position-aware pairing). | Fewer false `modified/added/removed` statuses. |
-| Whitespace-aware side-by-side diff | Code diff comparison ignores whitespace-only noise and better preserves multiline wrapped visibility. | Cleaner code review signal with less formatting noise. |
-| Neighborhood/derived caching | Added cached neighborhood strategies and memo-hash based worker inputs for derived/layout computations. | Better responsiveness on dense graphs and repeated interactions. |
-| Debounced search | Added debounced graph/code search inputs in heavy paths. | Reduces UI churn and expensive recompute bursts. |
-| Expanded tests | Added/expanded tests for graph delta, control-flow analyzers, diff utils, node identity, and view commands. | Higher confidence in behavior across large and edge-case diffs. |
+| Feature | Description |
+| --- | --- |
+| Comment-insensitive signatures | Diff/analyzers normalize signatures by stripping comments before hashing. Comment-only edits do not appear as semantic changes. |
+| Graph delta matching | Node matching for duplicates/deep callbacks (signature + position-aware pairing). |
+| Whitespace-aware side-by-side diff | Ignores whitespace-only noise; preserves multiline wrapped visibility. |
+| Neighborhood/derived caching | Cached neighborhood strategies and memo-hash based worker inputs for derived/layout computations. |
+| Debounced search | Debounced graph/code search inputs. |
+| Test coverage | Tests for graph delta, control-flow analyzers, diff utils, node identity, and view commands. |
 
 ### Logic View Flow (Mermaid)
 
@@ -405,7 +403,7 @@ flowchart TD
 
 ### Interactions
 
-- **NEW: ASK LLM from any hovered node** -- hover a node and use the floating actions outside the node: `Copy prompt` (clipboard) or `Open ChatGPT ↗` (new tab). The generated prompt includes the current-side code, matching old/new counterpart code when available, connected-node context, and graph relation details. For very large prompts, the ChatGPT URL payload is capped and appends `[PROMPT CUT BECAUSE OF URL LENGTH LIMIT]` so truncation is explicit.
+- **ASK LLM from any hovered node** -- hover a node and use the floating actions outside the node: `Copy prompt` (clipboard) or `Open ChatGPT ↗` (new tab). The generated prompt includes the current-side code, matching old/new counterpart code when available, connected-node context, and graph relation details. For very large prompts, the ChatGPT URL payload is capped and appends `[PROMPT CUT BECAUSE OF URL LENGTH LIMIT]` so truncation is explicit.
 - **Click a node** -- highlights it (cyan border + glow), selects its file below, and scrolls the code diff to that line
 - **Changed Files auto-collapse on node click** -- selecting a node collapses the Changed Files block; when collapsed it shows `Selected: <filename>` in the header
 - **Click a connector/edge** (Logic tab) -- first click focuses the source node; clicking the same connector again focuses the target node

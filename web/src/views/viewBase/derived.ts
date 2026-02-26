@@ -5,7 +5,7 @@ import type { ViewType } from "./types";
 import {
   computeChangedNodeCount,
   computeDiffStats,
-  computeDisplayGraph,
+  computeDisplayGraphByFilePaths,
   computeFilteredNewGraph,
   computeFilteredOldGraph,
   computeVisibleGraph,
@@ -14,7 +14,7 @@ import {
 export interface ViewBaseDerivedInput {
   oldGraph: ViewGraph;
   newGraph: ViewGraph;
-  selectedFilePath: string;
+  selectedFilePathsForGraph: string[];
   showChangesOnly: boolean;
   viewType: ViewType;
 }
@@ -62,7 +62,9 @@ export const buildViewBaseDerivedInputSignature = (input: ViewBaseDerivedInput):
   let hash = hashInit();
   hash = hashGraphForSignature(hash, input.oldGraph);
   hash = hashGraphForSignature(hash, input.newGraph);
-  hash = hashString(hash, input.selectedFilePath);
+  for (const p of [...input.selectedFilePathsForGraph].sort()) {
+    hash = hashString(hash, p);
+  }
   hash = hashBoolean(hash, input.showChangesOnly);
   hash = hashString(hash, input.viewType);
   return `${hashFinalize(hash)}:${input.oldGraph.nodes.length}:${input.newGraph.nodes.length}`;
@@ -71,7 +73,7 @@ export const buildViewBaseDerivedInputSignature = (input: ViewBaseDerivedInput):
 const computeViewBaseDerivedUncached = ({
   oldGraph,
   newGraph,
-  selectedFilePath,
+  selectedFilePathsForGraph,
   showChangesOnly,
   viewType,
 }: ViewBaseDerivedInput): ViewBaseDerivedResult => {
@@ -79,9 +81,9 @@ const computeViewBaseDerivedUncached = ({
   const filteredNewGraph = computeFilteredNewGraph(newGraph);
   const visibleOldGraph = computeVisibleGraph(filteredOldGraph, filteredNewGraph, showChangesOnly, viewType);
   const visibleNewGraph = computeVisibleGraph(filteredNewGraph, filteredOldGraph, showChangesOnly, viewType);
-  const displayOldGraph = computeDisplayGraph(visibleOldGraph, selectedFilePath, viewType);
-  const displayNewGraph = computeDisplayGraph(visibleNewGraph, selectedFilePath, viewType);
-
+  const displayOldGraph = computeDisplayGraphByFilePaths(visibleOldGraph, selectedFilePathsForGraph, viewType);
+  const displayNewGraph = computeDisplayGraphByFilePaths(visibleNewGraph, selectedFilePathsForGraph, viewType);
+  const selectedFilePath = selectedFilePathsForGraph.length === 1 ? selectedFilePathsForGraph[0] ?? "" : "";
   return {
     displayOldGraph,
     displayNewGraph,

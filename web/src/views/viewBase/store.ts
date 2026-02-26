@@ -18,6 +18,8 @@ export const ViewBaseStore = types
     newGraph: types.optional(ViewGraphModel, EMPTY_GRAPH),
     fileDiffs: types.optional(FileDiffsModel, []),
     selectedFilePath: types.optional(types.string, ""),
+    selectedFilePathsForGraph: types.optional(types.array(types.string), []),
+    areNodesSelected: types.optional(types.boolean, false),
     selectedNodeId: types.optional(types.string, ""),
     fileListCollapsed: types.optional(types.boolean, false),
     hoveredCodeLine: types.optional(types.number, 0),
@@ -98,6 +100,8 @@ export const ViewBaseStore = types
       self.hoveredNodeSide = "";
       self.fileDiffs = fileDiffs;
       self.selectedFilePath = "";
+      self.selectedFilePathsForGraph.replace([]);
+      self.areNodesSelected = false;
       self.fileListCollapsed = false;
       self.hoveredCodeLine = 0;
       self.hoveredCodeSide = "new";
@@ -285,6 +289,44 @@ export const ViewBaseStore = types
       self.hoveredNodeSide = "";
       self.hoveredNodeId = "";
       self.hoveredNodeMatchKey = "";
+    },
+
+    setSelectedFilePathsForGraph(paths: string[]) {
+      self.selectedFilePathsForGraph.replace(paths);
+    },
+
+    toggleFileForGraph(filePath: string, allFilePaths: string[]) {
+      const norm = filePath.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
+      const list = self.selectedFilePathsForGraph;
+      const paths = allFilePaths.map((p) => p.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, ""));
+      const isIncluded = list.length === 0 || list.some((p) => p === norm);
+      if (isIncluded) {
+        const next = list.length === 0
+          ? paths.filter((p) => p !== norm)
+          : list.filter((p) => p !== norm);
+        self.selectedFilePathsForGraph.replace(next);
+      } else {
+        self.selectedFilePathsForGraph.replace([...list, norm]);
+      }
+      self.areNodesSelected = true;
+    },
+
+    selectFilesFromNode(filePath: string) {
+      const norm = filePath.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
+      self.selectedFilePathsForGraph.replace([norm]);
+      self.areNodesSelected = true;
+    },
+
+    resetToInitialState() {
+      self.selectedFilePathsForGraph.replace([]);
+      self.areNodesSelected = false;
+      self.selectedNodeId = "";
+      self.selectedFilePath = "";
+      self.targetLine = 0;
+      self.hoveredNodeSide = "";
+      self.hoveredNodeId = "";
+      self.hoveredNodeMatchKey = "";
+      self.hoveredCodeLine = 0;
     },
 
     setViewConfig(config: {

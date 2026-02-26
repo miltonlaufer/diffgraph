@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import type { ViewBaseStoreInstance } from "./store";
 import { resolveAdjacentLogicTreeNodeId } from "./selectors";
-import { commandSelectNode } from "./commands";
+import { commandResetToInitialState, commandSelectNode } from "./commands";
 import type { InteractiveUpdateContext } from "./useInteractiveUpdate";
 import type { ViewGraph } from "#/types/graph";
 
@@ -47,6 +47,25 @@ export const useViewBaseKeyboardShortcuts = ({
     };
 
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        const hasOpenModal = typeof document !== "undefined" && document.querySelector('[aria-modal="true"]') !== null;
+        if (!hasOpenModal) {
+          if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+            const el = document.activeElement;
+            if (
+              el instanceof HTMLInputElement ||
+              el instanceof HTMLTextAreaElement ||
+              el instanceof HTMLSelectElement ||
+              (el instanceof HTMLElement && el.isContentEditable)
+            ) {
+              el.blur();
+            }
+          }
+          commandResetToInitialState(commandContext);
+          event.preventDefault();
+        }
+        return;
+      }
       if (event.altKey || event.ctrlKey || event.metaKey) return;
       const isVerticalArrow = event.key === "ArrowDown" || event.key === "ArrowUp";
       const isHorizontalArrow = event.key === "ArrowLeft" || event.key === "ArrowRight";
@@ -94,12 +113,12 @@ export const useViewBaseKeyboardShortcuts = ({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [
+    commandContext,
     displayNewGraph,
     displayOldGraph,
     goToNextGraphDiff,
     goToPrevGraphDiff,
     graphDiffTargetsLength,
-    commandContext,
     store,
   ]);
 };

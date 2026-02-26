@@ -85,11 +85,12 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     closePerformanceModal,
   } = usePerformanceGuard({ store, onShowCallsChange: handleShowCallsChange });
 
+  const selectedFilePathsForGraphSnapshot = [...store.selectedFilePathsForGraph].sort().join("\0");
   const derivedInput = useMemo(
     () => ({
       oldGraph: store.oldGraph,
       newGraph: store.newGraph,
-      selectedFilePath: store.selectedFilePath,
+      selectedFilePathsForGraph: [...store.selectedFilePathsForGraph],
       showChangesOnly: store.showChangesOnly,
       viewType: store.viewType as "logic" | "knowledge" | "react",
     }),
@@ -97,7 +98,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
       store.showChangesOnly,
       store.newGraph,
       store.oldGraph,
-      store.selectedFilePath,
+      selectedFilePathsForGraphSnapshot,
       store.viewType,
     ],
   );
@@ -132,10 +133,31 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     [displayOldGraph.nodes.length, displayNewGraph.nodes.length, renderNewGraph, renderOldGraph],
   );
 
+  const hoveredNodeFilePath = useMemo(() => {
+    if (!store.hoveredNodeId || !store.areNodesSelected) return "";
+    const sourceGraph = store.hoveredNodeSide === "old" ? store.oldGraph : store.newGraph;
+    const node = sourceGraph.nodes.find((n) => n.id === store.hoveredNodeId);
+    return node?.filePath ?? "";
+  }, [
+    store.areNodesSelected,
+    store.hoveredNodeId,
+    store.hoveredNodeSide,
+    store.newGraph,
+    store.oldGraph,
+  ]);
+
+  const effectiveFilePathForDiff = useMemo(() => {
+    if (!store.areNodesSelected) return "";
+    if (hoveredNodeFilePath) return hoveredNodeFilePath;
+    return store.selectedFilePath;
+  }, [store.areNodesSelected, store.selectedFilePath, hoveredNodeFilePath]);
+
   const selectedFile = useMemo(
     () =>
-      store.fileDiffs.find((entry) => normalizePath(entry.path) === normalizePath(store.selectedFilePath)) ?? null,
-    [store.fileDiffs, store.selectedFilePath],
+      effectiveFilePathForDiff
+        ? store.fileDiffs.find((entry) => normalizePath(entry.path) === normalizePath(effectiveFilePathForDiff)) ?? null
+        : null,
+    [store.fileDiffs, effectiveFilePathForDiff],
   );
 
   const selectedSymbols = useMemo<FileSymbol[]>(
@@ -187,6 +209,18 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
       commandSelectFile(commandContext, filePath);
     },
     [commandContext],
+  );
+
+  const handleToggleFileForGraph = useCallback(
+    (filePath: string) => {
+      commandContext.runInteractiveUpdate(() => {
+        const allPaths = store.fileDiffs.map((f) =>
+          f.path.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, ""),
+        );
+        store.toggleFileForGraph(filePath, allPaths);
+      });
+    },
+    [commandContext, store],
   );
 
   const handleToggleFileListCollapsed = useCallback(() => {
@@ -272,6 +306,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
       graphSearchNavTick: store.graphSearchNavTick,
       focusFilePath: store.selectedFilePath,
       focusFileTick: store.focusFileTick,
+      areNodesSelected: store.areNodesSelected,
       hoveredNodeId: store.hoveredNodeId,
       hoveredNodeMatchKey: store.hoveredNodeMatchKey,
       hoveredNodeSide: store.hoveredNodeSide as "old" | "new" | "",
@@ -302,6 +337,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     handleTopLevelAnchorsChange,
     handleViewportChange,
     diffStats,
+    store.areNodesSelected,
     store.focusFileTick,
     store.focusNodeId,
     store.focusSourceSide,
@@ -378,6 +414,8 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     state: {
       files: store.fileDiffs,
       selectedFilePath: store.selectedFilePath,
+      selectedFilePathsForGraph: [...store.selectedFilePathsForGraph],
+      areNodesSelected: store.areNodesSelected,
       fileListCollapsed: store.fileListCollapsed,
       hoveredCodeLine: store.hoveredCodeLine,
       hoveredCodeSide: store.hoveredCodeSide as "old" | "new",
@@ -393,6 +431,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     },
     actions: {
       onFileSelect: handleFileSelect,
+      onToggleFileForGraph: handleToggleFileForGraph,
       onToggleFileListCollapsed: handleToggleFileListCollapsed,
       onCodeLineClick: handleCodeLineClick,
       onCodeLineHover: handleCodeLineHover,
@@ -407,13 +446,16 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     handleCodeLineDoubleClick,
     handleCodeSearchStateChange,
     handleFileSelect,
+    handleToggleFileForGraph,
     handleToggleFileListCollapsed,
     store.codeSearchNavDirection,
     store.codeSearchNavTick,
     store.codeLogicTreeRequestTick,
     store.codeLogicTreeRequestSide,
     store.codeLogicTreeRequestLines,
+    store.areNodesSelected,
     store.fileListCollapsed,
+    selectedFilePathsForGraphSnapshot,
     store.hoveredCodeLine,
     store.hoveredCodeSide,
     selectedFile,

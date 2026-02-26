@@ -31,18 +31,6 @@ export const useViewBaseEffects = ({
   const graphDiffIdxRafRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        store.clearSelection();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [store]);
-
-  useEffect(() => {
     let mounted = true;
     store.beginLoading();
     didAutoViewportRef.current = false;

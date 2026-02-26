@@ -4,15 +4,21 @@ import type { FileDiffEntry } from "../../types/graph";
 interface FileListGridProps {
   files: FileDiffEntry[];
   selectedFilePath: string;
+  selectedFilePathsForGraph: string[];
   topRisk: number;
   onSelectFile: (filePath: string) => void;
+  onToggleFileForGraph: (filePath: string) => void;
+  normalizePathForCompare: (p: string) => string;
 }
 
 export const FileListGrid = memo(({
   files,
   selectedFilePath,
+  selectedFilePathsForGraph,
   topRisk,
   onSelectFile,
+  onToggleFileForGraph,
+  normalizePathForCompare,
 }: FileListGridProps) => (
   <div className="fileListGrid">
     {files.map((entry) => (
@@ -20,8 +26,16 @@ export const FileListGrid = memo(({
         key={entry.path}
         entry={entry}
         isSelected={entry.path === selectedFilePath}
+        isCheckedForGraph={
+          selectedFilePathsForGraph.length === 0 ||
+          selectedFilePathsForGraph.some((p) => normalizePathForCompare(p) === normalizePathForCompare(entry.path))
+        }
         topRisk={topRisk}
         onSelect={onSelectFile}
+        onToggleCheckbox={(e) => {
+          e.stopPropagation();
+          onToggleFileForGraph(entry.path);
+        }}
       />
     ))}
   </div>
@@ -32,21 +46,31 @@ FileListGrid.displayName = "FileListGrid";
 interface FilePillProps {
   entry: FileDiffEntry;
   isSelected: boolean;
+  isCheckedForGraph: boolean;
   topRisk: number;
   onSelect: (filePath: string) => void;
+  onToggleCheckbox: (e: React.MouseEvent | React.ChangeEvent<HTMLInputElement>) => void;
 }
 
-const FilePill = memo(({ entry, isSelected, topRisk, onSelect }: FilePillProps) => {
+const FilePill = memo(({ entry, isSelected, isCheckedForGraph, topRisk, onSelect, onToggleCheckbox }: FilePillProps) => {
   const handleClick = useCallback(() => {
     onSelect(entry.path);
   }, [entry.path, onSelect]);
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className={isSelected ? "filePill filePillActive" : "filePill"}
-    >
+    <div className={isSelected ? "filePill filePillActive" : "filePill"}>
+      <input
+        type="checkbox"
+        checked={isCheckedForGraph}
+        onChange={onToggleCheckbox}
+        aria-label={`Show ${entry.path} in graph`}
+        className="filePillCheckbox"
+      />
+      <button
+        type="button"
+        onClick={handleClick}
+        className="filePillContent"
+      >
       <span className="filePillPath">
         {entry.changeType === "renamed" && entry.oldPath && entry.newPath
           ? `${entry.oldPath} -> ${entry.newPath}`
@@ -74,6 +98,7 @@ const FilePill = memo(({ entry, isSelected, topRisk, onSelect }: FilePillProps) 
         R{entry.riskScore ?? 0}
       </span>
     </button>
+    </div>
   );
 });
 

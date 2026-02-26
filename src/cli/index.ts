@@ -13,7 +13,21 @@ const pkgPath = [join(__dirname, "../../../package.json"), join(__dirname, "../.
   (p) => existsSync(p),
 );
 const pkg = JSON.parse(readFileSync(pkgPath!, "utf-8")) as { name: string; version: string };
-updateNotifier({ pkg }).notify();
+
+const logVersionStatus = async (): Promise<void> => {
+  const notifier = updateNotifier({ pkg });
+  try {
+    const info = await notifier.fetchInfo();
+    const hasUpdate = Boolean(info?.latest && info.type && info.type !== "latest");
+    if (hasUpdate) {
+      console.log(`diffgraph ${pkg.version} (update available: ${info.latest} - run \`npm update diffgraph\`)`);
+    } else {
+      console.log(`diffgraph ${pkg.version} (up to date)`);
+    }
+  } catch {
+    console.log(`diffgraph ${pkg.version}`);
+  }
+};
 
 const normalizedArgv = process.argv.map((arg) => {
   if (arg === "-ff") return "--file-file";
@@ -127,6 +141,7 @@ program
 const hasExplicitArgs = normalizedArgv.length > 2;
 
 const runCli = async (): Promise<void> => {
+  await logVersionStatus();
   if (!hasExplicitArgs) {
     await runInteractiveMenu(process.cwd());
     return;

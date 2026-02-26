@@ -20,6 +20,7 @@ interface SplitGraphRuntimeState {
   graphSearchNavTick: number;
   focusFilePath: string;
   focusFileTick: number;
+  areNodesSelected: boolean;
   hoveredNodeId: string;
   hoveredNodeMatchKey: string;
   hoveredNodeSide: "old" | "new" | "";
