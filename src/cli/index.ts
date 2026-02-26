@@ -2,7 +2,7 @@
 import { existsSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import updateNotifier from "update-notifier";
 import { runDiff } from "./commands/diff.js";
 import { runAnalyze } from "./commands/analyze.js";
@@ -20,7 +20,7 @@ const logVersionStatus = async (): Promise<void> => {
     const info = await notifier.fetchInfo();
     const hasUpdate = Boolean(info?.latest && info.type && info.type !== "latest");
     if (hasUpdate) {
-      console.log(`diffgraph ${pkg.version} (update available: ${info.latest} - run \`npm update diffgraph\`)`);
+      console.log(`diffgraph ${pkg.version} (update available: ${info.latest} - run \`npm update -g diffgraph\`)`);
     } else {
       console.log(`diffgraph ${pkg.version} (up to date)`);
     }
@@ -42,7 +42,7 @@ program
   .command("staged")
   .description("Compare uncommitted changes (staged + unstaged) against HEAD")
   .option("--staged-only", "Use only staged changes")
-  .option("--repo <path>", "Repository path", process.cwd())
+  .addOption(new Option("--repo <path>", "Repository path").default(process.cwd(), "current"))
   .option("--no-open", "Do not open browser", false)
   .option("--port <port>", "Server port", "4177")
   .action(async (options) => {
@@ -59,7 +59,7 @@ program
 program
   .command("analyze")
   .description("Analyze current repository and persist knowledge graph snapshot")
-  .option("--repo <path>", "Repository path", process.cwd())
+  .addOption(new Option("--repo <path>", "Repository path").default(process.cwd(), "current"))
   .option("--ref <ref>", "Reference label", "WORKTREE")
   .action(async (options) => {
     const result = await runAnalyze(options.repo, options.ref);
@@ -71,7 +71,7 @@ program
   .option("-b, --branches <branches...>", "Compare two branches: -b <base> <target>")
   .option("-r, --refs <refs...>", "Compare two refs (commit/tag/branch): -r <oldRef> <newRef>")
   .option("--pull-request <number>", "Compare GitHub pull request from origin: -pr <number>")
-  .option("--repo <path>", "Repository path", process.cwd())
+  .addOption(new Option("--repo <path>", "Repository path").default(process.cwd(), "current"))
   .option("--no-open", "Do not open browser", false)
   .option("--port <port>", "Server port", "4177")
   .action(async (options) => {
