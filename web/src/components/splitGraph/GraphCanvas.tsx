@@ -10,7 +10,7 @@ import {
   type NodeTypes,
   type Viewport,
 } from "@xyflow/react";
-import type { MutableRefObject } from "react";
+import { memo, type MutableRefObject } from "react";
 import type { ViewportState } from "../../types/graph";
 
 interface GraphCanvasProps {
@@ -37,7 +37,7 @@ interface GraphCanvasProps {
   onMoveEnd: (event: MouseEvent | TouchEvent | null, viewport: Viewport) => void;
 }
 
-export const GraphCanvas = ({
+const GraphCanvasInner = ({
   side,
   isOld,
   nodes,
@@ -102,3 +102,7 @@ export const GraphCanvas = ({
     </ReactFlow>
   </div>
 );
+
+export const GraphCanvas = memo(GraphCanvasInner);
+
+GraphCanvas.displayName = "GraphCanvas";

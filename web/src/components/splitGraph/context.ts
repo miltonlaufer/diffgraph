@@ -1,9 +1,12 @@
 import { createContext, useContext } from "react";
 import type { ViewportState } from "#/types/graph";
-import type { GraphDiffTarget, InternalNodeAnchor, TopLevelAnchor } from "./types";
+import type { DiffStats, GraphDiffTarget, InternalNodeAnchor, TopLevelAnchor } from "./types";
 
 interface SplitGraphRuntimeState {
   viewport: ViewportState;
+  viewType: "logic" | "knowledge" | "react";
+  pullRequestDescriptionExcerpt: string;
+  diffStats?: DiffStats;
   selectedNodeId: string;
   highlightedNodeId: string;
   focusNodeId: string;

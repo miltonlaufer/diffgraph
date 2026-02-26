@@ -1,13 +1,5 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  type ChangeEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
-} from "react";
-import { observer, useLocalObservable } from "mobx-react-lite";
+import { useCallback, useEffect, useMemo, useRef, type ChangeEvent, type ReactNode } from "react";
+import { observer } from "mobx-react-lite";
 import { CodeDiffMatrixView } from "./codeDiff/CodeDiffMatrixView";
 import { CodeDiffSingleFileView } from "./codeDiff/CodeDiffSingleFileView";
 import { CodeDiffToolbar } from "./codeDiff/CodeDiffToolbar";
@@ -17,11 +9,11 @@ import {
   findDiffHunkStarts,
   langFromPath,
   scrollToRowIndex,
-  clearPreviewSourceLine,
-  scrollToPreviewSourceLine,
-  scrollToSourceLine,
 } from "./codeDiff/diffUtils";
 import { CodeDiffDrawerStore } from "./codeDiff/store";
+import { useCodeDiffScroll } from "./codeDiff/useCodeDiffScroll";
+import { useCodeDiffSearch } from "./codeDiff/useCodeDiffSearch";
+import { useCodeLogicTreeMode } from "./codeDiff/useCodeLogicTreeMode";
 import type { DiffMatrixRow } from "./codeDiff/types";
 import { useViewBaseRuntime } from "../views/viewBase/runtime";
 import { createCachedComputation } from "#/lib/cachedComputation";
@@ -94,14 +86,10 @@ export const CodeDiffDrawer = observer(() => {
     codeLogicTreeRequestLines,
   } = state;
   const { onCodeLineClick, onCodeSearchStateChange } = actions;
-  const store = useLocalObservable(() => new CodeDiffDrawerStore());
+  const store = useMemo(() => CodeDiffDrawerStore.create({}), []);
   const oldCodeScrollRef = useRef<HTMLDivElement>(null);
   const newCodeScrollRef = useRef<HTMLDivElement>(null);
-  const syncingScrollRef = useRef(false);
   const pendingLineClickTimerRef = useRef<number | null>(null);
-  const lastAppliedCodeSearchNavTickRef = useRef(0);
-  const lastAppliedCodeLogicTreeTickRef = useRef(0);
-  const prevHoveredCodeLineRef = useRef(0);
   const SINGLE_CLICK_DELAY_MS = 450;
 
   const lang = useMemo(() => langFromPath(file?.path ?? ""), [file?.path]);
@@ -139,7 +127,7 @@ export const CodeDiffDrawer = observer(() => {
       const lineNumber = filterSide === "old" ? row.old.lineNumber : row.new.lineNumber;
       return lineNumber !== null && codeLogicTreeLineSet.has(lineNumber);
     });
-    return insertGapRows(filteredRows, filterSide);
+    return insertGapRows(filteredRows, filterSide as "old" | "new");
   }, [codeLogicTreeLineSet, matrixRows, store.codeLogicTreeMode, store.codeLogicTreeSide]);
 
   const hunkRows = useMemo(() => findDiffHunkStarts(visibleMatrixRows), [visibleMatrixRows]);
@@ -186,51 +174,30 @@ export const CodeDiffDrawer = observer(() => {
     store.setTextSearch(event.target.value);
   }, [store]);
 
-  const goToTextMatch = useCallback((idx: number) => {
-    if (textSearchMatches.length === 0) return;
-    const clamped = ((idx % textSearchMatches.length) + textSearchMatches.length) % textSearchMatches.length;
-    store.setTextSearchIdx(clamped);
-    scrollToRowIndex(oldCodeScrollRef.current, textSearchMatches[clamped]);
-  }, [textSearchMatches, store]);
+  const { handleOldScroll, handleNewScroll } = useCodeDiffScroll({
+    oldCodeScrollRef,
+    newCodeScrollRef,
+    targetLine,
+    targetSide,
+    scrollTick,
+    hoveredCodeLine,
+    hoveredCodeSide,
+  });
 
-  const handleTextSearchKey = useCallback((event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (store.textSearch.trim().length === 0) return;
-    if (event.key === "Enter") {
-      goToTextMatch(event.shiftKey ? store.textSearchIdx - 1 : store.textSearchIdx + 1);
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-    if (event.key === "ArrowDown") {
-      goToTextMatch(store.textSearchIdx + 1);
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-    if (event.key === "ArrowUp") {
-      goToTextMatch(store.textSearchIdx - 1);
-      event.preventDefault();
-      event.stopPropagation();
-    }
-  }, [goToTextMatch, store.textSearch, store.textSearchIdx]);
+  const { goToTextMatch, handleTextSearchKey } = useCodeDiffSearch({
+    store,
+    textSearchMatches,
+    oldCodeScrollRef,
+    codeSearchNavDirection,
+    codeSearchNavTick,
+  });
 
-  const syncVerticalScroll = useCallback((source: HTMLDivElement | null, target: HTMLDivElement | null) => {
-    if (!source || !target) return;
-    if (syncingScrollRef.current) return;
-    syncingScrollRef.current = true;
-    target.scrollTop = source.scrollTop;
-    requestAnimationFrame(() => {
-      syncingScrollRef.current = false;
-    });
-  }, []);
-
-  const handleOldScroll = useCallback(() => {
-    syncVerticalScroll(oldCodeScrollRef.current, newCodeScrollRef.current);
-  }, [syncVerticalScroll]);
-
-  const handleNewScroll = useCallback(() => {
-    syncVerticalScroll(newCodeScrollRef.current, oldCodeScrollRef.current);
-  }, [syncVerticalScroll]);
+  useCodeLogicTreeMode({
+    store,
+    codeLogicTreeRequestTick,
+    codeLogicTreeRequestSide,
+    codeLogicTreeRequestLines,
+  });
 
   const handleDeferredLineClick = useCallback((line: number, side: "old" | "new") => {
     if (pendingLineClickTimerRef.current !== null) {
@@ -273,62 +240,6 @@ export const CodeDiffDrawer = observer(() => {
   useEffect(() => {
     onCodeSearchStateChange(store.textSearch.trim().length > 0);
   }, [onCodeSearchStateChange, store.textSearch]);
-
-  useEffect(() => {
-    if (targetLine <= 0) return;
-    const timerId = window.setTimeout(() => {
-      scrollToSourceLine(newCodeScrollRef.current, targetLine, targetSide);
-      scrollToSourceLine(oldCodeScrollRef.current, targetLine, targetSide);
-    }, 100);
-    return () => window.clearTimeout(timerId);
-  }, [targetLine, targetSide, scrollTick]);
-
-  useEffect(() => {
-    const prevHovered = prevHoveredCodeLineRef.current;
-    if (hoveredCodeLine > 0) {
-      scrollToPreviewSourceLine(newCodeScrollRef.current, hoveredCodeLine, hoveredCodeSide);
-      scrollToPreviewSourceLine(oldCodeScrollRef.current, hoveredCodeLine, hoveredCodeSide);
-      prevHoveredCodeLineRef.current = hoveredCodeLine;
-      return;
-    }
-    clearPreviewSourceLine(newCodeScrollRef.current);
-    clearPreviewSourceLine(oldCodeScrollRef.current);
-    if (prevHovered > 0 && targetLine > 0) {
-      scrollToSourceLine(newCodeScrollRef.current, targetLine, targetSide);
-      scrollToSourceLine(oldCodeScrollRef.current, targetLine, targetSide);
-    }
-    prevHoveredCodeLineRef.current = hoveredCodeLine;
-  }, [hoveredCodeLine, hoveredCodeSide, targetLine, targetSide]);
-
-  useEffect(() => {
-    if (codeSearchNavTick <= 0) return;
-    if (codeSearchNavTick === lastAppliedCodeSearchNavTickRef.current) return;
-    lastAppliedCodeSearchNavTickRef.current = codeSearchNavTick;
-    if (codeSearchNavDirection === "next") {
-      goToTextMatch(store.textSearchIdx + 1);
-      return;
-    }
-    goToTextMatch(store.textSearchIdx - 1);
-  }, [codeSearchNavDirection, codeSearchNavTick, goToTextMatch, store.textSearchIdx]);
-
-  useEffect(() => {
-    if (codeLogicTreeRequestTick <= 0) return;
-    if (codeLogicTreeRequestTick === lastAppliedCodeLogicTreeTickRef.current) return;
-    lastAppliedCodeLogicTreeTickRef.current = codeLogicTreeRequestTick;
-    const normalizedLines = [...new Set(
-      codeLogicTreeRequestLines
-        .map((line) => Math.floor(line))
-        .filter((line) => Number.isFinite(line) && line > 0),
-    )].sort((a, b) => a - b);
-    if (normalizedLines.length === 0) return;
-    store.setCodeLogicTreeMode(codeLogicTreeRequestSide, normalizedLines);
-    store.setFullscreen(true);
-  }, [
-    codeLogicTreeRequestLines,
-    codeLogicTreeRequestSide,
-    codeLogicTreeRequestTick,
-    store,
-  ]);
 
   useEffect(() => () => {
     onCodeSearchStateChange(false);

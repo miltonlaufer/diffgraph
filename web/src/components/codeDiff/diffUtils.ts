@@ -25,7 +25,6 @@ export const computeSideBySide = (
     value.replace(/^(if|elif|while)\((.*)\):$/, "$1$2:");
   const normalizeLinesForCompare = (
     lines: string[],
-    side: "old" | "new",
   ): { normalized: string[]; isBlankLine: boolean[]; isNeutralizedLine: boolean[] } => {
     const compacted = lines.map(compactLine);
     const normalized = [...compacted];
@@ -66,7 +65,7 @@ export const computeSideBySide = (
       if (depth <= 0) {
         normalized[i] = normalizeWrappedPythonHeader(`${keyword}(${pieces.join("")}`);
         for (let k = i + 1; k <= j; k += 1) {
-          normalized[k] = `__dg_wrap_cont__${side}__${k}`;
+          normalized[k] = `__dg_wrap_cont__${compacted[k] ?? ""}`;
           isNeutralizedLine[k] = true;
         }
         i = j;
@@ -97,7 +96,7 @@ export const computeSideBySide = (
 
       normalized[i] = normalizeWrappedPythonHeader(pieces.join(""));
       for (let k = i + 1; k <= j; k += 1) {
-        normalized[k] = `__dg_wrap_cont__${side}__${k}`;
+        normalized[k] = `__dg_wrap_cont__${compacted[k] ?? ""}`;
         isNeutralizedLine[k] = true;
       }
       i = j;
@@ -105,8 +104,8 @@ export const computeSideBySide = (
 
     return { normalized, isBlankLine, isNeutralizedLine };
   };
-  const oldNormalized = normalizeLinesForCompare(oldArr, "old");
-  const newNormalized = normalizeLinesForCompare(newArr, "new");
+  const oldNormalized = normalizeLinesForCompare(oldArr);
+  const newNormalized = normalizeLinesForCompare(newArr);
   const oldNorm = oldNormalized.normalized;
   const newNorm = newNormalized.normalized;
   const oldIsBlankLine = oldNormalized.isBlankLine;

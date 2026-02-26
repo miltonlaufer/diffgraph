@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useTransition } from "react";
-import { ViewBaseStore } from "./store";
+import type { ViewBaseStoreInstance } from "./store";
 
 export interface InteractiveUpdateContext {
-  store: ViewBaseStore;
+  store: ViewBaseStoreInstance;
   runInteractiveUpdate: (update: () => void) => void;
 }
 
@@ -12,7 +12,7 @@ interface UseInteractiveUpdateResult {
 }
 
 export const useInteractiveUpdate = (
-  store: ViewBaseStore,
+  store: ViewBaseStoreInstance,
 ): UseInteractiveUpdateResult => {
   const [isUiPending, startUiTransition] = useTransition();
   const startRafRef = useRef<number | null>(null);

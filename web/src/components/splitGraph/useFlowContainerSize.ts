@@ -1,9 +1,9 @@
 import { useEffect, type MutableRefObject } from "react";
-import { SplitGraphPanelStore } from "./store";
+import { type SplitGraphPanelStoreInstance } from "./store";
 
 export const useFlowContainerSize = (
   flowContainerRef: MutableRefObject<HTMLDivElement | null>,
-  store: SplitGraphPanelStore,
+  store: SplitGraphPanelStoreInstance,
 ): void => {
   useEffect(() => {
     const el = flowContainerRef.current;

@@ -2,11 +2,11 @@ import type { MutableRefObject } from "react";
 import type { GraphDiffTarget, InternalNodeAnchor, TopLevelAnchor } from "#/components/SplitGraphPanel";
 import type { ViewGraph, ViewportState } from "#/types/graph";
 import { buildCrossGraphNodeMatchKey } from "#/lib/nodeIdentity";
-import { ViewBaseStore } from "./store";
+import type { ViewBaseStoreInstance } from "./store";
 import { normalizePath } from "./selectors";
 
 interface CommandContext {
-  store: ViewBaseStore;
+  store: ViewBaseStoreInstance;
   runInteractiveUpdate: (update: () => void) => void;
 }
 
@@ -262,7 +262,7 @@ export const commandCodeLineHoverClear = (
   store.clearHoveredNode();
   store.clearHoveredCodeTarget();
   if (store.selectedNodeId) {
-    store.focusNode(store.selectedNodeId, store.targetSide);
+    store.focusNode(store.selectedNodeId, store.targetSide as "old" | "new");
   }
 };
 

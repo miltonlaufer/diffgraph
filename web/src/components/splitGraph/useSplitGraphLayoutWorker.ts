@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { Edge, Node } from "@xyflow/react";
 import type { ViewGraph } from "#/types/graph";
 import type { LayoutWorkerRequest, LayoutWorkerResponse } from "#/workers/layoutTypes";
-import { SplitGraphPanelStore } from "./store";
+import { type SplitGraphPanelStoreInstance } from "./store";
 import { createSignatureCache } from "#/lib/cachedComputation";
 import { hashBoolean, hashFinalize, hashInit, hashNumber, hashString } from "#/lib/memoHash";
 
@@ -12,7 +12,7 @@ interface LayoutResult {
 }
 
 interface UseSplitGraphLayoutWorkerArgs {
-  store: SplitGraphPanelStore;
+  store: SplitGraphPanelStoreInstance;
   graph: ViewGraph;
   viewType: "logic" | "knowledge" | "react";
   showCalls: boolean;

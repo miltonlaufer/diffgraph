@@ -1,13 +1,12 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { fetchDiffFiles, fetchView } from "#/api";
 import type { GraphDiffTarget } from "#/components/splitGraph/types";
-import { ViewBaseStore } from "./store";
+import { getCachedFiles, getCachedView, setCachedFiles, setCachedView } from "#/lib/diffPrefetch";
+import type { ViewBaseStoreInstance } from "./store";
 import type { ViewType } from "./types";
 
 interface UseViewBaseEffectsArgs {
-  store: ViewBaseStore;
-  diffId: string;
-  viewType: ViewType;
+  store: ViewBaseStoreInstance;
   hasSelectedFile: boolean;
   graphSectionRef: MutableRefObject<HTMLDivElement | null>;
   codeDiffSectionRef: MutableRefObject<HTMLDivElement | null>;
@@ -19,8 +18,6 @@ interface UseViewBaseEffectsArgs {
 
 export const useViewBaseEffects = ({
   store,
-  diffId,
-  viewType,
   hasSelectedFile,
   graphSectionRef,
   codeDiffSectionRef,
@@ -50,9 +47,20 @@ export const useViewBaseEffects = ({
     store.beginLoading();
     didAutoViewportRef.current = false;
 
-    Promise.all([fetchView(diffId, viewType), fetchDiffFiles(diffId)])
+    const viewType = store.viewType as ViewType;
+    const cachedView = getCachedView(store.diffId, viewType);
+    const cachedFiles = getCachedFiles(store.diffId);
+
+    if (cachedView && cachedFiles) {
+      store.applyFetchedData(cachedView.oldGraph, cachedView.newGraph, cachedFiles);
+      return;
+    }
+
+    Promise.all([fetchView(store.diffId, viewType), fetchDiffFiles(store.diffId)])
       .then(([payload, files]) => {
         if (!mounted) return;
+        setCachedView(store.diffId, viewType, { oldGraph: payload.oldGraph, newGraph: payload.newGraph });
+        setCachedFiles(store.diffId, files);
         store.applyFetchedData(payload.oldGraph, payload.newGraph, files);
       })
       .catch((reason: unknown) => {
@@ -63,7 +71,7 @@ export const useViewBaseEffects = ({
     return () => {
       mounted = false;
     };
-  }, [diffId, store, viewType]);
+  }, [store, store.diffId, store.viewType]);
 
   useEffect(() => {
     if (store.scrollTick <= 0 || !hasSelectedFile) return;

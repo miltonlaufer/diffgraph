@@ -2,6 +2,7 @@ import { Handle, Position, useViewport } from "@xyflow/react";
 import { memo, useMemo, useState, useCallback } from "react";
 import type { FunctionParameterDiffEntry } from "../../types/graph";
 import AskLlmButton from "./AskLlmButton";
+import { ParameterTokenList } from "./ParameterTokenList";
 import { useDebouncedValue } from "../useDebouncedValue";
 import FloatingTooltip from "./FloatingTooltip";
 
@@ -432,19 +433,7 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
           onMouseLeave={onStripLeave}
         >
           <div style={parameterTextRowStyle}>
-            {parameterTokens.map((token, index) => (
-              <span key={`${token.status}:${token.text}:${index}`}>
-                <span
-                  style={{
-                    ...parameterTokenStyle,
-                    color: parameterTextColors[token.status],
-                  }}
-                >
-                  {token.text}
-                </span>
-                {index < parameterTokens.length - 1 && <span>, </span>}
-              </span>
-            ))}
+            <ParameterTokenList tokens={parameterTokens} />
           </div>
         </div>
       )}
@@ -468,19 +457,7 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
                   none
                 </span>
               )
-              : dependencyTokens.map((token, index) => (
-                <span key={`${token.status}:${token.text}:${index}`}>
-                  <span
-                    style={{
-                      ...parameterTokenStyle,
-                      color: parameterTextColors[token.status],
-                    }}
-                  >
-                    {token.text}
-                  </span>
-                  {index < dependencyTokens.length - 1 && <span>, </span>}
-                </span>
-              ))}
+              : <ParameterTokenList tokens={dependencyTokens} />}
           </div>
         </div>
       )}

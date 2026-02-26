@@ -1,288 +1,303 @@
-import { makeAutoObservable, observable } from "mobx";
+import { types } from "mobx-state-tree";
 import type { FileDiffEntry, ViewGraph, ViewportState } from "#/types/graph";
 import type { GraphDiffTarget, InternalNodeAnchor, TopLevelAnchor } from "#/components/SplitGraphPanel";
+import type { ViewType } from "./types";
 
 const EMPTY_GRAPH: ViewGraph = { nodes: [], edges: [] };
 
-export class ViewBaseStore {
-  oldGraph: ViewGraph = EMPTY_GRAPH;
-  newGraph: ViewGraph = EMPTY_GRAPH;
-  fileDiffs: FileDiffEntry[] = [];
-  selectedFilePath = "";
-  selectedNodeId = "";
-  fileListCollapsed = false;
-  hoveredCodeLine = 0;
-  hoveredCodeSide: "old" | "new" = "new";
-  targetLine = 0;
-  targetSide: "old" | "new" = "new";
-  scrollTick = 0;
-  graphTopScrollTick = 0;
-  sharedViewport: ViewportState = { x: 0, y: 0, zoom: 0.8 };
-  showCalls = true;
-  oldDiffTargets: GraphDiffTarget[] = [];
-  newDiffTargets: GraphDiffTarget[] = [];
-  oldTopAnchors: Record<string, TopLevelAnchor> = {};
-  newTopAnchors: Record<string, TopLevelAnchor> = {};
-  oldNodeAnchors: Record<string, InternalNodeAnchor> = {};
-  newNodeAnchors: Record<string, InternalNodeAnchor> = {};
-  graphDiffIdx = 0;
-  highlightedNodeId = "";
-  focusNodeId = "";
-  focusSourceSide: "old" | "new" = "new";
-  focusNodeTick = 0;
-  focusFileTick = 0;
-  graphSearchSide: "old" | "new" = "new";
-  graphSearchQuery = "";
-  graphSearchTick = 0;
-  oldGraphSearchActive = false;
-  newGraphSearchActive = false;
-  graphSearchNavSide: "old" | "new" = "new";
-  graphSearchNavDirection: "next" | "prev" = "next";
-  graphSearchNavTick = 0;
-  codeSearchActive = false;
-  codeSearchNavDirection: "next" | "prev" = "next";
-  codeSearchNavTick = 0;
-  codeLogicTreeRequestTick = 0;
-  codeLogicTreeRequestSide: "old" | "new" = "new";
-  codeLogicTreeRequestLines: number[] = [];
-  hoveredNodeId = "";
-  hoveredNodeMatchKey = "";
-  hoveredNodeSide: "old" | "new" | "" = "";
-  oldLayoutPending = false;
-  newLayoutPending = false;
-  loading = true;
-  error = "";
-  interactionBusy = false;
+const ViewGraphModel = types.frozen<ViewGraph>();
+const FileDiffsModel = types.frozen<FileDiffEntry[]>();
+const ViewportModel = types.frozen<ViewportState>();
+const GraphDiffTargetsModel = types.frozen<GraphDiffTarget[]>();
+const TopAnchorsModel = types.frozen<Record<string, TopLevelAnchor>>();
+const NodeAnchorsModel = types.frozen<Record<string, InternalNodeAnchor>>();
 
-  get hasSelectedNode(): boolean {
-    return this.selectedNodeId.length > 0;
-  }
+export const ViewBaseStore = types
+  .model("ViewBaseStore", {
+    oldGraph: types.optional(ViewGraphModel, EMPTY_GRAPH),
+    newGraph: types.optional(ViewGraphModel, EMPTY_GRAPH),
+    fileDiffs: types.optional(FileDiffsModel, []),
+    selectedFilePath: types.optional(types.string, ""),
+    selectedNodeId: types.optional(types.string, ""),
+    fileListCollapsed: types.optional(types.boolean, false),
+    hoveredCodeLine: types.optional(types.number, 0),
+    hoveredCodeSide: types.optional(types.enumeration(["old", "new"]), "new"),
+    targetLine: types.optional(types.number, 0),
+    targetSide: types.optional(types.enumeration(["old", "new"]), "new"),
+    scrollTick: types.optional(types.number, 0),
+    graphTopScrollTick: types.optional(types.number, 0),
+    sharedViewport: types.optional(ViewportModel, { x: 0, y: 0, zoom: 0.8 }),
+    showCalls: types.optional(types.boolean, true),
+    oldDiffTargets: types.optional(GraphDiffTargetsModel, []),
+    newDiffTargets: types.optional(GraphDiffTargetsModel, []),
+    oldTopAnchors: types.optional(TopAnchorsModel, {}),
+    newTopAnchors: types.optional(TopAnchorsModel, {}),
+    oldNodeAnchors: types.optional(NodeAnchorsModel, {}),
+    newNodeAnchors: types.optional(NodeAnchorsModel, {}),
+    graphDiffIdx: types.optional(types.number, 0),
+    highlightedNodeId: types.optional(types.string, ""),
+    focusNodeId: types.optional(types.string, ""),
+    focusSourceSide: types.optional(types.enumeration(["old", "new"]), "new"),
+    focusNodeTick: types.optional(types.number, 0),
+    focusFileTick: types.optional(types.number, 0),
+    graphSearchSide: types.optional(types.enumeration(["old", "new"]), "new"),
+    graphSearchQuery: types.optional(types.string, ""),
+    graphSearchTick: types.optional(types.number, 0),
+    oldGraphSearchActive: types.optional(types.boolean, false),
+    newGraphSearchActive: types.optional(types.boolean, false),
+    graphSearchNavSide: types.optional(types.enumeration(["old", "new"]), "new"),
+    graphSearchNavDirection: types.optional(types.enumeration(["next", "prev"]), "next"),
+    graphSearchNavTick: types.optional(types.number, 0),
+    codeSearchActive: types.optional(types.boolean, false),
+    codeSearchNavDirection: types.optional(types.enumeration(["next", "prev"]), "next"),
+    codeSearchNavTick: types.optional(types.number, 0),
+    codeLogicTreeRequestTick: types.optional(types.number, 0),
+    codeLogicTreeRequestSide: types.optional(types.enumeration(["old", "new"]), "new"),
+    codeLogicTreeRequestLines: types.optional(types.array(types.number), []),
+    hoveredNodeId: types.optional(types.string, ""),
+    hoveredNodeMatchKey: types.optional(types.string, ""),
+    hoveredNodeSide: types.optional(types.enumeration(["old", "new", ""]), ""),
+    oldLayoutPending: types.optional(types.boolean, false),
+    newLayoutPending: types.optional(types.boolean, false),
+    loading: types.optional(types.boolean, true),
+    error: types.optional(types.string, ""),
+    interactionBusy: types.optional(types.boolean, false),
+    diffId: types.optional(types.string, ""),
+    viewType: types.optional(types.enumeration(["logic", "knowledge", "react"]), "logic"),
+    showChangesOnly: types.optional(types.boolean, true),
+    pullRequestDescriptionExcerpt: types.optional(types.string, ""),
+  })
+  .views((self) => ({
+    get hasSelectedNode() {
+      return self.selectedNodeId.length > 0;
+    },
+    get hasSearchActive() {
+      return self.codeSearchActive || self.oldGraphSearchActive || self.newGraphSearchActive;
+    },
+  }))
+  .actions((self) => ({
+    beginLoading() {
+      self.loading = true;
+      self.error = "";
+    },
 
-  get hasSearchActive(): boolean {
-    return this.codeSearchActive || this.oldGraphSearchActive || this.newGraphSearchActive;
-  }
+    applyFetchedData(oldGraph: ViewGraph, newGraph: ViewGraph, fileDiffs: FileDiffEntry[]) {
+      self.oldGraph = oldGraph;
+      self.newGraph = newGraph;
+      self.oldDiffTargets = [];
+      self.newDiffTargets = [];
+      self.oldLayoutPending = false;
+      self.newLayoutPending = false;
+      self.graphDiffIdx = 0;
+      self.oldTopAnchors = {};
+      self.newTopAnchors = {};
+      self.oldNodeAnchors = {};
+      self.newNodeAnchors = {};
+      self.hoveredNodeId = "";
+      self.hoveredNodeMatchKey = "";
+      self.hoveredNodeSide = "";
+      self.fileDiffs = fileDiffs;
+      self.selectedFilePath = "";
+      self.fileListCollapsed = false;
+      self.hoveredCodeLine = 0;
+      self.hoveredCodeSide = "new";
+      self.sharedViewport = { x: 20, y: 20, zoom: 0.5 };
+      self.focusSourceSide = "new";
+      self.graphSearchSide = "new";
+      self.graphSearchQuery = "";
+      self.graphSearchTick = 0;
+      self.oldGraphSearchActive = false;
+      self.newGraphSearchActive = false;
+      self.graphSearchNavSide = "new";
+      self.graphSearchNavDirection = "next";
+      self.graphSearchNavTick = 0;
+      self.codeSearchActive = false;
+      self.codeSearchNavDirection = "next";
+      self.codeSearchNavTick = 0;
+      self.codeLogicTreeRequestTick = 0;
+      self.codeLogicTreeRequestSide = "new";
+      self.codeLogicTreeRequestLines.clear();
+      self.graphTopScrollTick = 0;
+      self.loading = false;
+      self.error = "";
+    },
 
-  constructor() {
-    makeAutoObservable(this, {
-      oldGraph: observable.ref,
-      newGraph: observable.ref,
-      fileDiffs: observable.ref,
-      oldDiffTargets: observable.ref,
-      newDiffTargets: observable.ref,
-      oldTopAnchors: observable.ref,
-      newTopAnchors: observable.ref,
-      oldNodeAnchors: observable.ref,
-      newNodeAnchors: observable.ref,
-      sharedViewport: observable.ref,
-    }, { autoBind: true });
-  }
+    setError(message: string) {
+      self.error = message;
+      self.loading = false;
+    },
 
-  beginLoading(): void {
-    this.loading = true;
-    this.error = "";
-  }
+    setInteractionBusy(busy: boolean) {
+      self.interactionBusy = busy;
+    },
 
-  applyFetchedData(oldGraph: ViewGraph, newGraph: ViewGraph, fileDiffs: FileDiffEntry[]): void {
-    this.oldGraph = oldGraph;
-    this.newGraph = newGraph;
-    this.oldDiffTargets = [];
-    this.newDiffTargets = [];
-    this.oldLayoutPending = false;
-    this.newLayoutPending = false;
-    this.graphDiffIdx = 0;
-    this.oldTopAnchors = {};
-    this.newTopAnchors = {};
-    this.oldNodeAnchors = {};
-    this.newNodeAnchors = {};
-    this.hoveredNodeId = "";
-    this.hoveredNodeMatchKey = "";
-    this.hoveredNodeSide = "";
-    this.fileDiffs = fileDiffs;
-    this.selectedFilePath = "";
-    this.fileListCollapsed = false;
-    this.hoveredCodeLine = 0;
-    this.hoveredCodeSide = "new";
-    this.sharedViewport = { x: 20, y: 20, zoom: 0.5 };
-    this.focusSourceSide = "new";
-    this.graphSearchSide = "new";
-    this.graphSearchQuery = "";
-    this.graphSearchTick = 0;
-    this.oldGraphSearchActive = false;
-    this.newGraphSearchActive = false;
-    this.graphSearchNavSide = "new";
-    this.graphSearchNavDirection = "next";
-    this.graphSearchNavTick = 0;
-    this.codeSearchActive = false;
-    this.codeSearchNavDirection = "next";
-    this.codeSearchNavTick = 0;
-    this.codeLogicTreeRequestTick = 0;
-    this.codeLogicTreeRequestSide = "new";
-    this.codeLogicTreeRequestLines = [];
-    this.graphTopScrollTick = 0;
-    this.loading = false;
-    this.error = "";
-  }
+    setSharedViewport(viewport: ViewportState) {
+      self.sharedViewport = viewport;
+    },
 
-  setError(message: string): void {
-    this.error = message;
-    this.loading = false;
-  }
+    setShowCalls(showCalls: boolean) {
+      self.showCalls = showCalls;
+    },
 
-  setInteractionBusy(busy: boolean): void {
-    this.interactionBusy = busy;
-  }
+    setDiffTargets(side: "old" | "new", targets: GraphDiffTarget[]) {
+      if (side === "old") {
+        self.oldDiffTargets = targets;
+        return;
+      }
+      self.newDiffTargets = targets;
+    },
 
-  setSharedViewport(viewport: ViewportState): void {
-    this.sharedViewport = viewport;
-  }
+    setLayoutPending(side: "old" | "new", pending: boolean) {
+      if (side === "old") {
+        self.oldLayoutPending = pending;
+        return;
+      }
+      self.newLayoutPending = pending;
+    },
 
-  setShowCalls(showCalls: boolean): void {
-    this.showCalls = showCalls;
-  }
+    setTopLevelAnchors(side: "old" | "new", anchors: Record<string, TopLevelAnchor>) {
+      if (side === "old") {
+        self.oldTopAnchors = anchors;
+        return;
+      }
+      self.newTopAnchors = anchors;
+    },
 
-  setDiffTargets(side: "old" | "new", targets: GraphDiffTarget[]): void {
-    if (side === "old") {
-      this.oldDiffTargets = targets;
-      return;
-    }
-    this.newDiffTargets = targets;
-  }
+    setNodeAnchors(side: "old" | "new", anchors: Record<string, InternalNodeAnchor>) {
+      if (side === "old") {
+        self.oldNodeAnchors = anchors;
+        return;
+      }
+      self.newNodeAnchors = anchors;
+    },
 
-  setLayoutPending(side: "old" | "new", pending: boolean): void {
-    if (side === "old") {
-      this.oldLayoutPending = pending;
-      return;
-    }
-    this.newLayoutPending = pending;
-  }
+    setSelectedFilePath(path: string) {
+      self.selectedFilePath = path;
+    },
 
-  setTopLevelAnchors(side: "old" | "new", anchors: Record<string, TopLevelAnchor>): void {
-    if (side === "old") {
-      this.oldTopAnchors = anchors;
-      return;
-    }
-    this.newTopAnchors = anchors;
-  }
+    setHoveredCodeTarget(line: number, side: "old" | "new") {
+      self.hoveredCodeLine = line;
+      self.hoveredCodeSide = side;
+    },
 
-  setNodeAnchors(side: "old" | "new", anchors: Record<string, InternalNodeAnchor>): void {
-    if (side === "old") {
-      this.oldNodeAnchors = anchors;
-      return;
-    }
-    this.newNodeAnchors = anchors;
-  }
+    clearHoveredCodeTarget() {
+      self.hoveredCodeLine = 0;
+    },
 
-  setSelectedFilePath(path: string): void {
-    this.selectedFilePath = path;
-  }
+    setSelectedNodeId(nodeId: string) {
+      self.selectedNodeId = nodeId;
+    },
 
-  setHoveredCodeTarget(line: number, side: "old" | "new"): void {
-    this.hoveredCodeLine = line;
-    this.hoveredCodeSide = side;
-  }
+    setFileListCollapsed(collapsed: boolean) {
+      self.fileListCollapsed = collapsed;
+    },
 
-  clearHoveredCodeTarget(): void {
-    this.hoveredCodeLine = 0;
-  }
+    toggleFileListCollapsed() {
+      self.fileListCollapsed = !self.fileListCollapsed;
+    },
 
-  setSelectedNodeId(nodeId: string): void {
-    this.selectedNodeId = nodeId;
-  }
+    focusNode(nodeId: string, sourceSide: "old" | "new") {
+      self.focusNodeId = nodeId;
+      self.focusSourceSide = sourceSide;
+      self.focusNodeTick += 1;
+    },
 
-  setFileListCollapsed(collapsed: boolean): void {
-    this.fileListCollapsed = collapsed;
-  }
+    setHoveredNode(side: "old" | "new", nodeId: string, matchKey: string) {
+      self.hoveredNodeSide = side;
+      self.hoveredNodeId = nodeId;
+      self.hoveredNodeMatchKey = matchKey;
+    },
 
-  toggleFileListCollapsed(): void {
-    this.fileListCollapsed = !this.fileListCollapsed;
-  }
+    clearHoveredNode() {
+      self.hoveredNodeSide = "";
+      self.hoveredNodeId = "";
+      self.hoveredNodeMatchKey = "";
+    },
 
-  focusNode(nodeId: string, sourceSide: "old" | "new"): void {
-    this.focusNodeId = nodeId;
-    this.focusSourceSide = sourceSide;
-    this.focusNodeTick += 1;
-  }
+    bumpFocusFileTick() {
+      self.focusFileTick += 1;
+    },
 
-  setHoveredNode(side: "old" | "new", nodeId: string, matchKey: string): void {
-    this.hoveredNodeSide = side;
-    this.hoveredNodeId = nodeId;
-    this.hoveredNodeMatchKey = matchKey;
-  }
+    requestGraphSearch(side: "old" | "new", query: string) {
+      self.graphSearchSide = side;
+      self.graphSearchQuery = query;
+      self.graphSearchTick += 1;
+    },
 
-  clearHoveredNode(): void {
-    this.hoveredNodeSide = "";
-    this.hoveredNodeId = "";
-    this.hoveredNodeMatchKey = "";
-  }
+    setGraphSearchActive(side: "old" | "new", active: boolean) {
+      if (side === "old") {
+        self.oldGraphSearchActive = active;
+        return;
+      }
+      self.newGraphSearchActive = active;
+    },
 
-  bumpFocusFileTick(): void {
-    this.focusFileTick += 1;
-  }
+    requestGraphSearchNavigate(side: "old" | "new", direction: "next" | "prev") {
+      self.graphSearchNavSide = side;
+      self.graphSearchNavDirection = direction;
+      self.graphSearchNavTick += 1;
+    },
 
-  requestGraphSearch(side: "old" | "new", query: string): void {
-    this.graphSearchSide = side;
-    this.graphSearchQuery = query;
-    this.graphSearchTick += 1;
-  }
+    setCodeSearchActive(active: boolean) {
+      self.codeSearchActive = active;
+    },
 
-  setGraphSearchActive(side: "old" | "new", active: boolean): void {
-    if (side === "old") {
-      this.oldGraphSearchActive = active;
-      return;
-    }
-    this.newGraphSearchActive = active;
-  }
+    requestCodeSearchNavigate(direction: "next" | "prev") {
+      self.codeSearchNavDirection = direction;
+      self.codeSearchNavTick += 1;
+    },
 
-  requestGraphSearchNavigate(side: "old" | "new", direction: "next" | "prev"): void {
-    this.graphSearchNavSide = side;
-    this.graphSearchNavDirection = direction;
-    this.graphSearchNavTick += 1;
-  }
+    requestCodeLogicTree(side: "old" | "new", lineNumbers: number[]) {
+      self.codeLogicTreeRequestSide = side;
+      self.codeLogicTreeRequestLines.replace(lineNumbers);
+      self.codeLogicTreeRequestTick += 1;
+    },
 
-  setCodeSearchActive(active: boolean): void {
-    this.codeSearchActive = active;
-  }
+    setTarget(line: number, side: "old" | "new") {
+      self.targetLine = line;
+      self.targetSide = side;
+    },
 
-  requestCodeSearchNavigate(direction: "next" | "prev"): void {
-    this.codeSearchNavDirection = direction;
-    this.codeSearchNavTick += 1;
-  }
+    bumpScrollTick() {
+      self.scrollTick += 1;
+    },
 
-  requestCodeLogicTree(side: "old" | "new", lineNumbers: number[]): void {
-    this.codeLogicTreeRequestSide = side;
-    this.codeLogicTreeRequestLines = lineNumbers;
-    this.codeLogicTreeRequestTick += 1;
-  }
+    bumpGraphTopScrollTick() {
+      self.graphTopScrollTick += 1;
+    },
 
-  setTarget(line: number, side: "old" | "new"): void {
-    this.targetLine = line;
-    this.targetSide = side;
-  }
+    setGraphDiffIdx(idx: number) {
+      self.graphDiffIdx = idx;
+    },
 
-  bumpScrollTick(): void {
-    this.scrollTick += 1;
-  }
+    setHighlightedNodeId(nodeId: string) {
+      self.highlightedNodeId = nodeId;
+    },
 
-  bumpGraphTopScrollTick(): void {
-    this.graphTopScrollTick += 1;
-  }
+    clearHighlightedNode() {
+      self.highlightedNodeId = "";
+    },
 
-  setGraphDiffIdx(idx: number): void {
-    this.graphDiffIdx = idx;
-  }
+    clearSelection() {
+      self.selectedNodeId = "";
+      self.selectedFilePath = "";
+      self.targetLine = 0;
+      self.hoveredNodeSide = "";
+      self.hoveredNodeId = "";
+      self.hoveredNodeMatchKey = "";
+    },
 
-  setHighlightedNodeId(nodeId: string): void {
-    this.highlightedNodeId = nodeId;
-  }
+    setViewConfig(config: {
+      diffId: string;
+      viewType: ViewType;
+      showChangesOnly: boolean;
+      pullRequestDescriptionExcerpt?: string;
+    }) {
+      self.diffId = config.diffId;
+      self.viewType = config.viewType;
+      self.showChangesOnly = config.showChangesOnly;
+      self.pullRequestDescriptionExcerpt = config.pullRequestDescriptionExcerpt ?? "";
+    },
+  }));
 
-  clearHighlightedNode(): void {
-    this.highlightedNodeId = "";
-  }
-
-  clearSelection(): void {
-    this.selectedNodeId = "";
-    this.selectedFilePath = "";
-    this.targetLine = 0;
-    this.clearHoveredNode();
-  }
-}
+export type ViewBaseStoreInstance = typeof ViewBaseStore.Type;

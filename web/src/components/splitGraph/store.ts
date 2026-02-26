@@ -1,5 +1,5 @@
 import type { Edge, Node } from "@xyflow/react";
-import { makeAutoObservable, observable } from "mobx";
+import { types } from "mobx-state-tree";
 
 interface LayoutResult {
   nodes: Node[];
@@ -11,99 +11,98 @@ interface FlowSize {
   height: number;
 }
 
-export class SplitGraphPanelStore {
-  searchQuery = "";
-  searchExclude = false;
-  searchIdx = 0;
-  searchHighlightedNodeId = "";
-  hoveredEdgeId = "";
-  clickedEdgeId = "";
-  hoveredEdgePointerX = 0;
-  hoveredEdgePointerY = 0;
-  flowSize: FlowSize = { width: 800, height: 500 };
-  layoutResult: LayoutResult = { nodes: [], edges: [] };
-  workerReady = false;
-  workerFailed = false;
-  layoutPending = false;
-  lastAutoFocusSearchKey = "";
+const FlowSizeModel = types.frozen<FlowSize>();
+const LayoutResultModel = types.frozen<LayoutResult>();
 
-  constructor() {
-    makeAutoObservable(this, {
-      flowSize: observable.ref,
-      layoutResult: observable.ref,
-    }, { autoBind: true });
-  }
+export const SplitGraphPanelStore = types
+  .model("SplitGraphPanelStore", {
+    searchQuery: types.optional(types.string, ""),
+    searchExclude: types.optional(types.boolean, false),
+    searchIdx: types.optional(types.number, 0),
+    searchHighlightedNodeId: types.optional(types.string, ""),
+    hoveredEdgeId: types.optional(types.string, ""),
+    clickedEdgeId: types.optional(types.string, ""),
+    hoveredEdgePointerX: types.optional(types.number, 0),
+    hoveredEdgePointerY: types.optional(types.number, 0),
+    flowSize: types.optional(FlowSizeModel, { width: 800, height: 500 }),
+    layoutResult: types.optional(LayoutResultModel, { nodes: [], edges: [] }),
+    workerReady: types.optional(types.boolean, false),
+    workerFailed: types.optional(types.boolean, false),
+    layoutPending: types.optional(types.boolean, false),
+    lastAutoFocusSearchKey: types.optional(types.string, ""),
+  })
+  .actions((self) => ({
+    setSearch(query: string, exclude: boolean) {
+      self.searchQuery = query;
+      self.searchExclude = exclude;
+      self.searchIdx = 0;
+    },
 
-  setSearch(query: string, exclude: boolean): void {
-    this.searchQuery = query;
-    this.searchExclude = exclude;
-    this.searchIdx = 0;
-  }
+    setSearchIdx(idx: number) {
+      self.searchIdx = idx;
+    },
 
-  setSearchIdx(idx: number): void {
-    this.searchIdx = idx;
-  }
+    setSearchHighlightedNodeId(nodeId: string) {
+      self.searchHighlightedNodeId = nodeId;
+    },
 
-  setSearchHighlightedNodeId(nodeId: string): void {
-    this.searchHighlightedNodeId = nodeId;
-  }
+    clearSearchHighlight() {
+      self.searchHighlightedNodeId = "";
+    },
 
-  clearSearchHighlight(): void {
-    this.searchHighlightedNodeId = "";
-  }
+    setHoveredEdgeId(edgeId: string) {
+      self.hoveredEdgeId = edgeId;
+    },
 
-  setHoveredEdgeId(edgeId: string): void {
-    this.hoveredEdgeId = edgeId;
-  }
+    setClickedEdgeId(edgeId: string) {
+      self.clickedEdgeId = edgeId;
+    },
 
-  setClickedEdgeId(edgeId: string): void {
-    this.clickedEdgeId = edgeId;
-  }
+    setHoveredEdge(edgeId: string, pointerX: number, pointerY: number) {
+      self.hoveredEdgeId = edgeId;
+      self.hoveredEdgePointerX = pointerX;
+      self.hoveredEdgePointerY = pointerY;
+    },
 
-  setHoveredEdge(edgeId: string, pointerX: number, pointerY: number): void {
-    this.hoveredEdgeId = edgeId;
-    this.hoveredEdgePointerX = pointerX;
-    this.hoveredEdgePointerY = pointerY;
-  }
+    setHoveredEdgePointer(pointerX: number, pointerY: number) {
+      if (Math.abs(self.hoveredEdgePointerX - pointerX) < 1 && Math.abs(self.hoveredEdgePointerY - pointerY) < 1) {
+        return;
+      }
+      self.hoveredEdgePointerX = pointerX;
+      self.hoveredEdgePointerY = pointerY;
+    },
 
-  setHoveredEdgePointer(pointerX: number, pointerY: number): void {
-    // Ignore tiny movements to reduce unnecessary re-renders on dense graphs.
-    if (Math.abs(this.hoveredEdgePointerX - pointerX) < 1 && Math.abs(this.hoveredEdgePointerY - pointerY) < 1) {
-      return;
-    }
-    this.hoveredEdgePointerX = pointerX;
-    this.hoveredEdgePointerY = pointerY;
-  }
+    clearHoveredEdge() {
+      self.hoveredEdgeId = "";
+    },
 
-  clearHoveredEdge(): void {
-    this.hoveredEdgeId = "";
-  }
+    clearClickedEdge() {
+      self.clickedEdgeId = "";
+    },
 
-  clearClickedEdge(): void {
-    this.clickedEdgeId = "";
-  }
+    setFlowSize(flowSize: FlowSize) {
+      self.flowSize = flowSize;
+    },
 
-  setFlowSize(flowSize: FlowSize): void {
-    this.flowSize = flowSize;
-  }
+    setLayoutResult(layoutResult: LayoutResult) {
+      self.layoutResult = layoutResult;
+    },
 
-  setLayoutResult(layoutResult: LayoutResult): void {
-    this.layoutResult = layoutResult;
-  }
+    setWorkerReady(ready: boolean) {
+      self.workerReady = ready;
+    },
 
-  setWorkerReady(ready: boolean): void {
-    this.workerReady = ready;
-  }
+    setWorkerFailed(failed: boolean) {
+      self.workerFailed = failed;
+    },
 
-  setWorkerFailed(failed: boolean): void {
-    this.workerFailed = failed;
-  }
+    setLayoutPending(pending: boolean) {
+      self.layoutPending = pending;
+    },
 
-  setLayoutPending(pending: boolean): void {
-    this.layoutPending = pending;
-  }
+    setLastAutoFocusSearchKey(key: string) {
+      self.lastAutoFocusSearchKey = key;
+    },
+  }));
 
-  setLastAutoFocusSearchKey(key: string): void {
-    this.lastAutoFocusSearchKey = key;
-  }
-}
+export type SplitGraphPanelStoreInstance = typeof SplitGraphPanelStore.Type;
