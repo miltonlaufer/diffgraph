@@ -148,9 +148,10 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
 
   const effectiveFilePathForDiff = useMemo(() => {
     if (!store.areNodesSelected) return "";
+    if (store.selectedNodeId && store.selectedFilePath) return store.selectedFilePath;
     if (hoveredNodeFilePath) return hoveredNodeFilePath;
     return store.selectedFilePath;
-  }, [store.areNodesSelected, store.selectedFilePath, hoveredNodeFilePath]);
+  }, [store.areNodesSelected, store.selectedFilePath, store.selectedNodeId, hoveredNodeFilePath]);
 
   const selectedFile = useMemo(
     () =>

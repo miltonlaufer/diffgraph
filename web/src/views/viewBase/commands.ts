@@ -352,5 +352,7 @@ export const commandGoToGraphDiff = (
     }, GRAPH_DIFF_HIGHLIGHT_MS);
 
     store.setSharedViewport({ x: target.viewportX, y: target.viewportY, zoom: target.viewportZoom });
+
+    commandSelectNode(context, target.id, target.side);
   });
 };
