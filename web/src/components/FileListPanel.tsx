@@ -29,6 +29,8 @@ export const FileListPanel = observer(() => {
       topRisk={topRisk}
       onToggleCollapsed={actions.onToggleFileListCollapsed}
       onSelectFile={actions.onFileSelect}
+      onFileHover={actions.onFileHover}
+      onFileHoverClear={actions.onFileHoverClear}
       onToggleFileForGraph={actions.onToggleFileForGraph}
     />
   );

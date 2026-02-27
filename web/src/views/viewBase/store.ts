@@ -59,6 +59,7 @@ export const ViewBaseStore = types
     hoveredNodeId: types.optional(types.string, ""),
     hoveredNodeMatchKey: types.optional(types.string, ""),
     hoveredNodeSide: types.optional(types.enumeration(["old", "new", ""]), ""),
+    hoveredFilePathFromList: types.optional(types.string, ""),
     oldLayoutPending: types.optional(types.boolean, false),
     newLayoutPending: types.optional(types.boolean, false),
     loading: types.optional(types.boolean, true),
@@ -98,6 +99,7 @@ export const ViewBaseStore = types
       self.hoveredNodeId = "";
       self.hoveredNodeMatchKey = "";
       self.hoveredNodeSide = "";
+      self.hoveredFilePathFromList = "";
       self.fileDiffs = fileDiffs;
       self.selectedFilePath = "";
       self.selectedFilePathsForGraph.replace([]);
@@ -206,6 +208,15 @@ export const ViewBaseStore = types
       self.focusNodeTick += 1;
     },
 
+    setFocusNodeWithoutViewportBump(nodeId: string, sourceSide: "old" | "new") {
+      self.focusNodeId = nodeId;
+      self.focusSourceSide = sourceSide;
+    },
+
+    setHoveredFilePathFromList(filePath: string) {
+      self.hoveredFilePathFromList = filePath;
+    },
+
     setHoveredNode(side: "old" | "new", nodeId: string, matchKey: string) {
       self.hoveredNodeSide = side;
       self.hoveredNodeId = nodeId;
@@ -289,6 +300,7 @@ export const ViewBaseStore = types
       self.hoveredNodeSide = "";
       self.hoveredNodeId = "";
       self.hoveredNodeMatchKey = "";
+      self.hoveredFilePathFromList = "";
     },
 
     setSelectedFilePathsForGraph(paths: string[]) {
@@ -326,6 +338,7 @@ export const ViewBaseStore = types
       self.hoveredNodeSide = "";
       self.hoveredNodeId = "";
       self.hoveredNodeMatchKey = "";
+      self.hoveredFilePathFromList = "";
       self.hoveredCodeLine = 0;
     },
 

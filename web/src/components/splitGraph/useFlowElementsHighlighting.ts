@@ -26,6 +26,7 @@ interface UseFlowElementsHighlightingParams {
   highlightedNodeId: string;
   searchHighlightedNodeId: string;
   hoveredNodeIdForPanel: string;
+  hoveredFileNodeIds: Set<string>;
   hoverNeighborhood: HoverNeighborhood | null;
   hoveredEdgeId: string;
   clickedEdgeId: string;
@@ -38,13 +39,14 @@ export const useFlowElementsHighlighting = ({
   highlightedNodeId,
   searchHighlightedNodeId,
   hoveredNodeIdForPanel,
+  hoveredFileNodeIds,
   hoverNeighborhood,
   hoveredEdgeId,
   clickedEdgeId,
 }: UseFlowElementsHighlightingParams): { nodes: Node[]; edges: Edge[] } => {
   return useMemo(() => {
     const hasNodeHighlights = Boolean(
-      selectedNodeId || highlightedNodeId || searchHighlightedNodeId,
+      selectedNodeId || highlightedNodeId || searchHighlightedNodeId || hoveredFileNodeIds.size > 0,
     );
     const hasHoverNeighborhood = hoverNeighborhood !== null;
     const hasEdgeEmphasis = hoveredEdgeId.length > 0 || clickedEdgeId.length > 0;
@@ -72,10 +74,12 @@ export const useFlowElementsHighlighting = ({
                 hasHoverNeighborhood &&
                   hoverNeighborhood?.ancestorNodeIds.has(node.id),
               ) && graphNode?.kind !== "group";
+            const isHoveredFromFileList = hoveredFileNodeIds.has(node.id) && graphNode?.kind !== "group";
             const isPrimarySelected =
               node.id === selectedNodeId ||
               node.id === highlightedNodeId ||
-              isSearchTarget;
+              isSearchTarget ||
+              isHoveredFromFileList;
             let nextNode = node;
             if (isPrimarySelected || isHoveredNode) {
               nextNode =
@@ -254,6 +258,7 @@ export const useFlowElementsHighlighting = ({
     highlightedNodeId,
     searchHighlightedNodeId,
     hoveredNodeIdForPanel,
+    hoveredFileNodeIds,
     hoverNeighborhood,
     hoveredEdgeId,
     clickedEdgeId,

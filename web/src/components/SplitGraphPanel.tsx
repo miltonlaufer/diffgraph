@@ -90,6 +90,7 @@ export const SplitGraphPanel = observer(({
     hoveredNodeId,
     hoveredNodeMatchKey,
     hoveredNodeSide,
+    hoveredFilePathFromList: _hoveredFilePathFromList,
   } = runtimeState;
   const {
     onInteractionClick,
@@ -517,6 +518,18 @@ export const SplitGraphPanel = observer(({
     onNodeSelect(graphLogicTreeModal.openerNodeId, side);
   }, [graphLogicTreeModal, onNodeSelect, side]);
 
+  const hoveredFileNodeIds = useMemo(() => {
+    // Commented out: file list hover not working correctly
+    // if (!hoveredFilePathFromList) return new Set<string>();
+    // const normalizedFilePath = normPath(hoveredFilePathFromList);
+    // return new Set(
+    //   graph.nodes
+    //     .filter((gn) => normPath(gn.filePath) === normalizedFilePath)
+    //     .map((gn) => gn.id),
+    // );
+    return new Set<string>();
+  }, []);
+
   const flowElements = useFlowElementsHighlighting({
     positionedLayoutResult,
     graphNodeById,
@@ -524,6 +537,7 @@ export const SplitGraphPanel = observer(({
     highlightedNodeId: highlightedNodeId ?? "",
     searchHighlightedNodeId: store.searchHighlightedNodeId,
     hoveredNodeIdForPanel,
+    hoveredFileNodeIds,
     hoverNeighborhood,
     hoveredEdgeId: store.hoveredEdgeId,
     clickedEdgeId: store.clickedEdgeId,
@@ -687,6 +701,10 @@ export const SplitGraphPanel = observer(({
     const ay = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
     return { x: -ax + 200, y: -ay + 150, zoom: 0.9 };
   }, [focusFilePath, flowElements.nodes, graph.nodes, nodeAbsolutePosition]);
+
+  // Commented out: file list hover not working correctly
+  // const hoveredFileViewport = useMemo(() => { ... }, []);
+  // const viewportBeforeFileHoverRef = useRef<PanelViewport | null>(null);
 
   const handleNodeClick = useCallback<NodeMouseHandler>((_event, node) => {
     const graphNode = graphNodeById.get(node.id);
@@ -919,6 +937,20 @@ export const SplitGraphPanel = observer(({
     lastAppliedFocusFileTickRef.current = focusFileTick;
     onViewportChange(focusedViewport);
   }, [focusFilePath, focusFileTick, focusedViewport, onViewportChange]);
+
+  // Commented out: file list hover not working correctly
+  // useEffect(() => {
+  //   if (!isViewportPrimary) return;
+  //   if (hoveredFilePathFromList && hoveredFileViewport) {
+  //     if (viewportBeforeFileHoverRef.current === null) {
+  //       viewportBeforeFileHoverRef.current = viewport;
+  //     }
+  //     onViewportChange(hoveredFileViewport);
+  //   } else if (!hoveredFilePathFromList && viewportBeforeFileHoverRef.current !== null) {
+  //     onViewportChange(viewportBeforeFileHoverRef.current);
+  //     viewportBeforeFileHoverRef.current = null;
+  //   }
+  // }, [hoveredFilePathFromList, hoveredFileViewport, isViewportPrimary, onViewportChange, viewport]);
 
   useEffect(() => {
     if (!viewportOverride || !viewportOverrideBaseRef.current) return;

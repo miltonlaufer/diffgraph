@@ -22,6 +22,8 @@ interface ViewBaseRuntimeState {
 
 interface ViewBaseRuntimeActions {
   onFileSelect: (filePath: string) => void;
+  onFileHover: (filePath: string) => void;
+  onFileHoverClear: () => void;
   onToggleFileForGraph: (filePath: string) => void;
   onToggleFileListCollapsed: () => void;
   onCodeLineClick: (line: number, side: "old" | "new") => void;

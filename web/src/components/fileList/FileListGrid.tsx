@@ -7,6 +7,8 @@ interface FileListGridProps {
   selectedFilePathsForGraph: string[];
   topRisk: number;
   onSelectFile: (filePath: string) => void;
+  onFileHover: (filePath: string) => void;
+  onFileHoverClear: () => void;
   onToggleFileForGraph: (filePath: string) => void;
   normalizePathForCompare: (p: string) => string;
 }
@@ -17,6 +19,8 @@ export const FileListGrid = memo(({
   selectedFilePathsForGraph,
   topRisk,
   onSelectFile,
+  onFileHover,
+  onFileHoverClear,
   onToggleFileForGraph,
   normalizePathForCompare,
 }: FileListGridProps) => (
@@ -32,6 +36,8 @@ export const FileListGrid = memo(({
         }
         topRisk={topRisk}
         onSelect={onSelectFile}
+        onFileHover={onFileHover}
+        onFileHoverClear={onFileHoverClear}
         onToggleCheckbox={(e) => {
           e.stopPropagation();
           onToggleFileForGraph(entry.path);
@@ -49,16 +55,30 @@ interface FilePillProps {
   isCheckedForGraph: boolean;
   topRisk: number;
   onSelect: (filePath: string) => void;
+  onFileHover: (filePath: string) => void;
+  onFileHoverClear: () => void;
   onToggleCheckbox: (e: React.MouseEvent | React.ChangeEvent<HTMLInputElement>) => void;
 }
 
-const FilePill = memo(({ entry, isSelected, isCheckedForGraph, topRisk, onSelect, onToggleCheckbox }: FilePillProps) => {
+const FilePill = memo(({ entry, isSelected, isCheckedForGraph, topRisk, onSelect, onFileHover, onFileHoverClear, onToggleCheckbox }: FilePillProps) => {
   const handleClick = useCallback(() => {
     onSelect(entry.path);
   }, [entry.path, onSelect]);
 
+  const handleMouseEnter = useCallback(() => {
+    onFileHover(entry.path);
+  }, [entry.path, onFileHover]);
+
+  const handleMouseLeave = useCallback(() => {
+    onFileHoverClear();
+  }, [onFileHoverClear]);
+
   return (
-    <div className={isSelected ? "filePill filePillActive" : "filePill"}>
+    <div
+      className={isSelected ? "filePill filePillActive" : "filePill"}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
       <input
         type="checkbox"
         checked={isCheckedForGraph}

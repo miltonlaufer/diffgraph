@@ -24,6 +24,7 @@ interface SplitGraphRuntimeState {
   hoveredNodeId: string;
   hoveredNodeMatchKey: string;
   hoveredNodeSide: "old" | "new" | "";
+  hoveredFilePathFromList: string;
 }
 
 interface SplitGraphRuntimeActions {

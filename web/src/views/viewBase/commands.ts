@@ -21,12 +21,18 @@ export const commandSelectNode = (
   context: CommandContext,
   nodeId: string,
   sourceSide: "old" | "new",
+  options?: { scrollToNode?: boolean },
 ): void => {
   const { store, runInteractiveUpdate } = context;
+  const scrollToNode = options?.scrollToNode ?? false;
   runInteractiveUpdate(() => {
     store.setSelectedNodeId(nodeId);
     store.setFileListCollapsed(true);
-    store.focusNode(nodeId, sourceSide);
+    if (scrollToNode) {
+      store.focusNode(nodeId, sourceSide);
+    } else {
+      store.setFocusNodeWithoutViewportBump(nodeId, sourceSide);
+    }
     const matchedOld = store.oldGraph.nodes.find((node) => node.id === nodeId);
     const matchedNew = store.newGraph.nodes.find((node) => node.id === nodeId);
     const primary = sourceSide === "old" ? matchedOld : matchedNew;
@@ -50,7 +56,7 @@ export const commandFocusGraphNode = (
   const { store, runInteractiveUpdate } = context;
   runInteractiveUpdate(() => {
     store.setSelectedNodeId(nodeId);
-    store.focusNode(nodeId, sourceSide);
+    store.setFocusNodeWithoutViewportBump(nodeId, sourceSide);
     store.bumpGraphTopScrollTick();
   });
 };
@@ -69,7 +75,6 @@ export const commandSelectFile = (
     }
     store.setSelectedFilePath(filePath);
     store.selectFilesFromNode(next);
-    store.bumpFocusFileTick();
   });
 };
 
@@ -353,6 +358,7 @@ export const commandGoToGraphDiff = (
 
     store.setSharedViewport({ x: target.viewportX, y: target.viewportY, zoom: target.viewportZoom });
 
+    store.clearHoveredNode();
     commandSelectNode(context, target.id, target.side);
   });
 };

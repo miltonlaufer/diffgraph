@@ -10,6 +10,8 @@ interface FileListViewProps {
   topRisk: number;
   onToggleCollapsed: () => void;
   onSelectFile: (filePath: string) => void;
+  onFileHover: (filePath: string) => void;
+  onFileHoverClear: () => void;
   onToggleFileForGraph: (filePath: string) => void;
 }
 
@@ -25,6 +27,8 @@ export const FileListView = ({
   topRisk,
   onToggleCollapsed,
   onSelectFile,
+  onFileHover,
+  onFileHoverClear,
   onToggleFileForGraph,
 }: FileListViewProps) => (
   <section className="fileListPanel">
@@ -45,6 +49,8 @@ export const FileListView = ({
         selectedFilePathsForGraph={selectedFilePathsForGraph}
         topRisk={topRisk}
         onSelectFile={onSelectFile}
+        onFileHover={onFileHover}
+        onFileHoverClear={onFileHoverClear}
         onToggleFileForGraph={onToggleFileForGraph}
         normalizePathForCompare={normalizePathForCompare}
       />

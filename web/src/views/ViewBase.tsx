@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react-lite";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { CodeDiffDrawer } from "../components/CodeDiffDrawer";
+import { ConfirmModal } from "../components/ConfirmModal";
 import { FileListPanel } from "../components/FileListPanel";
 import { type GraphDiffTarget, type InternalNodeAnchor, type TopLevelAnchor } from "../components/SplitGraphPanel";
 import { SplitGraphRuntimeProvider, type SplitGraphRuntimeContextValue } from "../components/splitGraph/context";
@@ -64,6 +65,10 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
   const graphSectionRef = useRef<HTMLDivElement>(null);
   const codeDiffSectionRef = useRef<HTMLDivElement>(null);
   const highlightTimerRef = useRef<number | null>(null);
+  const [pendingNodeSelect, setPendingNodeSelect] = useState<{
+    nodeId: string;
+    sourceSide: "old" | "new";
+  } | null>(null);
   const { isUiPending, commandContext } = useInteractiveUpdate(store);
 
   const handleShowCallsChange = useCallback(
@@ -148,10 +153,9 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
 
   const effectiveFilePathForDiff = useMemo(() => {
     if (!store.areNodesSelected) return "";
-    if (store.selectedNodeId && store.selectedFilePath) return store.selectedFilePath;
     if (hoveredNodeFilePath) return hoveredNodeFilePath;
     return store.selectedFilePath;
-  }, [store.areNodesSelected, store.selectedFilePath, store.selectedNodeId, hoveredNodeFilePath]);
+  }, [store.areNodesSelected, store.selectedFilePath, hoveredNodeFilePath]);
 
   const selectedFile = useMemo(
     () =>
@@ -186,10 +190,26 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
 
   const handleNodeSelect = useCallback(
     (nodeId: string, sourceSide: "old" | "new") => {
+      const multiFileSelected =
+        store.areNodesSelected && store.selectedFilePathsForGraph.length > 1;
+      if (multiFileSelected) {
+        setPendingNodeSelect({ nodeId, sourceSide });
+        return;
+      }
       commandSelectNode(commandContext, nodeId, sourceSide);
     },
-    [commandContext],
+    [commandContext, store.areNodesSelected, store.selectedFilePathsForGraph.length],
   );
+
+  const handleConfirmNodeSelect = useCallback(() => {
+    if (!pendingNodeSelect) return;
+    commandSelectNode(commandContext, pendingNodeSelect.nodeId, pendingNodeSelect.sourceSide);
+    setPendingNodeSelect(null);
+  }, [commandContext, pendingNodeSelect]);
+
+  const handleCancelNodeSelect = useCallback(() => {
+    setPendingNodeSelect(null);
+  }, []);
 
   const handleOpenCodeLogicTree = useCallback(
     (nodeId: string, sourceSide: "old" | "new", lineNumbers: number[]) => {
@@ -211,6 +231,19 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     },
     [commandContext],
   );
+
+  const handleFileHover = useCallback(
+    (_filePath: string) => {
+      // Commented out: file list hover not working correctly
+      // store.setHoveredFilePathFromList(filePath);
+    },
+    [],
+  );
+
+  const handleFileHoverClear = useCallback(() => {
+    // Commented out: file list hover not working correctly
+    // store.setHoveredFilePathFromList("");
+  }, []);
 
   const handleToggleFileForGraph = useCallback(
     (filePath: string) => {
@@ -311,6 +344,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
       hoveredNodeId: store.hoveredNodeId,
       hoveredNodeMatchKey: store.hoveredNodeMatchKey,
       hoveredNodeSide: store.hoveredNodeSide as "old" | "new" | "",
+      hoveredFilePathFromList: store.hoveredFilePathFromList,
     },
     actions: {
       onInteractionClick: handleInteractionClick,
@@ -349,6 +383,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     store.graphSearchNavDirection,
     store.graphSearchNavSide,
     store.graphSearchNavTick,
+    store.hoveredFilePathFromList,
     store.hoveredNodeId,
     store.hoveredNodeMatchKey,
     store.hoveredNodeSide,
@@ -432,6 +467,8 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     },
     actions: {
       onFileSelect: handleFileSelect,
+      onFileHover: handleFileHover,
+      onFileHoverClear: handleFileHoverClear,
       onToggleFileForGraph: handleToggleFileForGraph,
       onToggleFileListCollapsed: handleToggleFileListCollapsed,
       onCodeLineClick: handleCodeLineClick,
@@ -446,6 +483,8 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     handleCodeLineHoverClear,
     handleCodeLineDoubleClick,
     handleCodeSearchStateChange,
+    handleFileHover,
+    handleFileHoverClear,
     handleFileSelect,
     handleToggleFileForGraph,
     handleToggleFileListCollapsed,
@@ -543,6 +582,17 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
           />
         )}
 
+        <ConfirmModal
+          open={pendingNodeSelect !== null}
+          title="Select single file"
+          message="This will de-select all the other files that are currently selected and select only the file and the nodes related to the one you clicked. Are you sure you want to proceed?"
+          onConfirm={handleConfirmNodeSelect}
+          onCancel={handleCancelNodeSelect}
+          confirmLabel="OK"
+          cancelLabel="Cancel"
+          ariaLabel="Confirm single file selection"
+        />
+
         {store.viewType === "logic" && (
           <LogicToolbar
             showCalls={store.showCalls}
@@ -550,6 +600,7 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
             canNavigate={graphDiffTargets.length > 0}
             hasSelectedNode={store.hasSelectedNode}
             searchActive={store.hasSearchActive}
+            multipleFilesSelected={store.selectedFilePathsForGraph.length > 1}
             onShowCallsChange={handleShowCallsChange}
             onPrev={goToPrevGraphDiff}
             onNext={goToNextGraphDiff}

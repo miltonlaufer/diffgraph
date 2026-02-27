@@ -4,6 +4,7 @@ interface LogicToolbarProps {
   canNavigate: boolean;
   hasSelectedNode: boolean;
   searchActive: boolean;
+  multipleFilesSelected: boolean;
   onShowCallsChange: (nextChecked: boolean) => void;
   onPrev: () => void;
   onNext: () => void;
@@ -15,6 +16,7 @@ export const LogicToolbar = ({
   canNavigate,
   hasSelectedNode,
   searchActive,
+  multipleFilesSelected,
   onShowCallsChange,
   onPrev,
   onNext,
@@ -22,7 +24,7 @@ export const LogicToolbar = ({
   <div className="logicToolbar">
     <div className="logicArrowHints" aria-label="Keyboard arrow shortcuts">
       <strong>prev / next:</strong>
-      {hasSelectedNode && (
+      {hasSelectedNode && !multipleFilesSelected && (
         <>
           <span className="logicArrowHintItem">
             <span className="logicArrowKey" aria-hidden>&larr;</span>

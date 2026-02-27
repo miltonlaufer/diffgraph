@@ -27,22 +27,47 @@ export const useViewBaseKeyboardShortcuts = ({
   useEffect(() => {
     const selectAdjacentLogicNode = (direction: "next" | "prev"): boolean => {
       if (store.viewType !== "logic") return false;
-      const selectedNodeId = store.selectedNodeId;
-      if (!selectedNodeId) return false;
+      let currentNodeId = store.selectedNodeId;
+      let preferredSide = (store.focusSourceSide || "new") as "old" | "new";
+      if (
+        !currentNodeId
+        && store.selectedFilePathsForGraph.length > 1
+        && store.hoveredNodeId
+        && store.hoveredNodeSide
+      ) {
+        const hoverSide = store.hoveredNodeSide as "old" | "new";
+        const hoverGraph = hoverSide === "old" ? displayOldGraph : displayNewGraph;
+        if (hoverGraph.nodes.some((n) => n.id === store.hoveredNodeId)) {
+          currentNodeId = store.hoveredNodeId;
+          preferredSide = hoverSide;
+        }
+      }
+      if (!currentNodeId) {
+        const firstOld = displayOldGraph.nodes.find((n) => n.kind !== "group") ?? displayOldGraph.nodes[0];
+        const firstNew = displayNewGraph.nodes.find((n) => n.kind !== "group") ?? displayNewGraph.nodes[0];
+        if (firstOld) {
+          currentNodeId = firstOld.id;
+          preferredSide = "old";
+        } else if (firstNew) {
+          currentNodeId = firstNew.id;
+          preferredSide = "new";
+        }
+      }
+      if (!currentNodeId) return false;
 
       const resolveTarget = (side: "old" | "new"): { nodeId: string; side: "old" | "new" } | null => {
         const graph = side === "old" ? displayOldGraph : displayNewGraph;
-        const adjacentNodeId = resolveAdjacentLogicTreeNodeId(graph, selectedNodeId, direction);
+        const adjacentNodeId = resolveAdjacentLogicTreeNodeId(graph, currentNodeId, direction);
         if (!adjacentNodeId) return null;
         return { nodeId: adjacentNodeId, side };
       };
 
-      const preferredSide = store.focusSourceSide as "old" | "new";
       const fallbackSide: "old" | "new" = preferredSide === "old" ? "new" : "old";
       const target = resolveTarget(preferredSide) ?? resolveTarget(fallbackSide);
       if (!target) return false;
 
-      commandSelectNode(commandContext, target.nodeId, target.side);
+      store.clearHoveredNode();
+      commandSelectNode(commandContext, target.nodeId, target.side, { scrollToNode: true });
       return true;
     };
 
