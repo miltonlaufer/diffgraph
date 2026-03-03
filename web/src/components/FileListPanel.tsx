@@ -12,19 +12,31 @@ export const FileListPanel = observer(() => {
     [files],
   );
 
-  const selectedFileName = useMemo(() => {
-    if (!selectedFilePath) return "";
-    const normalized = selectedFilePath.replaceAll("\\", "/");
-    const parts = normalized.split("/").filter((part) => part.length > 0);
-    return parts[parts.length - 1] ?? normalized;
-  }, [selectedFilePath]);
+  const selectedFilesSummary = useMemo(() => {
+    const basename = (p: string) => {
+      const normalized = p.replaceAll("\\", "/");
+      const parts = normalized.split("/").filter((part) => part.length > 0);
+      return parts[parts.length - 1] ?? normalized;
+    };
+    const maxShow = 4;
+    const paths =
+      selectedFilePathsForGraph.length > 0
+        ? selectedFilePathsForGraph
+        : files.map((f) => f.path);
+    if (paths.length === 0) return "";
+    if (paths.length === 1) return basename(paths[0] ?? "");
+    const shown = paths.slice(0, maxShow).map(basename);
+    if (paths.length <= maxShow) return shown.join(", ");
+    const remaining = paths.length - maxShow;
+    return `${shown.join(", ")} + ${remaining} more file${remaining === 1 ? "" : "s"}`;
+  }, [selectedFilePathsForGraph, files]);
 
   return (
     <FileListView
       files={files}
       selectedFilePath={selectedFilePath}
       selectedFilePathsForGraph={selectedFilePathsForGraph}
-      selectedFileName={selectedFileName}
+      selectedFilesSummary={selectedFilesSummary}
       collapsed={fileListCollapsed}
       topRisk={topRisk}
       onToggleCollapsed={actions.onToggleFileListCollapsed}

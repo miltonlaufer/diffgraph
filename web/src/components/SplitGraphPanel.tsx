@@ -702,7 +702,8 @@ export const SplitGraphPanel = observer(({
     return { x: -ax + 200, y: -ay + 150, zoom: 0.9 };
   }, [focusFilePath, flowElements.nodes, graph.nodes, nodeAbsolutePosition]);
 
-  // Commented out: file list hover not working correctly
+  // Commented out: file list hover not working correctly 
+  // TODO: restore this
   // const hoveredFileViewport = useMemo(() => { ... }, []);
   // const viewportBeforeFileHoverRef = useRef<PanelViewport | null>(null);
 
@@ -797,7 +798,7 @@ export const SplitGraphPanel = observer(({
     onViewportChange(nextViewportState);
   }, [onViewportChange, viewport]);
 
-  const handleMoveEnd = useCallback(() => {}, []);
+  const handleMoveEnd = useCallback(() => { }, []);
 
   useSplitGraphLayoutWorker({
     store,

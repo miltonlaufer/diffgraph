@@ -5,7 +5,7 @@ interface FileListViewProps {
   files: FileDiffEntry[];
   selectedFilePath: string;
   selectedFilePathsForGraph: string[];
-  selectedFileName: string;
+  selectedFilesSummary: string;
   collapsed: boolean;
   topRisk: number;
   onToggleCollapsed: () => void;
@@ -22,7 +22,7 @@ export const FileListView = ({
   files,
   selectedFilePath,
   selectedFilePathsForGraph,
-  selectedFileName,
+  selectedFilesSummary,
   collapsed,
   topRisk,
   onToggleCollapsed,
@@ -35,10 +35,10 @@ export const FileListView = ({
     <button type="button" className="fileListToggle" onClick={onToggleCollapsed}>
       <span className={collapsed ? "toggleArrow collapsed" : "toggleArrow"}>&#9660;</span>
       Changed Files ({files.length})
-      {collapsed && selectedFileName && (
+      {collapsed && selectedFilesSummary && (
         <>
           {" - Selected: "}
-          <strong>{selectedFileName}</strong>
+          <strong>{selectedFilesSummary}</strong>
         </>
       )}
     </button>
