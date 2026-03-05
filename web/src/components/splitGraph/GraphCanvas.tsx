@@ -5,6 +5,7 @@ import {
   ReactFlow,
   type Edge,
   type EdgeMouseHandler,
+  type EdgeTypes,
   type Node,
   type NodeMouseHandler,
   type NodeTypes,
@@ -19,6 +20,7 @@ interface GraphCanvasProps {
   nodes: Node[];
   edges: Edge[];
   nodeTypes: NodeTypes;
+  edgeTypes?: EdgeTypes;
   viewport: ViewportState;
   flowContainerRef: MutableRefObject<HTMLDivElement | null>;
   minimapNodeColor: (node: Node) => string;
@@ -43,6 +45,7 @@ const GraphCanvasInner = ({
   nodes,
   edges,
   nodeTypes,
+  edgeTypes,
   viewport,
   flowContainerRef,
   minimapNodeColor,
@@ -66,6 +69,7 @@ const GraphCanvasInner = ({
       nodes={nodes}
       edges={edges}
       nodeTypes={nodeTypes}
+      edgeTypes={edgeTypes}
       onNodeClick={onNodeClick}
       onNodeMouseEnter={onNodeMouseEnter}
       onNodeMouseMove={onNodeMouseMove}

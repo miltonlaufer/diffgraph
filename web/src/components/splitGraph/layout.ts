@@ -484,6 +484,7 @@ const computeLogicLayout = (
         id: edge.id,
         source: edge.source,
         target: edge.target,
+        ...(isInvoke ? { type: "calls" as const } : {}),
         ...(sourceHandle ? { sourceHandle } : {}),
         label,
         animated: edge.diffStatus === "added" || edge.diffStatus === "removed",
