@@ -43,6 +43,7 @@ import {
   computeViewportForNode,
   isNodeVisibleInViewport as computeIsNodeVisibleInViewport,
 } from "./splitGraph/viewport";
+import { CallsEdge } from "./splitGraph/CallsEdge";
 import { EdgeDebugOverlay } from "./splitGraph/EdgeDebugOverlay";
 import { EdgeTooltipOverlay } from "./splitGraph/EdgeTooltipOverlay";
 import { useAskLlmPrompt } from "./splitGraph/useAskLlmPrompt";
@@ -688,6 +689,7 @@ export const SplitGraphPanel = observer(({
   }, [debouncedHoveredEdgeId, flowElements.edges, graphNodeById]);
 
   const nodeTypesForFlow = isLogic ? logicNodeTypes : knowledgeNodeTypes;
+  const edgeTypesForFlow = useMemo(() => ({ calls: CallsEdge }), []);
   const showEdgeDebugOverlay = useMemo(() => hasDebugEdgesFlag(), []);
   const graphEdgeByIdForDebug = useMemo(
     () => new Map(graph.edges.map((e) => [e.id, e])),
@@ -777,7 +779,11 @@ export const SplitGraphPanel = observer(({
       && lastEdgeNavigationRef.current?.lastEndpoint === "source";
     const endpoint: "source" | "target" = navigateToTarget ? "target" : "source";
     const nodeId = endpoint === "source" ? edge.source : edge.target;
-    if (!nodeId || !graphNodeById.has(nodeId)) return;
+    const nodeInGraph = nodeId && graphNodeById.has(nodeId);
+    const nodeInFlow = nodeId && positionedNodeById.has(nodeId);
+    if (!nodeId || (!nodeInGraph && !nodeInFlow)) return;
+    const targetNode = flowNodeById.get(nodeId);
+    if (!targetNode) return;
     store.setClickedEdgeId(edge.id);
     if (edgeClickHighlightTimerRef.current !== null) {
       window.clearTimeout(edgeClickHighlightTimerRef.current);
@@ -791,8 +797,9 @@ export const SplitGraphPanel = observer(({
     } else {
       onNodeSelect(nodeId, side);
     }
+    onViewportChange(viewportForNode(targetNode));
     lastEdgeNavigationRef.current = { edgeId: edge.id, lastEndpoint: endpoint };
-  }, [graphNodeById, onGraphNodeFocus, onNodeSelect, side, store]);
+  }, [graphNodeById, flowNodeById, onGraphNodeFocus, onNodeSelect, onViewportChange, positionedNodeById, side, store, viewportForNode]);
 
   const handlePaneMouseLeave = useCallback(() => {
     store.clearHoveredEdge();
@@ -1169,6 +1176,7 @@ export const SplitGraphPanel = observer(({
         nodes={graphCanvasNodes}
         edges={searchResultNodes.edges}
         nodeTypes={nodeTypesForFlow}
+        edgeTypes={edgeTypesForFlow}
         viewport={effectiveViewport}
         flowContainerRef={flowContainerRef}
         minimapNodeColor={minimapNodeColor}
