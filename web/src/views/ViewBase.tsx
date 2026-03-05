@@ -4,6 +4,7 @@ import { Group, Panel, Separator } from "react-resizable-panels";
 import { CodeDiffDrawer } from "../components/CodeDiffDrawer";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { FileListPanel } from "../components/FileListPanel";
+import PullRequestConversationModal from "../components/PullRequestConversationModal";
 import { type GraphDiffTarget, type InternalNodeAnchor, type TopLevelAnchor } from "../components/SplitGraphPanel";
 import { SplitGraphRuntimeProvider, type SplitGraphRuntimeContextValue } from "../components/splitGraph/context";
 import { SymbolListPanel } from "../components/SymbolListPanel";
@@ -44,6 +45,8 @@ import {
   computeNewAlignmentOffset,
   normalizePath,
 } from "./viewBase/selectors";
+import { fetchPullRequestReviewThreads, type PullRequestReviewThread } from "#/api";
+import { getCachedReviewThreads, setCachedReviewThreads } from "#/lib/diffPrefetch";
 
 interface ViewBaseProps {
   diffId: string;
@@ -69,6 +72,8 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     nodeId: string;
     sourceSide: "old" | "new";
   } | null>(null);
+  const [pullRequestReviewThreads, setPullRequestReviewThreads] = useState<PullRequestReviewThread[]>([]);
+  const [activeReviewThreadIds, setActiveReviewThreadIds] = useState<string[]>([]);
   const { isUiPending, commandContext } = useInteractiveUpdate(store);
 
   const handleShowCallsChange = useCallback(
@@ -187,6 +192,78 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     () => buildFileContentMap(store.fileDiffs, "new"),
     [store.fileDiffs],
   );
+  const pathAliasesByPath = useMemo(() => {
+    const aliasSets = new Map<string, Set<string>>();
+    const normalizedPathSet = new Set<string>();
+    const addPathAliases = (paths: string[]): void => {
+      const normalizedPaths = [...new Set(
+        paths
+          .map((path) => normalizePath(path))
+          .filter((path) => path.length > 0),
+      )];
+      if (normalizedPaths.length <= 1) return;
+      for (const path of normalizedPaths) {
+        const aliases = aliasSets.get(path) ?? new Set<string>();
+        for (const alias of normalizedPaths) {
+          if (alias === path) continue;
+          aliases.add(alias);
+        }
+        aliasSets.set(path, aliases);
+      }
+    };
+    const hasSharedPathSuffix = (a: string, b: string): boolean => {
+      const aParts = a.split("/").filter((part) => part.length > 0);
+      const bParts = b.split("/").filter((part) => part.length > 0);
+      let sharedCount = 0;
+      while (
+        sharedCount < aParts.length
+        && sharedCount < bParts.length
+        && aParts[aParts.length - 1 - sharedCount] === bParts[bParts.length - 1 - sharedCount]
+      ) {
+        sharedCount += 1;
+      }
+      return sharedCount >= 2;
+    };
+
+    for (const file of store.fileDiffs) {
+      addPathAliases([file.path, file.oldPath ?? "", file.newPath ?? ""]);
+      const normalizedPath = normalizePath(file.path);
+      if (normalizedPath.length > 0) normalizedPathSet.add(normalizedPath);
+      const normalizedOldPath = normalizePath(file.oldPath ?? "");
+      if (normalizedOldPath.length > 0) normalizedPathSet.add(normalizedOldPath);
+      const normalizedNewPath = normalizePath(file.newPath ?? "");
+      if (normalizedNewPath.length > 0) normalizedPathSet.add(normalizedNewPath);
+    }
+
+    const pathsByBasename = new Map<string, string[]>();
+    for (const path of normalizedPathSet) {
+      const segments = path.split("/");
+      const basename = segments[segments.length - 1]?.trim() ?? "";
+      if (!basename) continue;
+      const group = pathsByBasename.get(basename);
+      if (group) {
+        group.push(path);
+      } else {
+        pathsByBasename.set(basename, [path]);
+      }
+    }
+
+    for (const paths of pathsByBasename.values()) {
+      if (paths.length < 2 || paths.length > 4) continue;
+      for (let index = 0; index < paths.length; index += 1) {
+        for (let otherIndex = index + 1; otherIndex < paths.length; otherIndex += 1) {
+          const a = paths[index];
+          const b = paths[otherIndex];
+          if (!hasSharedPathSuffix(a, b)) continue;
+          addPathAliases([a, b]);
+        }
+      }
+    }
+
+    return new Map(
+      [...aliasSets.entries()].map(([path, aliases]) => [path, [...aliases]]),
+    );
+  }, [store.fileDiffs]);
 
   const handleNodeSelect = useCallback(
     (nodeId: string, sourceSide: "old" | "new") => {
@@ -211,6 +288,16 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     setPendingNodeSelect(null);
   }, []);
 
+  const handleOpenReviewThreads = useCallback((threadIds: string[]) => {
+    const deduplicated = [...new Set(threadIds)].filter((threadId) => threadId.length > 0);
+    if (deduplicated.length === 0) return;
+    setActiveReviewThreadIds(deduplicated);
+  }, []);
+
+  const handleCloseReviewThreads = useCallback(() => {
+    setActiveReviewThreadIds([]);
+  }, []);
+
   const handleOpenCodeLogicTree = useCallback(
     (nodeId: string, sourceSide: "old" | "new", lineNumbers: number[]) => {
       commandOpenCodeLogicTree(commandContext, nodeId, sourceSide, lineNumbers);
@@ -232,13 +319,10 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     [commandContext],
   );
 
-  const handleFileHover = useCallback(
-    (_filePath: string) => {
-      // Commented out: file list hover not working correctly
-      // store.setHoveredFilePathFromList(filePath);
-    },
-    [],
-  );
+  const handleFileHover = useCallback(() => {
+    // Commented out: file list hover not working correctly
+    // store.setHoveredFilePathFromList(filePath);
+  }, []);
 
   const handleFileHoverClear = useCallback(() => {
     // Commented out: file list hover not working correctly
@@ -506,6 +590,14 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     store.targetSide,
   ]);
 
+  const activeReviewThreads = useMemo(() => {
+    if (activeReviewThreadIds.length === 0 || pullRequestReviewThreads.length === 0) return [];
+    const threadById = new Map(pullRequestReviewThreads.map((thread) => [thread.id, thread]));
+    return activeReviewThreadIds
+      .map((threadId) => threadById.get(threadId))
+      .filter((thread): thread is PullRequestReviewThread => thread !== undefined);
+  }, [activeReviewThreadIds, pullRequestReviewThreads]);
+
   const goToGraphDiff = useCallback(
     (idx: number) => {
       commandGoToGraphDiff(
@@ -548,6 +640,40 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
     displayNewChangedCount,
     highlightTimerRef,
   });
+
+  useEffect(() => {
+    let mounted = true;
+    setPullRequestReviewThreads([]);
+    setActiveReviewThreadIds([]);
+    const cachedReviewThreads = getCachedReviewThreads(diffId);
+    if (cachedReviewThreads) {
+      setPullRequestReviewThreads(cachedReviewThreads);
+      return () => {
+        mounted = false;
+      };
+    }
+    fetchPullRequestReviewThreads(diffId)
+      .then((threads) => {
+        if (!mounted) return;
+        setCachedReviewThreads(diffId, threads);
+        setPullRequestReviewThreads(threads);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setPullRequestReviewThreads([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [diffId]);
+
+  useEffect(() => {
+    if (activeReviewThreadIds.length === 0) return;
+    const validThreadIds = new Set(pullRequestReviewThreads.map((thread) => thread.id));
+    const filtered = activeReviewThreadIds.filter((threadId) => validThreadIds.has(threadId));
+    if (filtered.length === activeReviewThreadIds.length) return;
+    setActiveReviewThreadIds(filtered);
+  }, [activeReviewThreadIds, pullRequestReviewThreads]);
 
   if (store.error) {
     return <p className="errorText">{store.error}</p>;
@@ -628,7 +754,10 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
                 alignedTopAnchors={alignedTopAnchors}
                 newAlignmentOffset={newAlignmentOffset}
                 alignmentBreakpoints={alignmentBreakpoints}
+                pathAliasesByPath={pathAliasesByPath}
                 store={store}
+                pullRequestReviewThreads={pullRequestReviewThreads}
+                onOpenReviewThreads={handleOpenReviewThreads}
               />
             </Panel>
             <Separator id="file-panel-separator" className="viewResizeSeparator viewResizeSeparatorVertical" />
@@ -642,13 +771,23 @@ export const ViewBase = observer(({ diffId, viewType, showChangesOnly, pullReque
                 </div>
                 <div className="viewResizableCodePanel">
                   <div ref={codeDiffSectionRef} className="viewResizableCodeDiffWrapper">
-                    <CodeDiffDrawer />
+                    <CodeDiffDrawer
+                      pathAliasesByPath={pathAliasesByPath}
+                      pullRequestReviewThreads={pullRequestReviewThreads}
+                      onOpenReviewThreads={handleOpenReviewThreads}
+                    />
                   </div>
                 </div>
               </div>
             </Panel>
           </Group>
         </SplitGraphRuntimeProvider>
+
+        <PullRequestConversationModal
+          open={activeReviewThreads.length > 0}
+          threads={activeReviewThreads}
+          onClose={handleCloseReviewThreads}
+        />
 
         {__INTERNAL_DEBUG__ && (
           <div

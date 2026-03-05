@@ -3,6 +3,7 @@ import { memo, useMemo, useState, useCallback } from "react";
 import AskLlmButton from "./AskLlmButton";
 import CodeTooltip from "./CodeTooltip";
 import { useDebouncedValue } from "../useDebouncedValue";
+import { ConversationBadge } from "../ConversationBadge";
 
 const splitLabel = (label: string): { title: string; code: string } => {
   const idx = label.indexOf("\n");
@@ -26,6 +27,10 @@ interface ProcessNodeData {
   onAskLlmHrefForNode?: (nodeId: string) => string;
   onShowGraphLogicTreeForNode?: (nodeId: string) => void;
   onShowCodeLogicTreeForNode?: (nodeId: string) => void;
+  reviewThreadIds?: string[];
+  reviewThreadCount?: number;
+  reviewUnresolvedCount?: number;
+  onOpenReviewThreads?: (threadIds: string[]) => void;
 }
 
 const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
@@ -39,6 +44,10 @@ const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
     onAskLlmHrefForNode,
     onShowGraphLogicTreeForNode,
     onShowCodeLogicTreeForNode,
+    onOpenReviewThreads,
+    reviewThreadCount,
+    reviewUnresolvedCount,
+    reviewThreadIds,
   } = data;
 
   /******************* COMPUTED ***********************/
@@ -84,9 +93,19 @@ const ProcessNode = ({ data }: { data: ProcessNodeData }) => {
   const hasAskLlm = Boolean(askLlmNodeId && onAskLlmForNode);
   const hasGraphLogicTree = Boolean(askLlmNodeId && onShowGraphLogicTreeForNode);
   const hasCodeLogicTree = Boolean(askLlmNodeId && onShowCodeLogicTreeForNode);
+  const handleOpenReviewThreads = useCallback(() => {
+    if (!reviewThreadIds || reviewThreadIds.length === 0 || !onOpenReviewThreads) return;
+    onOpenReviewThreads(reviewThreadIds);
+  }, [onOpenReviewThreads, reviewThreadIds]);
 
   return (
     <div style={style} onMouseEnter={onEnter} onMouseLeave={onLeave}>
+      <ConversationBadge
+        className="conversationBadgeNode"
+        count={reviewThreadCount ?? 0}
+        unresolvedCount={reviewUnresolvedCount ?? 0}
+        onClick={handleOpenReviewThreads}
+      />
       <div style={{ fontSize: 11, color: data.textColor }}>{parts.title}</div>
       {parts.code && (
         <div style={{ fontSize: 9, fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace", color: data.textColor, opacity: 0.85, marginTop: 2, lineHeight: 1.3 }}>

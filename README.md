@@ -306,6 +306,39 @@ If the default port (4177) is busy, the server automatically finds the next avai
 - **Knowledge** -- structural graph of classes, functions, services, imports, etc.
 - **React** -- component render tree and hook usage (shown only when the diff contains React-relevant symbols)
 
+## Pull request (PR) mode
+
+When you open a diff via **Pull request mode** (CLI: `diffgraph -pr <number>` or interactive menu option `5) Pull requests`), the app runs in PR mode and exposes the following.
+
+### CLI
+
+- **`-pr <number>`** — Compare a GitHub pull request by number. The diff is fetched from `origin` as `pull/<number>/head`.
+- **Interactive menu** — Option `5) Pull requests` lists the latest 10 **open** PRs; choose one to open its diff in the browser.
+
+### Header controls (PR mode only)
+
+- **PR ↗** — Opens the current PR on GitHub in a new tab. Uses the PR URL resolved from `gh pr view` or from the `origin` remote.
+- **PR Description** — Opens a modal with the full PR description rendered as markdown. Useful to keep context while reviewing the graph and code diff.
+
+### PR description in context
+
+- The server fetches and exposes the PR description (and a short excerpt). The **Ask-LLM** prompt (Copy prompt / Open ChatGPT) automatically includes the PR description excerpt when available, so generated prompts carry review context.
+
+### PR review comments and conversations (since v.0.1.7)
+
+In PR mode, the app fetches **review threads** (line-level and general discussions) from GitHub and surfaces them in the UI.
+
+- **Conversation badges** — On **graph nodes** (Logic, Knowledge, React): each node that has review comments shows a badge with the number of conversations and whether any are unresolved. On the **code diff**: each line (or line range) that has comments shows a badge in the line number gutter. Clicking a badge opens the **Conversation modal** scoped to that node or those lines.
+- **Conversation modal** — Lists review threads with:
+  - File path and line range (old / new side when applicable)
+  - Link to the thread on GitHub
+  - All comments in the thread: author, avatar, timestamp, and markdown body
+  - General discussions (not tied to a specific line) grouped under "General Discussion"
+  - Threads sorted by last activity
+  - Close with the Close button or **Escape**
+
+Review threads are loaded in the background (GraphQL with REST fallback). 
+
 ## Features
 
 ### UI / UX
@@ -314,7 +347,7 @@ If the default port (4177) is busy, the server automatically finds the next avai
 | --- | --- |
 | Graph logic tree modal | `See graph logic tree` in node hover actions opens a fullscreen focused subgraph modal. Faster branch-level reasoning without losing full-graph context. |
 | Code logic tree mode | `See code logic tree` in node hover actions; code diff can filter to related logic ancestry lines. Moves from graph node to minimal code window quickly. |
-| Pull request controls in header | `PR ↗` (open on GitHub) and `PR Description` modal (markdown rendering). PR mode carries review context directly in the UI. |
+| Pull request controls in header | In PR mode: `PR ↗` (open on GitHub), `PR Description` modal, and conversation badges/modal for review comments. See **Pull request (PR) mode** above. |
 | Resizable layout | Resizable panels for graph/code and Old/New split panes. Better ergonomics for large monitors and small laptops. |
 | Performance guard modal | Runtime lag detection modal with mitigations (hide call edges; optionally render one side only). Keeps app responsive on very large graphs. |
 | Node action panel | Ask-LLM floating panel includes graph/code logic-tree actions, tooltip anchoring, and copied-state messaging. |

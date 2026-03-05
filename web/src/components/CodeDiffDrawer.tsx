@@ -19,6 +19,8 @@ import { useViewBaseRuntime } from "../views/viewBase/runtime";
 import { createCachedComputation } from "#/lib/cachedComputation";
 import { hashFinalize, hashInit, hashString } from "#/lib/memoHash";
 import { useDebouncedValue } from "./useDebouncedValue";
+import type { PullRequestReviewThread } from "#/api";
+import { buildLineThreadIndex, normalizeDiffPath } from "#/lib/pullRequestComments";
 
 const DIFF_CACHE_MAX_ENTRIES = 12;
 
@@ -70,7 +72,17 @@ const insertGapRows = (
   return withGaps;
 };
 
-export const CodeDiffDrawer = observer(() => {
+interface CodeDiffDrawerProps {
+  pathAliasesByPath?: Map<string, string[]>;
+  pullRequestReviewThreads?: PullRequestReviewThread[];
+  onOpenReviewThreads?: (threadIds: string[]) => void;
+}
+
+export const CodeDiffDrawer = observer(({
+  pathAliasesByPath,
+  pullRequestReviewThreads = [],
+  onOpenReviewThreads,
+}: CodeDiffDrawerProps) => {
   const { state, actions } = useViewBaseRuntime();
   const {
     selectedFile: file,
@@ -142,6 +154,67 @@ export const CodeDiffDrawer = observer(() => {
     });
     return matches;
   }, [debouncedTextSearch, diff, visibleMatrixRows]);
+  const reviewThreadById = useMemo(
+    () => new Map(pullRequestReviewThreads.map((thread) => [thread.id, thread])),
+    [pullRequestReviewThreads],
+  );
+  const filePathAliases = useMemo(() => {
+    const normalizedFilePath = file?.path ? normalizeDiffPath(file.path) : "";
+    const inferredAliases = normalizedFilePath
+      ? (pathAliasesByPath?.get(normalizedFilePath) ?? [])
+      : [];
+    const paths = [file?.path, file?.oldPath, file?.newPath, ...inferredAliases]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+    return [...new Set(paths)];
+  }, [file?.newPath, file?.oldPath, file?.path, pathAliasesByPath]);
+  const oldLineReviewThreadIds = useMemo(
+    () => (file?.path
+      ? buildLineThreadIndex(pullRequestReviewThreads, file.path, "old", filePathAliases)
+      : new Map<number, string[]>()),
+    [file?.path, filePathAliases, pullRequestReviewThreads],
+  );
+  const newLineReviewThreadIds = useMemo(
+    () => (file?.path
+      ? buildLineThreadIndex(pullRequestReviewThreads, file.path, "new", filePathAliases)
+      : new Map<number, string[]>()),
+    [file?.path, filePathAliases, pullRequestReviewThreads],
+  );
+
+  useEffect(() => {
+    if (!file?.path || pullRequestReviewThreads.length === 0) return;
+    const comparablePaths = new Set(
+      [file.path, ...filePathAliases]
+        .map((path) => normalizeDiffPath(path))
+        .filter((path) => path.length > 0),
+    );
+    const pathMatchedThreads = pullRequestReviewThreads.filter((thread) =>
+      thread.kind !== "discussion" && comparablePaths.has(normalizeDiffPath(thread.filePath)));
+    if (pathMatchedThreads.length === 0) return;
+    if (oldLineReviewThreadIds.size > 0 || newLineReviewThreadIds.size > 0) return;
+    console.warn("[diffgraph] review threads matched file aliases but no visible line overlap", {
+      filePath: file.path,
+      comparablePaths: [...comparablePaths],
+      sampleThreads: pathMatchedThreads.slice(0, 20).map((thread) => ({
+        id: thread.id,
+        path: thread.filePath,
+        side: thread.side,
+        startSide: thread.startSide,
+        line: thread.line,
+        startLine: thread.startLine,
+        originalLine: thread.originalLine,
+        originalStartLine: thread.originalStartLine,
+        resolved: thread.resolved,
+        outdated: thread.outdated,
+      })),
+      totalMatchedThreads: pathMatchedThreads.length,
+    });
+  }, [
+    file?.path,
+    filePathAliases,
+    newLineReviewThreadIds,
+    oldLineReviewThreadIds,
+    pullRequestReviewThreads,
+  ]);
 
   const goToHunk = useCallback(
     (idx: number) => {
@@ -310,6 +383,10 @@ export const CodeDiffDrawer = observer(() => {
           newCodeScrollRef={newCodeScrollRef}
           onLineClick={handleDeferredLineClick}
           onLineDoubleClick={handleLineDoubleClick}
+          oldLineReviewThreadIds={oldLineReviewThreadIds}
+          newLineReviewThreadIds={newLineReviewThreadIds}
+          reviewThreadById={reviewThreadById}
+          onOpenReviewThreads={onOpenReviewThreads}
         />
       </section>,
     );
@@ -336,6 +413,10 @@ export const CodeDiffDrawer = observer(() => {
           newCodeScrollRef={newCodeScrollRef}
           onLineClick={handleDeferredLineClick}
           onLineDoubleClick={handleLineDoubleClick}
+          oldLineReviewThreadIds={oldLineReviewThreadIds}
+          newLineReviewThreadIds={newLineReviewThreadIds}
+          reviewThreadById={reviewThreadById}
+          onOpenReviewThreads={onOpenReviewThreads}
         />
       </section>,
     );
@@ -374,6 +455,10 @@ export const CodeDiffDrawer = observer(() => {
           onNewScroll={handleNewScroll}
           onLineClick={handleDeferredLineClick}
           onLineDoubleClick={handleLineDoubleClick}
+          oldLineReviewThreadIds={oldLineReviewThreadIds}
+          newLineReviewThreadIds={newLineReviewThreadIds}
+          reviewThreadById={reviewThreadById}
+          onOpenReviewThreads={onOpenReviewThreads}
         />
       )}
     </section>,

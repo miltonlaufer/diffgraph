@@ -31,6 +31,72 @@ export const fetchDiffFiles = async (diffId: string): Promise<FileDiffEntry[]> =
   return (await response.json()) as FileDiffEntry[];
 };
 
+export type PullRequestThreadSide = "old" | "new" | "";
+
+export interface PullRequestReviewCommentAuthor {
+  login: string;
+  avatarUrl?: string;
+  profileUrl?: string;
+}
+
+export interface PullRequestReviewComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  updatedAt?: string;
+  url?: string;
+  author: PullRequestReviewCommentAuthor;
+}
+
+export interface PullRequestReviewThread {
+  id: string;
+  kind?: "review" | "discussion";
+  filePath: string;
+  side: PullRequestThreadSide;
+  startSide: PullRequestThreadSide;
+  line?: number;
+  startLine?: number;
+  originalLine?: number;
+  originalStartLine?: number;
+  resolved: boolean;
+  outdated: boolean;
+  comments: PullRequestReviewComment[];
+  url?: string;
+}
+
+export interface PullRequestReviewThreadsDiagnostics {
+  repoSlug?: string;
+  selectedReviewSource: "restThreads" | "graphqlThreads" | "restReviewComments" | "none";
+  reviewThreadCount: number;
+  discussionThreadCount: number;
+  totalThreadCount: number;
+  restThreadsError?: string;
+  graphqlThreadsError?: string;
+  restReviewCommentsError?: string;
+  discussionCommentsError?: string;
+}
+
+export interface PullRequestReviewThreadsResponse {
+  threads: PullRequestReviewThread[];
+  diagnostics: PullRequestReviewThreadsDiagnostics | null;
+}
+
+export const fetchPullRequestReviewThreads = async (diffId: string): Promise<PullRequestReviewThread[]> => {
+  const response = await fetch(`/api/diff/${diffId}/pull-request-threads`);
+  if (!response.ok) {
+    throw new Error("Failed to load pull request review threads");
+  }
+  const payload = (await response.json()) as PullRequestReviewThread[] | PullRequestReviewThreadsResponse;
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+  const threads = Array.isArray(payload?.threads) ? payload.threads : [];
+  if (threads.length === 0 && payload?.diagnostics) {
+    console.warn("[diffgraph] pull-request-threads returned no threads", payload.diagnostics);
+  }
+  return threads;
+};
+
 export interface DiffMeta {
   diffId: string;
   oldRef: string;

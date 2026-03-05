@@ -1,4 +1,5 @@
 import type { ViewGraph } from "#/types/graph";
+import type { PullRequestReviewThread } from "#/api";
 
 export interface DiffStats {
   added: number;
@@ -47,4 +48,7 @@ export interface SplitGraphPanelProps {
   alignmentAnchors?: Record<string, TopLevelAnchor>;
   alignmentBreakpoints?: Record<string, AlignmentBreakpoint[]>;
   isViewportPrimary?: boolean;
+  pathAliasesByPath?: Map<string, string[]>;
+  pullRequestReviewThreads?: PullRequestReviewThread[];
+  onOpenReviewThreads?: (threadIds: string[]) => void;
 }

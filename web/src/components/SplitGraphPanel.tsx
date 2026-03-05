@@ -49,6 +49,7 @@ import { useAskLlmPrompt } from "./splitGraph/useAskLlmPrompt";
 import { useFlowElementsHighlighting, SEARCH_FLASH_STYLE } from "./splitGraph/useFlowElementsHighlighting";
 import { useSplitGraphPanelSearch } from "./splitGraph/useSplitGraphPanelSearch";
 import type { GraphDiffTarget, InternalNodeAnchor, SplitGraphPanelProps, TopLevelAnchor } from "./splitGraph/types";
+import { buildNodeThreadIndex, summarizeThreadBadge } from "#/lib/pullRequestComments";
 
 export type { AlignmentBreakpoint, GraphDiffTarget, InternalNodeAnchor, TopLevelAnchor } from "./splitGraph/types";
 
@@ -66,6 +67,9 @@ export const SplitGraphPanel = observer(({
   alignmentAnchors,
   alignmentBreakpoints,
   isViewportPrimary = true,
+  pathAliasesByPath,
+  pullRequestReviewThreads = [],
+  onOpenReviewThreads,
 }: SplitGraphPanelProps) => {
   const { state: runtimeState, actions: runtimeActions } = useSplitGraphRuntime();
   const {
@@ -90,7 +94,6 @@ export const SplitGraphPanel = observer(({
     hoveredNodeId,
     hoveredNodeMatchKey,
     hoveredNodeSide,
-    hoveredFilePathFromList: _hoveredFilePathFromList,
   } = runtimeState;
   const {
     onInteractionClick,
@@ -334,6 +337,14 @@ export const SplitGraphPanel = observer(({
     () => new Map(graph.edges.map((edge) => [edge.id, edge])),
     [graph.edges],
   );
+  const reviewThreadById = useMemo(
+    () => new Map(pullRequestReviewThreads.map((thread) => [thread.id, thread])),
+    [pullRequestReviewThreads],
+  );
+  const reviewThreadIdsByNodeId = useMemo(
+    () => buildNodeThreadIndex(pullRequestReviewThreads, graph.nodes, side, pathAliasesByPath),
+    [graph.nodes, pathAliasesByPath, pullRequestReviewThreads, side],
+  );
 
   const splitGraphDerivedInput = useMemo(
     () => ({
@@ -575,19 +586,27 @@ export const SplitGraphPanel = observer(({
   }, [debouncedSearchQuery, flowElements, searchMatches, store.searchExclude, store.searchHighlightedNodeId]);
 
   const graphCanvasNodes = useMemo(
-    () => searchResultNodes.nodes.map((node) => ({
-      ...node,
-      data: {
-        ...(node.data as Record<string, unknown>),
-        hideCodeTooltip: areNodesSelected,
-        askLlmNodeId: node.id,
-        onAskLlmForNode: handleAskLlmForNode,
-        onAskLlmHrefForNode: handleAskLlmHrefForNode,
-        onShowGraphLogicTreeForNode: handleShowGraphLogicTreeForNode,
-        onShowCodeLogicTreeForNode: handleShowCodeLogicTreeForNode,
-        onGroupHeaderHoverChange: handleGroupHeaderHoverChange,
-      },
-    })),
+    () => searchResultNodes.nodes.map((node) => {
+      const reviewThreadIds = reviewThreadIdsByNodeId.get(node.id) ?? [];
+      const reviewSummary = summarizeThreadBadge(reviewThreadIds, reviewThreadById);
+      return {
+        ...node,
+        data: {
+          ...(node.data as Record<string, unknown>),
+          hideCodeTooltip: areNodesSelected,
+          askLlmNodeId: node.id,
+          onAskLlmForNode: handleAskLlmForNode,
+          onAskLlmHrefForNode: handleAskLlmHrefForNode,
+          onShowGraphLogicTreeForNode: handleShowGraphLogicTreeForNode,
+          onShowCodeLogicTreeForNode: handleShowCodeLogicTreeForNode,
+          onGroupHeaderHoverChange: handleGroupHeaderHoverChange,
+          reviewThreadIds,
+          reviewThreadCount: reviewSummary.totalCount,
+          reviewUnresolvedCount: reviewSummary.unresolvedCount,
+          onOpenReviewThreads,
+        },
+      };
+    }),
     [
       handleAskLlmForNode,
       handleAskLlmHrefForNode,
@@ -595,6 +614,9 @@ export const SplitGraphPanel = observer(({
       handleShowCodeLogicTreeForNode,
       handleGroupHeaderHoverChange,
       areNodesSelected,
+      onOpenReviewThreads,
+      reviewThreadById,
+      reviewThreadIdsByNodeId,
       searchResultNodes.nodes,
     ],
   );

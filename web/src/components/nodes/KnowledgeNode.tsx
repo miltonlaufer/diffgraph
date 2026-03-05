@@ -3,6 +3,7 @@ import { memo, useMemo, useState, useCallback } from "react";
 import AskLlmButton from "./AskLlmButton";
 import CodeTooltip from "./CodeTooltip";
 import { useDebouncedValue } from "../useDebouncedValue";
+import { ConversationBadge } from "../ConversationBadge";
 
 interface KnowledgeNodeData {
   label: string;
@@ -22,6 +23,10 @@ interface KnowledgeNodeData {
   onAskLlmHrefForNode?: (nodeId: string) => string;
   onShowGraphLogicTreeForNode?: (nodeId: string) => void;
   onShowCodeLogicTreeForNode?: (nodeId: string) => void;
+  reviewThreadIds?: string[];
+  reviewThreadCount?: number;
+  reviewUnresolvedCount?: number;
+  onOpenReviewThreads?: (threadIds: string[]) => void;
 }
 
 const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
@@ -35,6 +40,10 @@ const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
     onAskLlmHrefForNode,
     onShowGraphLogicTreeForNode,
     onShowCodeLogicTreeForNode,
+    onOpenReviewThreads,
+    reviewThreadCount,
+    reviewUnresolvedCount,
+    reviewThreadIds,
   } = data;
 
   /******************* COMPUTED ***********************/
@@ -80,9 +89,19 @@ const KnowledgeNode = ({ data }: { data: KnowledgeNodeData }) => {
   const hasAskLlm = Boolean(askLlmNodeId && onAskLlmForNode);
   const hasGraphLogicTree = Boolean(askLlmNodeId && onShowGraphLogicTreeForNode);
   const hasCodeLogicTree = Boolean(askLlmNodeId && onShowCodeLogicTreeForNode);
+  const handleOpenReviewThreads = useCallback(() => {
+    if (!reviewThreadIds || reviewThreadIds.length === 0 || !onOpenReviewThreads) return;
+    onOpenReviewThreads(reviewThreadIds);
+  }, [onOpenReviewThreads, reviewThreadIds]);
 
   return (
     <div style={style} title={`${data.label}\n${data.fullPath}`} onMouseEnter={onEnter} onMouseLeave={onLeave}>
+      <ConversationBadge
+        className="conversationBadgeNode"
+        count={reviewThreadCount ?? 0}
+        unresolvedCount={reviewUnresolvedCount ?? 0}
+        onClick={handleOpenReviewThreads}
+      />
       <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>
         {data.label}
       </div>

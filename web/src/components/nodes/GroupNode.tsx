@@ -5,6 +5,7 @@ import AskLlmButton from "./AskLlmButton";
 import { ParameterTokenList } from "./ParameterTokenList";
 import { useDebouncedValue } from "../useDebouncedValue";
 import FloatingTooltip from "./FloatingTooltip";
+import { ConversationBadge } from "../ConversationBadge";
 
 const COMPACT_HEADER_ZOOM_THRESHOLD = 0.4;
 
@@ -104,6 +105,10 @@ interface GroupNodeData {
   onShowGraphLogicTreeForNode?: (nodeId: string) => void;
   onShowCodeLogicTreeForNode?: (nodeId: string) => void;
   onGroupHeaderHoverChange?: (nodeId: string, isHovering: boolean) => void;
+  reviewThreadIds?: string[];
+  reviewThreadCount?: number;
+  reviewUnresolvedCount?: number;
+  onOpenReviewThreads?: (threadIds: string[]) => void;
 }
 
 const GroupNode = ({ data }: { data: GroupNodeData }) => {
@@ -122,6 +127,10 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
     onShowGraphLogicTreeForNode,
     onShowCodeLogicTreeForNode,
     onGroupHeaderHoverChange,
+    onOpenReviewThreads,
+    reviewThreadCount,
+    reviewUnresolvedCount,
+    reviewThreadIds,
   } = data;
 
   /******************* COMPUTED ***********************/
@@ -345,6 +354,10 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
   const hasAskLlm = Boolean(askLlmNodeId && onAskLlmForNode);
   const hasGraphLogicTree = Boolean(askLlmNodeId && onShowGraphLogicTreeForNode);
   const hasCodeLogicTree = Boolean(askLlmNodeId && onShowCodeLogicTreeForNode);
+  const handleOpenReviewThreads = useCallback(() => {
+    if (!reviewThreadIds || reviewThreadIds.length === 0 || !onOpenReviewThreads) return;
+    onOpenReviewThreads(reviewThreadIds);
+  }, [onOpenReviewThreads, reviewThreadIds]);
   const parameterStripStyle = useMemo(
     () => ({
       background: "#bbbbbb",
@@ -405,6 +418,12 @@ const GroupNode = ({ data }: { data: GroupNodeData }) => {
 
   return (
     <div style={style} onMouseLeave={onNodeLeave}>
+      <ConversationBadge
+        className="conversationBadgeNode conversationBadgeNodeGroup"
+        count={reviewThreadCount ?? 0}
+        unresolvedCount={reviewUnresolvedCount ?? 0}
+        onClick={handleOpenReviewThreads}
+      />
       <Handle type="target" position={Position.Top} style={{ opacity: 0, pointerEvents: "none" }} />
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0, pointerEvents: "none" }} />
       <AskLlmButton

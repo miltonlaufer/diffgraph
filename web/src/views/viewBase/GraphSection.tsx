@@ -3,6 +3,7 @@ import { Group, Panel, Separator } from "react-resizable-panels";
 import { SplitGraphPanel } from "#/components/SplitGraphPanel";
 import type { TopLevelAnchor } from "#/components/SplitGraphPanel";
 import type { ViewGraph } from "#/types/graph";
+import type { PullRequestReviewThread } from "#/api";
 import type { ViewBaseStoreInstance } from "./store";
 
 const EMPTY_ANCHORS: Record<string, TopLevelAnchor> = {};
@@ -31,7 +32,10 @@ interface GraphSectionProps {
   alignedTopAnchors: AlignedTopAnchors;
   newAlignmentOffset: { x: number; y: number } | undefined;
   alignmentBreakpoints: Record<string, AlignmentBreakpoint[]> | undefined;
+  pathAliasesByPath: Map<string, string[]>;
   store: ViewBaseStoreInstance;
+  pullRequestReviewThreads: PullRequestReviewThread[];
+  onOpenReviewThreads: (threadIds: string[]) => void;
 }
 
 export const GraphSection = ({
@@ -48,7 +52,10 @@ export const GraphSection = ({
   alignedTopAnchors,
   newAlignmentOffset,
   alignmentBreakpoints,
+  pathAliasesByPath,
   store,
+  pullRequestReviewThreads,
+  onOpenReviewThreads,
 }: GraphSectionProps) => (
   <div ref={graphSectionRef} className="viewResizablePanelInner">
     {loading && (
@@ -78,6 +85,9 @@ export const GraphSection = ({
               counterpartFileContentMap={newFileContentMap}
               alignmentAnchors={alignedTopAnchors.old ?? EMPTY_ANCHORS}
               isViewportPrimary={!renderNewGraph}
+              pathAliasesByPath={pathAliasesByPath}
+              pullRequestReviewThreads={pullRequestReviewThreads}
+              onOpenReviewThreads={onOpenReviewThreads}
             />
           </div>
         </Panel>
@@ -96,6 +106,9 @@ export const GraphSection = ({
               alignmentAnchors={alignedTopAnchors.new ?? EMPTY_ANCHORS}
               alignmentBreakpoints={alignmentBreakpoints}
               isViewportPrimary
+              pathAliasesByPath={pathAliasesByPath}
+              pullRequestReviewThreads={pullRequestReviewThreads}
+              onOpenReviewThreads={onOpenReviewThreads}
             />
           </div>
         </Panel>
@@ -114,6 +127,9 @@ export const GraphSection = ({
             counterpartFileContentMap={newFileContentMap}
             alignmentAnchors={alignedTopAnchors.old ?? EMPTY_ANCHORS}
             isViewportPrimary={!renderNewGraph}
+            pathAliasesByPath={pathAliasesByPath}
+            pullRequestReviewThreads={pullRequestReviewThreads}
+            onOpenReviewThreads={onOpenReviewThreads}
           />
         )}
         {renderNewGraph && (
@@ -129,6 +145,9 @@ export const GraphSection = ({
             alignmentAnchors={alignedTopAnchors.new ?? EMPTY_ANCHORS}
             alignmentBreakpoints={alignmentBreakpoints}
             isViewportPrimary
+            pathAliasesByPath={pathAliasesByPath}
+            pullRequestReviewThreads={pullRequestReviewThreads}
+            onOpenReviewThreads={onOpenReviewThreads}
           />
         )}
       </div>

@@ -1,6 +1,7 @@
 import type { FileDiffEntry, ViewGraph } from "../types/graph";
 import type { DiffMeta } from "../api";
-import { fetchDiffFiles, fetchView } from "../api";
+import type { PullRequestReviewThread } from "../api";
+import { fetchDiffFiles, fetchPullRequestReviewThreads, fetchView } from "../api";
 
 type ViewType = "logic" | "knowledge" | "react";
 
@@ -13,6 +14,7 @@ interface DiffCache {
   meta: DiffMeta | null;
   files: FileDiffEntry[] | null;
   views: Map<ViewType, CachedView>;
+  reviewThreads: PullRequestReviewThread[] | null;
 }
 
 const cache = new Map<string, DiffCache>();
@@ -25,6 +27,7 @@ const getOrCreateCache = (diffId: string): DiffCache => {
       meta: null,
       files: null,
       views: new Map(),
+      reviewThreads: null,
     };
     cache.set(diffId, entry);
   }
@@ -42,6 +45,9 @@ export const getCachedView = (
 
 export const getCachedFiles = (diffId: string): FileDiffEntry[] | null =>
   cache.get(diffId)?.files ?? null;
+
+export const getCachedReviewThreads = (diffId: string): PullRequestReviewThread[] | null =>
+  cache.get(diffId)?.reviewThreads ?? null;
 
 export const prefetchDiff = (
   diffId: string,
@@ -61,17 +67,29 @@ export const prefetchDiff = (
   const viewPromises = viewTypes.map((vt) =>
     fetchView(diffId, vt).then((payload) => ({ oldGraph: payload.oldGraph, newGraph: payload.newGraph })),
   );
+  const reviewThreadsPromise = meta.pullRequestNumber
+    ? fetchPullRequestReviewThreads(diffId)
+    : Promise.resolve<PullRequestReviewThread[]>([]);
 
-  const promise = Promise.allSettled([filesPromise, ...viewPromises])
-    .then(([filesResult, ...viewResults]) => {
+  const promise = Promise.allSettled([
+    filesPromise,
+    Promise.allSettled(viewPromises),
+    reviewThreadsPromise,
+  ])
+    .then(([filesResult, viewResultsResult, reviewThreadsResult]) => {
       if (filesResult.status === "fulfilled") {
         c.files = filesResult.value as FileDiffEntry[];
       }
-      viewResults.forEach((result, i) => {
-        if (result.status === "fulfilled") {
-          c.views.set(viewTypes[i], result.value);
-        }
-      });
+      if (viewResultsResult.status === "fulfilled") {
+        viewResultsResult.value.forEach((result, i) => {
+          if (result.status === "fulfilled") {
+            c.views.set(viewTypes[i], result.value);
+          }
+        });
+      }
+      if (reviewThreadsResult?.status === "fulfilled") {
+        c.reviewThreads = reviewThreadsResult.value as PullRequestReviewThread[];
+      }
     })
     .finally(() => {
       prefetchPromises.delete(key);
@@ -95,4 +113,11 @@ export const setCachedView = (
 
 export const setCachedFiles = (diffId: string, files: FileDiffEntry[]): void => {
   getOrCreateCache(diffId).files = files;
+};
+
+export const setCachedReviewThreads = (
+  diffId: string,
+  reviewThreads: PullRequestReviewThread[],
+): void => {
+  getOrCreateCache(diffId).reviewThreads = reviewThreads;
 };

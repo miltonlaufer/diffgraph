@@ -2,6 +2,9 @@ import { memo, type CSSProperties, type MutableRefObject } from "react";
 import { HighlightedCode } from "./HighlightedCode";
 import type { DiffLine } from "./types";
 import { extractSearchWordFromDoubleClick, lineStyle } from "./diffUtils";
+import type { PullRequestReviewThread } from "#/api";
+import { ConversationBadge } from "#/components/ConversationBadge";
+import { summarizeThreadBadge } from "#/lib/pullRequestComments";
 
 const GAP_MARKER_TEXT = "...";
 
@@ -24,6 +27,9 @@ interface SimpleRowProps {
   onLineHover?: (line: number, side: "old" | "new") => void;
   onLineHoverLeave?: () => void;
   onLineDoubleClick?: (line: number, side: "old" | "new", word: string) => void;
+  reviewThreadIds?: string[];
+  reviewThreadById?: Map<string, PullRequestReviewThread>;
+  onOpenReviewThreads?: (threadIds: string[]) => void;
 }
 
 const SimpleRow = memo(({
@@ -37,25 +43,44 @@ const SimpleRow = memo(({
   onLineHover,
   onLineHoverLeave,
   onLineDoubleClick,
-}: SimpleRowProps) => (
-  <tr
-    data-line={`${side}-${lineNum}`}
-    data-old-line={side === "old" ? lineNum : undefined}
-    data-new-line={side === "new" ? lineNum : undefined}
-    style={{ ...lineStyle(type), cursor: onLineClick ? "pointer" : "default" }}
-    onClick={() => onLineClick?.(lineNum, side)}
-    onMouseEnter={() => onLineHover?.(lineNum, side)}
-    onMouseLeave={() => onLineHoverLeave?.()}
-    onDoubleClick={(event) => {
-      const word = extractSearchWordFromDoubleClick(event);
-      if (!word) return;
-      onLineDoubleClick?.(lineNum, side, word);
-    }}
-  >
-    <td className="lineNum">{lineNum}</td>
-    <td className="lineCode"><HighlightedCode code={text} language={language} searchQuery={searchQuery} /></td>
-  </tr>
-));
+  reviewThreadIds,
+  reviewThreadById,
+  onOpenReviewThreads,
+}: SimpleRowProps) => {
+  const summary = summarizeThreadBadge(reviewThreadIds, reviewThreadById ?? EMPTY_REVIEW_THREAD_MAP);
+  return (
+    <tr
+      data-line={`${side}-${lineNum}`}
+      data-old-line={side === "old" ? lineNum : undefined}
+      data-new-line={side === "new" ? lineNum : undefined}
+      style={{ ...lineStyle(type), cursor: onLineClick ? "pointer" : "default" }}
+      onClick={() => onLineClick?.(lineNum, side)}
+      onMouseEnter={() => onLineHover?.(lineNum, side)}
+      onMouseLeave={() => onLineHoverLeave?.()}
+      onDoubleClick={(event) => {
+        const word = extractSearchWordFromDoubleClick(event);
+        if (!word) return;
+        onLineDoubleClick?.(lineNum, side, word);
+      }}
+    >
+      <td className="lineNum">
+        <div className="lineNumInner">
+          <span>{lineNum}</span>
+          <ConversationBadge
+            className="conversationBadgeLine"
+            count={onOpenReviewThreads ? summary.totalCount : 0}
+            unresolvedCount={summary.unresolvedCount}
+            onClick={() => {
+              if (!reviewThreadIds || !onOpenReviewThreads) return;
+              onOpenReviewThreads(reviewThreadIds);
+            }}
+          />
+        </div>
+      </td>
+      <td className="lineCode"><HighlightedCode code={text} language={language} searchQuery={searchQuery} /></td>
+    </tr>
+  );
+});
 
 interface CodeDiffSingleFileViewProps {
   mode: "added" | "removed";
@@ -70,11 +95,17 @@ interface CodeDiffSingleFileViewProps {
   onLineHover?: (line: number, side: "old" | "new") => void;
   onLineHoverLeave?: () => void;
   onLineDoubleClick?: (line: number, side: "old" | "new", word: string) => void;
+  oldLineReviewThreadIds?: Map<number, string[]>;
+  newLineReviewThreadIds?: Map<number, string[]>;
+  reviewThreadById?: Map<string, PullRequestReviewThread>;
+  onOpenReviewThreads?: (threadIds: string[]) => void;
 }
 
 type VisibleSingleFileRow =
   | { kind: "line"; text: string; lineNum: number }
   | { kind: "gap"; key: string };
+
+const EMPTY_REVIEW_THREAD_MAP = new Map<string, PullRequestReviewThread>();
 
 export const CodeDiffSingleFileView = ({
   mode,
@@ -89,6 +120,10 @@ export const CodeDiffSingleFileView = ({
   onLineHover,
   onLineHoverLeave,
   onLineDoubleClick,
+  oldLineReviewThreadIds,
+  newLineReviewThreadIds,
+  reviewThreadById,
+  onOpenReviewThreads,
 }: CodeDiffSingleFileViewProps) => {
   const isAdded = mode === "added";
   const allLines = content.split("\n");
@@ -150,6 +185,9 @@ export const CodeDiffSingleFileView = ({
                         onLineHover={onLineHover}
                         onLineHoverLeave={onLineHoverLeave}
                         onLineDoubleClick={onLineDoubleClick}
+                        reviewThreadIds={oldLineReviewThreadIds?.get(row.lineNum)}
+                        reviewThreadById={reviewThreadById}
+                        onOpenReviewThreads={onOpenReviewThreads}
                       />
                     )
                   ))}
@@ -185,6 +223,9 @@ export const CodeDiffSingleFileView = ({
                         onLineHover={onLineHover}
                         onLineHoverLeave={onLineHoverLeave}
                         onLineDoubleClick={onLineDoubleClick}
+                        reviewThreadIds={newLineReviewThreadIds?.get(row.lineNum)}
+                        reviewThreadById={reviewThreadById}
+                        onOpenReviewThreads={onOpenReviewThreads}
                       />
                     )
                   ))}

@@ -2,6 +2,9 @@ import type { CSSProperties, MutableRefObject } from "react";
 import { emptyLineStyle, extractSearchWordFromDoubleClick, lineStyle } from "./diffUtils";
 import { HighlightedCode } from "./HighlightedCode";
 import type { DiffMatrixRow } from "./types";
+import type { PullRequestReviewThread } from "#/api";
+import { ConversationBadge } from "#/components/ConversationBadge";
+import { summarizeThreadBadge } from "#/lib/pullRequestComments";
 
 const GAP_MARKER_TEXT = "...";
 
@@ -24,6 +27,8 @@ const rowKey = (row: DiffMatrixRow, i: number): string =>
     ? `gap-${i}`
     : `row-${row.old.lineNumber ?? "x"}-${row.new.lineNumber ?? "x"}`;
 
+const EMPTY_REVIEW_THREAD_MAP = new Map<string, PullRequestReviewThread>();
+
 interface CodeDiffMatrixViewProps {
   matrixRows: DiffMatrixRow[];
   language: string;
@@ -36,6 +41,10 @@ interface CodeDiffMatrixViewProps {
   onLineHover?: (line: number, side: "old" | "new") => void;
   onLineHoverLeave?: () => void;
   onLineDoubleClick?: (line: number, side: "old" | "new", word: string) => void;
+  oldLineReviewThreadIds?: Map<number, string[]>;
+  newLineReviewThreadIds?: Map<number, string[]>;
+  reviewThreadById?: Map<string, PullRequestReviewThread>;
+  onOpenReviewThreads?: (threadIds: string[]) => void;
 }
 
 export const CodeDiffMatrixView = ({
@@ -50,6 +59,10 @@ export const CodeDiffMatrixView = ({
   onLineHover,
   onLineHoverLeave,
   onLineDoubleClick,
+  oldLineReviewThreadIds,
+  newLineReviewThreadIds,
+  reviewThreadById,
+  onOpenReviewThreads,
 }: CodeDiffMatrixViewProps) => (
   <div className="splitCodeLayout">
     <div className="codeColumn">
@@ -59,6 +72,10 @@ export const CodeDiffMatrixView = ({
           <tbody>
             {matrixRows.map((row, i) => {
               const gapRow = isGapRow(row);
+              const lineThreadIds = row.old.lineNumber && !gapRow
+                ? oldLineReviewThreadIds?.get(row.old.lineNumber)
+                : undefined;
+              const lineThreadSummary = summarizeThreadBadge(lineThreadIds, reviewThreadById ?? EMPTY_REVIEW_THREAD_MAP);
               return (
                 <tr
                   key={rowKey(row, i)}
@@ -80,7 +97,20 @@ export const CodeDiffMatrixView = ({
                   }}
                 >
                   <td className="lineNum" style={gapRow ? gapRowCellStyle : lineStyle(row.old.type)}>
-                    {gapRow ? GAP_MARKER_TEXT : row.old.lineNumber ?? ""}
+                    {gapRow ? GAP_MARKER_TEXT : (
+                      <div className="lineNumInner">
+                        <span>{row.old.lineNumber ?? ""}</span>
+                        <ConversationBadge
+                          className="conversationBadgeLine"
+                          count={onOpenReviewThreads ? lineThreadSummary.totalCount : 0}
+                          unresolvedCount={lineThreadSummary.unresolvedCount}
+                          onClick={() => {
+                            if (!lineThreadIds || !onOpenReviewThreads) return;
+                            onOpenReviewThreads(lineThreadIds);
+                          }}
+                        />
+                      </div>
+                    )}
                   </td>
                   <td className="lineCode" style={gapRow ? gapRowCellStyle : lineStyle(row.old.type)}>
                     {gapRow
@@ -103,6 +133,10 @@ export const CodeDiffMatrixView = ({
           <tbody>
             {matrixRows.map((row, i) => {
               const gapRow = isGapRow(row);
+              const lineThreadIds = row.new.lineNumber && !gapRow
+                ? newLineReviewThreadIds?.get(row.new.lineNumber)
+                : undefined;
+              const lineThreadSummary = summarizeThreadBadge(lineThreadIds, reviewThreadById ?? EMPTY_REVIEW_THREAD_MAP);
               return (
                 <tr
                   key={rowKey(row, i)}
@@ -124,7 +158,20 @@ export const CodeDiffMatrixView = ({
                   }}
                 >
                   <td className="lineNum" style={gapRow ? gapRowCellStyle : lineStyle(row.new.type)}>
-                    {gapRow ? GAP_MARKER_TEXT : row.new.lineNumber ?? ""}
+                    {gapRow ? GAP_MARKER_TEXT : (
+                      <div className="lineNumInner">
+                        <span>{row.new.lineNumber ?? ""}</span>
+                        <ConversationBadge
+                          className="conversationBadgeLine"
+                          count={onOpenReviewThreads ? lineThreadSummary.totalCount : 0}
+                          unresolvedCount={lineThreadSummary.unresolvedCount}
+                          onClick={() => {
+                            if (!lineThreadIds || !onOpenReviewThreads) return;
+                            onOpenReviewThreads(lineThreadIds);
+                          }}
+                        />
+                      </div>
+                    )}
                   </td>
                   <td className="lineCode" style={gapRow ? gapRowCellStyle : lineStyle(row.new.type)}>
                     {gapRow

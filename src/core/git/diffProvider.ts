@@ -15,6 +15,51 @@ export type DiffMode =
 
 export type DiffFileStatus = "added" | "deleted" | "modified" | "renamed" | "copied" | "type-changed" | "unknown";
 
+export type PullRequestThreadSide = "old" | "new" | "";
+
+export interface PullRequestReviewCommentAuthor {
+  login: string;
+  avatarUrl?: string;
+  profileUrl?: string;
+}
+
+export interface PullRequestReviewComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  updatedAt?: string;
+  url?: string;
+  author: PullRequestReviewCommentAuthor;
+}
+
+export interface PullRequestReviewThread {
+  id: string;
+  kind?: "review" | "discussion";
+  filePath: string;
+  side: PullRequestThreadSide;
+  startSide: PullRequestThreadSide;
+  line?: number;
+  startLine?: number;
+  originalLine?: number;
+  originalStartLine?: number;
+  resolved: boolean;
+  outdated: boolean;
+  comments: PullRequestReviewComment[];
+  url?: string;
+}
+
+export interface PullRequestReviewThreadsDiagnostics {
+  repoSlug?: string;
+  selectedReviewSource: "restThreads" | "graphqlThreads" | "restReviewComments" | "none";
+  reviewThreadCount: number;
+  discussionThreadCount: number;
+  totalThreadCount: number;
+  restThreadsError?: string;
+  graphqlThreadsError?: string;
+  restReviewCommentsError?: string;
+  discussionCommentsError?: string;
+}
+
 export interface DiffFilePair {
   path: string;
   oldPath: string;
@@ -34,6 +79,8 @@ export interface DiffPayload {
     number: string;
     url?: string;
     description?: string;
+    reviewThreads?: PullRequestReviewThread[];
+    reviewThreadsDiagnostics?: PullRequestReviewThreadsDiagnostics;
   };
 }
 
@@ -43,13 +90,93 @@ interface PullRequestMetadata {
   url?: string;
 }
 
+interface GhReviewThreadUser {
+  login?: unknown;
+  avatar_url?: unknown;
+  html_url?: unknown;
+}
+
+interface GhReviewThreadComment {
+  id?: unknown;
+  body?: unknown;
+  created_at?: unknown;
+  updated_at?: unknown;
+  html_url?: unknown;
+  user?: GhReviewThreadUser | null;
+}
+
+interface GhReviewThread {
+  id?: unknown;
+  path?: unknown;
+  line?: unknown;
+  start_line?: unknown;
+  original_line?: unknown;
+  original_start_line?: unknown;
+  side?: unknown;
+  start_side?: unknown;
+  resolved?: unknown;
+  outdated?: unknown;
+  is_resolved?: unknown;
+  is_outdated?: unknown;
+  comments?: unknown;
+}
+
+interface GhPullRequestReviewComment extends GhReviewThreadComment {
+  path?: unknown;
+  line?: unknown;
+  start_line?: unknown;
+  original_line?: unknown;
+  original_start_line?: unknown;
+  side?: unknown;
+  start_side?: unknown;
+  in_reply_to_id?: unknown;
+}
+
+interface GhIssueComment extends GhReviewThreadComment {}
+
+interface GhGraphQlAuthor {
+  login?: unknown;
+  avatarUrl?: unknown;
+  url?: unknown;
+}
+
+interface GhGraphQlReviewComment {
+  id?: unknown;
+  body?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+  url?: unknown;
+  author?: GhGraphQlAuthor | null;
+}
+
+interface GhGraphQlReviewThread {
+  id?: unknown;
+  path?: unknown;
+  line?: unknown;
+  startLine?: unknown;
+  originalLine?: unknown;
+  originalStartLine?: unknown;
+  diffSide?: unknown;
+  startDiffSide?: unknown;
+  isResolved?: unknown;
+  isOutdated?: unknown;
+  comments?: {
+    nodes?: unknown;
+  } | null;
+}
+
+interface PullRequestReviewThreadsReadResult {
+  threads: PullRequestReviewThread[];
+  diagnostics: PullRequestReviewThreadsDiagnostics;
+}
+
 const textFromGit = async (args: string[], cwd: string): Promise<string> => {
   const { stdout } = await execFileAsync("git", args, { cwd, maxBuffer: 1024 * 1024 * 50 });
   return stdout;
 };
 
 const textFromGh = async (args: string[], cwd: string): Promise<string> => {
-  const { stdout } = await execFileAsync("gh", args, { cwd, maxBuffer: 1024 * 1024 * 10 });
+  const { stdout } = await execFileAsync("gh", args, { cwd, maxBuffer: 1024 * 1024 * 50 });
   return stdout;
 };
 
@@ -59,6 +186,47 @@ const safeGitShow = async (cwd: string, spec: string): Promise<string> => {
   } catch {
     return "";
   }
+};
+
+const asString = (value: unknown): string | undefined =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+
+const asId = (value: unknown): string | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(Math.floor(value));
+  }
+  return asString(value);
+};
+
+const asNumber = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.floor(value);
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
+    const parsed = Number.parseInt(value.trim(), 10);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+};
+
+const asBoolean = (value: unknown): boolean | undefined =>
+  typeof value === "boolean" ? value : undefined;
+
+const toErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    const firstLine = error.message.split("\n")[0]?.trim() ?? error.message;
+    return firstLine.slice(0, 300);
+  }
+  return String(error).slice(0, 300);
+};
+
+const normalizePath = (value: string): string =>
+  value.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
+
+const toThreadSide = (value: unknown): PullRequestThreadSide => {
+  if (typeof value !== "string") return "";
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "left" || normalized === "old") return "old";
+  if (normalized === "right" || normalized === "new") return "new";
+  return "";
 };
 
 export class DiffProvider {
@@ -189,12 +357,15 @@ export class DiffProvider {
 
     const payload = await this.fromRefs(mergeBase, prRef, repoPath);
     const pullRequestUrl = await this.resolvePullRequestUrl(repoPath, normalizedPr, prMetadata.url);
+    const reviewThreadsResult = await this.readPullRequestReviewThreads(repoPath, normalizedPr);
     return {
       ...payload,
       pullRequest: {
         number: normalizedPr,
         url: pullRequestUrl,
         description: prMetadata.description,
+        reviewThreads: reviewThreadsResult.threads,
+        reviewThreadsDiagnostics: reviewThreadsResult.diagnostics,
       },
     };
   }
@@ -232,13 +403,438 @@ export class DiffProvider {
     }
   }
 
+  private async readPullRequestReviewThreads(
+    repoPath: string,
+    prNumber: string,
+  ): Promise<PullRequestReviewThreadsReadResult> {
+    const repoSlug = await this.resolveGithubRepoSlug(repoPath);
+    const diagnostics: PullRequestReviewThreadsDiagnostics = {
+      repoSlug,
+      selectedReviewSource: "none",
+      reviewThreadCount: 0,
+      discussionThreadCount: 0,
+      totalThreadCount: 0,
+    };
+    if (!repoSlug) {
+      diagnostics.restThreadsError = "Could not resolve GitHub repo slug from origin remote URL.";
+      return { threads: [], diagnostics };
+    }
+
+    const threadEndpoint = `repos/${repoSlug}/pulls/${prNumber}/threads?per_page=100`;
+    const reviewCommentEndpoint = `repos/${repoSlug}/pulls/${prNumber}/comments?per_page=100`;
+    const issueCommentEndpoint = `repos/${repoSlug}/issues/${prNumber}/comments?per_page=100`;
+    let reviewThreads: PullRequestReviewThread[] = [];
+
+    try {
+      const threadPages = await this.readPaginatedGhList<GhReviewThread>(repoPath, threadEndpoint);
+      const rawThreads = threadPages.flatMap((page) => page);
+      const normalizedThreads = rawThreads
+        .map((rawThread) => this.normalizePullRequestReviewThread(rawThread))
+        .filter((thread): thread is PullRequestReviewThread => thread !== null);
+      if (normalizedThreads.length > 0) {
+        reviewThreads = normalizedThreads;
+        diagnostics.selectedReviewSource = "restThreads";
+      }
+    } catch (error) {
+      diagnostics.restThreadsError = toErrorMessage(error);
+    }
+
+    if (reviewThreads.length === 0) {
+      try {
+        const graphqlThreads = await this.readPullRequestReviewThreadsFromGraphQl(
+          repoPath,
+          repoSlug,
+          prNumber,
+        );
+        if (graphqlThreads.length > 0) {
+          reviewThreads = graphqlThreads;
+          diagnostics.selectedReviewSource = "graphqlThreads";
+        }
+      } catch (error) {
+        diagnostics.graphqlThreadsError = toErrorMessage(error);
+      }
+    }
+
+    if (reviewThreads.length === 0) {
+      try {
+        const reviewCommentPages = await this.readPaginatedGhList<GhPullRequestReviewComment>(
+          repoPath,
+          reviewCommentEndpoint,
+        );
+        const fallbackThreads = this.buildThreadsFromReviewComments(
+          reviewCommentPages.flatMap((page) => page),
+        );
+        if (fallbackThreads.length > 0) {
+          reviewThreads = fallbackThreads;
+          diagnostics.selectedReviewSource = "restReviewComments";
+        }
+      } catch (error) {
+        diagnostics.restReviewCommentsError = toErrorMessage(error);
+      }
+    }
+
+    let discussionThreads: PullRequestReviewThread[] = [];
+    try {
+      discussionThreads = await this.readIssueDiscussionThreads(repoPath, issueCommentEndpoint);
+    } catch (error) {
+      diagnostics.discussionCommentsError = toErrorMessage(error);
+    }
+
+    const threads = [...reviewThreads, ...discussionThreads];
+    diagnostics.reviewThreadCount = reviewThreads.length;
+    diagnostics.discussionThreadCount = discussionThreads.length;
+    diagnostics.totalThreadCount = threads.length;
+    return { threads, diagnostics };
+  }
+
+  private async readPullRequestReviewThreadsFromGraphQl(
+    repoPath: string,
+    repoSlug: string,
+    prNumber: string,
+  ): Promise<PullRequestReviewThread[]> {
+    const [owner, repo] = repoSlug.split("/");
+    if (!owner || !repo) return [];
+    const pullNumber = Number.parseInt(prNumber, 10);
+    if (!Number.isFinite(pullNumber)) return [];
+
+    const query = `
+      query($owner: String!, $repo: String!, $number: Int!, $after: String) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            reviewThreads(first: 100, after: $after) {
+              nodes {
+                id
+                path
+                line
+                startLine
+                originalLine
+                originalStartLine
+                diffSide
+                startDiffSide
+                isResolved
+                isOutdated
+                comments(first: 100) {
+                  nodes {
+                    id
+                    body
+                    createdAt
+                    updatedAt
+                    url
+                    author {
+                      login
+                      avatarUrl
+                      url
+                    }
+                  }
+                }
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const threads: PullRequestReviewThread[] = [];
+    let afterCursor: string | undefined;
+    let hasNextPage = true;
+
+    while (hasNextPage) {
+      const args = [
+        "api",
+        "graphql",
+        "-f",
+        `query=${query}`,
+        "-F",
+        `owner=${owner}`,
+        "-F",
+        `repo=${repo}`,
+        "-F",
+        `number=${pullNumber}`,
+      ];
+      if (afterCursor) {
+        args.push("-F", `after=${afterCursor}`);
+      }
+      const raw = await textFromGh(args, repoPath);
+      const parsed = JSON.parse(raw) as {
+        data?: {
+          repository?: {
+            pullRequest?: {
+              reviewThreads?: {
+                nodes?: unknown;
+                pageInfo?: {
+                  hasNextPage?: unknown;
+                  endCursor?: unknown;
+                } | null;
+              } | null;
+            } | null;
+          } | null;
+        } | null;
+      };
+
+      const reviewThreads = parsed.data?.repository?.pullRequest?.reviewThreads;
+      const nodes = Array.isArray(reviewThreads?.nodes) ? (reviewThreads?.nodes as GhGraphQlReviewThread[]) : [];
+      for (const node of nodes) {
+        const normalized = this.normalizeGraphQlReviewThread(node);
+        if (normalized) threads.push(normalized);
+      }
+
+      hasNextPage = Boolean(reviewThreads?.pageInfo?.hasNextPage);
+      const nextCursor = asString(reviewThreads?.pageInfo?.endCursor);
+      afterCursor = hasNextPage ? nextCursor : undefined;
+      if (hasNextPage && !afterCursor) {
+        hasNextPage = false;
+      }
+    }
+
+    return threads;
+  }
+
+  private async readPaginatedGhList<T>(repoPath: string, endpoint: string): Promise<T[][]> {
+    const raw = await textFromGh(
+      [
+        "api",
+        "--paginate",
+        "--slurp",
+        "-H",
+        "Accept: application/vnd.github+json",
+        "-H",
+        "X-GitHub-Api-Version: 2022-11-28",
+        endpoint,
+      ],
+      repoPath,
+    );
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((page) => (Array.isArray(page) ? (page as T[]) : []));
+  }
+
+  private buildThreadsFromReviewComments(
+    rawComments: GhPullRequestReviewComment[],
+  ): PullRequestReviewThread[] {
+    const commentsById = new Map<string, GhPullRequestReviewComment>();
+    for (const rawComment of rawComments) {
+      const id = asId(rawComment.id);
+      if (!id) continue;
+      commentsById.set(id, rawComment);
+    }
+    if (commentsById.size === 0) return [];
+
+    const rootByCommentId = new Map<string, string>();
+    const resolveRootId = (commentId: string): string => {
+      const cached = rootByCommentId.get(commentId);
+      if (cached) return cached;
+      const seen = new Set<string>();
+      let current = commentId;
+      while (true) {
+        if (seen.has(current)) break;
+        seen.add(current);
+        const rawComment = commentsById.get(current);
+        const parentId = asId(rawComment?.in_reply_to_id);
+        if (!parentId || !commentsById.has(parentId)) break;
+        current = parentId;
+      }
+      rootByCommentId.set(commentId, current);
+      return current;
+    };
+
+    const commentsByRootId = new Map<string, GhPullRequestReviewComment[]>();
+    for (const [commentId, rawComment] of commentsById.entries()) {
+      const rootId = resolveRootId(commentId);
+      const group = commentsByRootId.get(rootId);
+      if (group) {
+        group.push(rawComment);
+      } else {
+        commentsByRootId.set(rootId, [rawComment]);
+      }
+    }
+
+    const toSortTimestamp = (value: string | undefined): number => {
+      if (!value) return Number.MAX_SAFE_INTEGER;
+      const parsed = Date.parse(value);
+      return Number.isNaN(parsed) ? Number.MAX_SAFE_INTEGER : parsed;
+    };
+
+    const threads: PullRequestReviewThread[] = [];
+    for (const [rootId, group] of commentsByRootId.entries()) {
+      const rootComment = commentsById.get(rootId) ?? group[0];
+      const filePathCandidate = asString(rootComment?.path) ?? asString(group.find((entry) => asString(entry.path))?.path) ?? "";
+      const filePath = normalizePath(filePathCandidate);
+      if (!filePath) continue;
+
+      const normalizedComments = group
+        .map((rawComment) => this.normalizePullRequestReviewComment(rawComment))
+        .filter((comment): comment is PullRequestReviewComment => comment !== null)
+        .sort((a, b) => (toSortTimestamp(a.createdAt) - toSortTimestamp(b.createdAt)) || a.id.localeCompare(b.id));
+      if (normalizedComments.length === 0) continue;
+
+      const line = asNumber(rootComment?.line) ?? asNumber(group.find((entry) => asNumber(entry.line) !== undefined)?.line);
+      const startLine = asNumber(rootComment?.start_line);
+      const originalLine = asNumber(rootComment?.original_line);
+      const originalStartLine = asNumber(rootComment?.original_start_line);
+
+      threads.push({
+        id: `fallback-thread-${rootId}`,
+        kind: "review",
+        filePath,
+        side: toThreadSide(rootComment?.side),
+        startSide: toThreadSide(rootComment?.start_side),
+        line,
+        startLine,
+        originalLine,
+        originalStartLine,
+        resolved: false,
+        outdated: line === undefined && originalLine !== undefined,
+        comments: normalizedComments,
+        url: normalizedComments[0]?.url,
+      });
+    }
+
+    threads.sort((a, b) => {
+      if (a.filePath !== b.filePath) return a.filePath.localeCompare(b.filePath);
+      const aLine = a.line ?? a.originalLine ?? Number.MAX_SAFE_INTEGER;
+      const bLine = b.line ?? b.originalLine ?? Number.MAX_SAFE_INTEGER;
+      return aLine - bLine;
+    });
+
+    return threads;
+  }
+
+  private async readIssueDiscussionThreads(
+    repoPath: string,
+    issueCommentEndpoint: string,
+  ): Promise<PullRequestReviewThread[]> {
+    const pages = await this.readPaginatedGhList<GhIssueComment>(repoPath, issueCommentEndpoint);
+    const issueComments = pages.flatMap((page) => page);
+    if (issueComments.length === 0) return [];
+
+    const threads: PullRequestReviewThread[] = [];
+    for (const rawComment of issueComments) {
+      const normalized = this.normalizePullRequestReviewComment(rawComment);
+      if (!normalized) continue;
+      threads.push({
+        id: `discussion-${normalized.id}`,
+        kind: "discussion",
+        filePath: "__discussion__",
+        side: "",
+        startSide: "",
+        resolved: false,
+        outdated: false,
+        comments: [normalized],
+        url: normalized.url,
+      });
+    }
+    return threads;
+  }
+
+  private normalizePullRequestReviewThread(rawThread: GhReviewThread): PullRequestReviewThread | null {
+    const commentsRaw = Array.isArray(rawThread.comments) ? rawThread.comments : [];
+    const comments = commentsRaw
+      .map((entry) => this.normalizePullRequestReviewComment(entry as GhReviewThreadComment))
+      .filter((comment): comment is PullRequestReviewComment => comment !== null);
+    if (comments.length === 0) return null;
+
+    const filePath = normalizePath(asString(rawThread.path) ?? "");
+    if (!filePath) return null;
+
+    const id = asId(rawThread.id) ?? comments[0]?.id;
+    if (!id) return null;
+
+    return {
+      id,
+      kind: "review",
+      filePath,
+      side: toThreadSide(rawThread.side),
+      startSide: toThreadSide(rawThread.start_side),
+      line: asNumber(rawThread.line),
+      startLine: asNumber(rawThread.start_line),
+      originalLine: asNumber(rawThread.original_line),
+      originalStartLine: asNumber(rawThread.original_start_line),
+      resolved: asBoolean(rawThread.resolved) ?? asBoolean(rawThread.is_resolved) ?? false,
+      outdated: asBoolean(rawThread.outdated) ?? asBoolean(rawThread.is_outdated) ?? false,
+      comments,
+      url: comments[0]?.url,
+    };
+  }
+
+  private normalizeGraphQlReviewThread(rawThread: GhGraphQlReviewThread): PullRequestReviewThread | null {
+    const commentsRaw = Array.isArray(rawThread.comments?.nodes)
+      ? (rawThread.comments?.nodes as GhGraphQlReviewComment[])
+      : [];
+    const comments = commentsRaw
+      .map((entry) => this.normalizeGraphQlReviewComment(entry))
+      .filter((comment): comment is PullRequestReviewComment => comment !== null);
+    if (comments.length === 0) return null;
+
+    const filePath = normalizePath(asString(rawThread.path) ?? "");
+    if (!filePath) return null;
+
+    const id = asString(rawThread.id) ?? comments[0]?.id;
+    if (!id) return null;
+
+    return {
+      id,
+      kind: "review",
+      filePath,
+      side: toThreadSide(rawThread.diffSide),
+      startSide: toThreadSide(rawThread.startDiffSide),
+      line: asNumber(rawThread.line),
+      startLine: asNumber(rawThread.startLine),
+      originalLine: asNumber(rawThread.originalLine),
+      originalStartLine: asNumber(rawThread.originalStartLine),
+      resolved: asBoolean(rawThread.isResolved) ?? false,
+      outdated: asBoolean(rawThread.isOutdated) ?? false,
+      comments,
+      url: comments[0]?.url,
+    };
+  }
+
+  private normalizeGraphQlReviewComment(rawComment: GhGraphQlReviewComment): PullRequestReviewComment | null {
+    const id = asString(rawComment.id);
+    const createdAt = asString(rawComment.createdAt);
+    if (!id || !createdAt) return null;
+    return {
+      id,
+      body: asString(rawComment.body) ?? "",
+      createdAt,
+      updatedAt: asString(rawComment.updatedAt),
+      url: asString(rawComment.url),
+      author: {
+        login: asString(rawComment.author?.login) ?? "unknown",
+        avatarUrl: asString(rawComment.author?.avatarUrl),
+        profileUrl: asString(rawComment.author?.url),
+      },
+    };
+  }
+
+  private normalizePullRequestReviewComment(rawComment: GhReviewThreadComment): PullRequestReviewComment | null {
+    const id = asId(rawComment.id);
+    const createdAt = asString(rawComment.created_at);
+    if (!id || !createdAt) return null;
+    return {
+      id,
+      body: asString(rawComment.body) ?? "",
+      createdAt,
+      updatedAt: asString(rawComment.updated_at),
+      url: asString(rawComment.html_url),
+      author: {
+        login: asString(rawComment.user?.login) ?? "unknown",
+        avatarUrl: asString(rawComment.user?.avatar_url),
+        profileUrl: asString(rawComment.user?.html_url),
+      },
+    };
+  }
+
   private toGithubRepoUrl(remoteUrl: string): string | undefined {
     const normalized = remoteUrl.trim();
     if (normalized.length === 0) {
       return undefined;
     }
 
-    const httpsMatch = normalized.match(/^https?:\/\/github\.com\/([^/]+\/[^/]+?)(?:\.git)?\/?$/i);
+    const httpsMatch = normalized.match(/^https?:\/\/(?:[^@/]+@)?github\.com\/([^/]+\/[^/]+?)(?:\.git)?\/?$/i);
     if (httpsMatch) {
       return `https://github.com/${httpsMatch[1]}`;
     }
@@ -254,6 +850,18 @@ export class DiffProvider {
     }
 
     return undefined;
+  }
+
+  private async resolveGithubRepoSlug(repoPath: string): Promise<string | undefined> {
+    try {
+      const originUrl = (await textFromGit(["remote", "get-url", "origin"], repoPath)).trim();
+      const githubRepoUrl = this.toGithubRepoUrl(originUrl);
+      if (!githubRepoUrl) return undefined;
+      const match = githubRepoUrl.match(/^https:\/\/github\.com\/([^/]+\/[^/]+)$/i);
+      return match?.[1];
+    } catch {
+      return undefined;
+    }
   }
 
   private async resolvePreferredBaseRef(repoPath: string, prBaseRefName?: string): Promise<string> {

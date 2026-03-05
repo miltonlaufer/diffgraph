@@ -1309,6 +1309,14 @@
   vertical-align: top;
 }
 
+.lineNumInner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  width: 100%;
+}
+
 .lineCode {
   padding: 0 4px;
   white-space: pre;
@@ -1327,6 +1335,287 @@
 
 .errorText {
   color: #fda4af;
+}
+
+.conversationBadge {
+  border: 1px solid #334155;
+  background: rgba(15, 23, 42, 0.9);
+  color: #dbeafe;
+  border-radius: 999px;
+  padding: 1px 6px;
+  min-height: 18px;
+  min-width: 30px;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  position: relative;
+  z-index: 8;
+}
+
+.conversationBadge:hover {
+  background: #1d4ed8;
+  border-color: #60a5fa;
+  color: #eff6ff;
+}
+
+.conversationBadgeIcon {
+  line-height: 1;
+}
+
+.conversationBadgeCount {
+  line-height: 1;
+}
+
+.conversationBadgeUnresolvedDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #fb7185;
+  box-shadow: 0 0 0 2px rgba(251, 113, 133, 0.24);
+}
+
+.conversationBadgeNode {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+}
+
+.conversationBadgeNodeGroup {
+  top: -12px;
+}
+
+.conversationBadgeNodeDiamond {
+  transform: rotate(-45deg);
+}
+
+.conversationBadgeLine {
+  min-height: 14px;
+  min-width: 22px;
+  padding: 0 4px;
+  font-size: 9px;
+}
+
+.prConversationModalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.76);
+  z-index: 2800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.prConversationModal {
+  width: min(900px, 100%);
+  max-height: calc(100vh - 32px);
+  border-radius: 12px;
+  border: 1px solid #334155;
+  background: #0b1226;
+  box-shadow: 0 20px 56px rgba(2, 6, 23, 0.72);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.prConversationModalHeader {
+  padding: 12px 14px;
+  border-bottom: 1px solid #1e293b;
+  background: #0f172a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prConversationModalTitle {
+  margin: 0;
+  font-size: 14px;
+  color: #e2e8f0;
+}
+
+.prConversationCloseBtn {
+  border: 1px solid #334155;
+  background: #111827;
+  color: #cbd5e1;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.prConversationCloseBtn:hover {
+  background: #1f2937;
+}
+
+.prConversationModalBody {
+  padding: 12px 14px 14px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prConversationThread {
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  background: #0f172a;
+}
+
+.prConversationThreadHeader {
+  padding: 10px 12px;
+  border-bottom: 1px solid #1e293b;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.prConversationThreadFile {
+  color: #e2e8f0;
+  font-size: 12px;
+  font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+}
+
+.prConversationThreadLink {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.prConversationThreadLink:hover .prConversationThreadFile {
+  color: #7dd3fc;
+}
+
+.prConversationThreadLocation {
+  color: #93c5fd;
+  font-size: 11px;
+  margin-top: 3px;
+}
+
+.prThreadStatus {
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.prThreadStatusResolved {
+  color: #bbf7d0;
+  border: 1px solid #15803d;
+  background: rgba(21, 128, 61, 0.2);
+}
+
+.prThreadStatusOpen {
+  color: #fecaca;
+  border: 1px solid #b91c1c;
+  background: rgba(185, 28, 28, 0.2);
+}
+
+.prThreadStatusDiscussion {
+  color: #bfdbfe;
+  border: 1px solid #2563eb;
+  background: rgba(37, 99, 235, 0.2);
+}
+
+.prConversationMessages {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prConversationMessage {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.prConversationAvatar,
+.prConversationAvatarFallback {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid #334155;
+  flex-shrink: 0;
+}
+
+.prConversationAvatarFallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #dbeafe;
+  background: #1e3a8a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.prConversationMessageBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.prConversationMessageMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.prConversationAuthor {
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.prConversationTimestamp {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.prConversationTimestampLink {
+  text-decoration: none;
+}
+
+.prConversationTimestampLink:hover {
+  color: #7dd3fc;
+  text-decoration: underline;
+}
+
+.prConversationText {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.45;
+  font-family: inherit;
+}
+
+.prConversationText .markdownViewer {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.prConversationText .markdownParagraph {
+  margin: 0 0 8px;
+}
+
+.prConversationText .markdownHeading {
+  margin: 10px 0 6px;
+}
+
+.prConversationText .markdownHeading1 { font-size: 16px; }
+.prConversationText .markdownHeading2 { font-size: 15px; }
+.prConversationText .markdownHeading3 { font-size: 14px; }
+.prConversationText .markdownHeading4 { font-size: 13px; }
+.prConversationText .markdownHeading5 { font-size: 12px; }
+.prConversationText .markdownHeading6 { font-size: 12px; }
+
+.prConversationText .markdownCodeBlock {
+  margin: 0 0 8px;
 }
 
 /* ---------- loading ---------- */

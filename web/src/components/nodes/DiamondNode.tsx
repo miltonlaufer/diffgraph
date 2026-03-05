@@ -3,6 +3,7 @@ import { memo, useMemo, useState, useCallback } from "react";
 import AskLlmButton from "./AskLlmButton";
 import CodeTooltip from "./CodeTooltip";
 import { useDebouncedValue } from "../useDebouncedValue";
+import { ConversationBadge } from "../ConversationBadge";
 
 const splitLabel = (label: string): { title: string; code: string } => {
   const idx = label.indexOf("\n");
@@ -26,6 +27,10 @@ interface DiamondNodeData {
   onAskLlmHrefForNode?: (nodeId: string) => string;
   onShowGraphLogicTreeForNode?: (nodeId: string) => void;
   onShowCodeLogicTreeForNode?: (nodeId: string) => void;
+  reviewThreadIds?: string[];
+  reviewThreadCount?: number;
+  reviewUnresolvedCount?: number;
+  onOpenReviewThreads?: (threadIds: string[]) => void;
 }
 
 const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
@@ -39,6 +44,10 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
     onAskLlmHrefForNode,
     onShowGraphLogicTreeForNode,
     onShowCodeLogicTreeForNode,
+    onOpenReviewThreads,
+    reviewThreadCount,
+    reviewUnresolvedCount,
+    reviewThreadIds,
   } = data;
 
   /******************* COMPUTED ***********************/
@@ -87,9 +96,19 @@ const DiamondNode = ({ data }: { data: DiamondNodeData }) => {
   const hasAskLlm = Boolean(askLlmNodeId && onAskLlmForNode);
   const hasGraphLogicTree = Boolean(askLlmNodeId && onShowGraphLogicTreeForNode);
   const hasCodeLogicTree = Boolean(askLlmNodeId && onShowCodeLogicTreeForNode);
+  const handleOpenReviewThreads = useCallback(() => {
+    if (!reviewThreadIds || reviewThreadIds.length === 0 || !onOpenReviewThreads) return;
+    onOpenReviewThreads(reviewThreadIds);
+  }, [onOpenReviewThreads, reviewThreadIds]);
 
   return (
     <div style={outerStyle} onMouseEnter={onEnter} onMouseLeave={onLeave}>
+      <ConversationBadge
+        className="conversationBadgeNode conversationBadgeNodeDiamond"
+        count={reviewThreadCount ?? 0}
+        unresolvedCount={reviewUnresolvedCount ?? 0}
+        onClick={handleOpenReviewThreads}
+      />
       <div style={{ transform: "rotate(-45deg)", textAlign: "center", maxWidth: 85, wordBreak: "break-word" as const }}>
         <div style={{ fontSize: 9, color: data.textColor, opacity: 0.7, marginBottom: 1 }}>{parts.title}</div>
         {parts.code && (

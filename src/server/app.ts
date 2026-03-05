@@ -345,6 +345,25 @@ export const createApp = (context: AppContext): express.Express => {
     res.json(entries);
   });
 
+  app.get("/api/diff/:diffId/pull-request-threads", (req, res) => {
+    const result = context.results.get(req.params.diffId);
+    if (!result) {
+      res.status(404).json({ error: "diff not found" });
+      return;
+    }
+    const threads = result.pullRequest?.reviewThreads ?? [];
+    const diagnostics = result.pullRequest?.reviewThreadsDiagnostics;
+    if (threads.length === 0 && diagnostics) {
+      console.warn(
+        `[diffgraph] pull-request-threads empty for diffId=${req.params.diffId} selectedSource=${diagnostics.selectedReviewSource}`,
+      );
+    }
+    res.json({
+      threads,
+      diagnostics: diagnostics ?? null,
+    });
+  });
+
   const currentFilePath = fileURLToPath(import.meta.url);
   const packageRoot = path.resolve(path.dirname(currentFilePath), "../../..");
   const distPath = path.join(packageRoot, "web", "dist");
